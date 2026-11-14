@@ -49,8 +49,11 @@ Plan and milestones: docs/PLAN.md.
   Basic-auth box kept for the session only (pipe); never read or embed the HA token. make-app.sh adds one ATS exception
   (plain http to ALEXUS_TAILSCALE only). Test: `Heimdall --webcheck <url>` loads a page in a real WKWebView.
 - Reinstall bundle: bin/ragnarok-bundle (or Hub → Services → Make reinstall bundle) → ~/Ragnarok-Backups/ragnarok-bundle-*.tar.gz
-  (600): git bundles of heimdall, alexus-core, scripts, ygg-mcp-business, conveyor (+ uncommitted work), the app, known-good,
-  LaunchAgent, ~/.ragnarok, ~/scripts, and install.sh (never overwrites). Keys, certificate and the search index are not in it.
+  (600): git bundles of the ragnarok monorepo, ~/Developer/scripts and ~/conveyor (+ uncommitted work; linked folders such as
+  ~/Developer/heimdall are inside ragnarok and are re-linked by install.sh), the app, known-good, LaunchAgent, ~/.ragnarok
+  (no worktrees, tokens, .env or bundle keys), and install.sh (never overwrites). Files that look like they hold a key are left
+  out and listed in its README.txt. Locked with the YubiKey (age) when bundle keys exist; it refuses to write unlocked then
+  unless UNLOCKED=1. Keys, certificate and the search index are not in it.
 - Reading logs as an AI: use bin/ragnarok-ai-log (list) / ragnarok-ai-log <shell|shell-cmds|receipts|edits|heal|chat|access> [N]
   — every line goes through the local secret scrubber (Sources/Heimdall/Scrub.swift, `Heimdall --scrub`). When the owner says
   something "errored", read it there instead of asking him to paste it. Shell tab output is written already scrubbed to

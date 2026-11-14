@@ -283,6 +283,10 @@ final class ShellSession: ObservableObject {
               s=${s//(#ib)(bearer[[:space:]]##)[^[:space:]\"\']##/${match[1]}***}
               s=${s//(#ib)((-|--)(password|passwd|token|secret|api-key|apikey|key|pass|auth)(=|[[:space:]]##))[^[:space:]-][^[:space:]]#/${match[1]}***}
               s=${s//(#b)(sk-|sk_live_|ghp_|gho_|ghs_|github_pat_|xox[baprs]-|AKIA|AGE-SECRET-KEY-|AGE-PLUGIN-|glpat-|hf_)[A-Za-z0-9_-]##/${match[1]}***}
+              # 11-11 report item 21: mysql -pPASSWORD, user:password@ / :password@ in URLs, JWTs
+              s=${s//(#b)((mysql|mysqldump|mysqladmin|mariadb)[[:space:]]*[[:space:]]-p)[^[:space:]]##/${match[1]}***}
+              s=${s//(#b)(:\/\/[^\/[:space:]:@]#:)[^@[:space:]\/]##@/${match[1]}***@}
+              s=${s//(#b)eyJ[A-Za-z0-9_-]##.[A-Za-z0-9_-]##.[A-Za-z0-9_-]##/eyJ***}
               print -rn -- "$s"
             }
             _hs_pre() { if [[ $1 == ' '* ]]; then typeset -g _HS_CMD=; else typeset -g _HS_CMD=$(_hs_mask "$1"); fi }

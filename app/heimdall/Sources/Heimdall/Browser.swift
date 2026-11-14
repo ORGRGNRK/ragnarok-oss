@@ -75,6 +75,7 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
 
     func go(_ raw: String) {
         guard let u = Browser.resolve(raw) else { return }
+        started = true   // a page opened from a link is not replaced by the home page when the tab first shows
         note = ""; web.load(URLRequest(url: u))
     }
     func back() { web.goBack() }

@@ -11,6 +11,18 @@ final class ChatModel: ObservableObject {
     @Published var msgs: [Msg] = []          // shown (no system prompt)
     @Published var status = "Chat not started"
     @Published var busy = false
+    /// 11-11 report item 7: a reply that is streaming can be stopped
+    @Published var replying = false
+    private var streamProc: Process?
+    private var streamTask: Task<Void, Never>?
+    private var stoppedByUser = false
+
+    func stopReply() {
+        guard replying else { return }
+        stoppedByUser = true
+        streamProc?.terminate()
+        streamTask?.cancel()
+    }
     @Published var started = false
     private var system = ""
     private var session = ""
@@ -93,7 +105,7 @@ final class ChatModel: ObservableObject {
         history += msgs.map { ["role": $0.role, "content": $0.content] }
         if let extra { history.append(["role": "user", "content": extra]) }
         let question = extra == nil ? (msgs.last(where: { $0.role == "user" })?.content ?? "") : ""
-        msgs.append(Msg(role: "assistant", content: "")); busy = true
+        msgs.append(Msg(role: "assistant", content: "")); busy = true; replying = true; stoppedByUser = false
         let idx = msgs.count - 1
         let session = self.session
         let base = history
@@ -110,6 +122,7 @@ final class ChatModel: ObservableObject {
                     notesStatus = Recall.ready ? "No notes matched (or Alexus didn't answer in 15 s)" : "Notes index isn't built on this Mac yet"
                 }
             } else if !useNotes { notesStatus = "" }
+            if stoppedByUser { finish(idx, session); return }   // stopped while the notes were being looked up
             switch provider {
             case "lmstudio": streamLMStudio(history, idx, session)
             case "apple": streamApple(history, idx, session)
@@ -122,8 +135,8 @@ final class ChatModel: ObservableObject {
     /// A cloud model over HTTPS (CloudChat), streamed. The key stays in the keychain.
     private func streamCloud(_ history: [[String: String]], _ idx: Int, _ session: String) {
         let p = CloudChat.provider(cloudProvider), m = cloudModel
-        Task {
-            if let e = await CloudChat.stream(p, model: m, history: history, onText: { self.msgs[idx].content += $0 }) {
+        streamTask = Task {
+            if let e = await CloudChat.stream(p, model: m, history: history, onText: { if !self.stoppedByUser { self.msgs[idx].content += $0 } }) {
                 msgs[idx].content += (msgs[idx].content.isEmpty ? "" : "\n") + "[\(e)]"
             }
             finish(idx, session)
@@ -141,15 +154,16 @@ final class ChatModel: ObservableObject {
             p.arguments = ["-sS", "-N", "--max-time", "300", "-H", "Content-Type: application/json", "--data-binary", "@-", Self.ollama.absoluteString]
             let i = Pipe(), o = Pipe(), e = Pipe(); p.standardInput = i; p.standardOutput = o; p.standardError = e
             do {
-                try p.run()
+                try p.run(); streamProc = p
                 i.fileHandleForWriting.write(body); try? i.fileHandleForWriting.close()
                 for await line in FileHandleLines.lines(from: o.fileHandleForReading) {
                     guard let d = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else { continue }
                     if let piece = (d["message"] as? [String: Any])?["content"] as? String { msgs[idx].content += piece }
                     if let err = d["error"] as? String { AppLog.error("alexus-chat-ollama", message: err); msgs[idx].content += "\n[Ollama error: \(err)]" }
                 }
-                p.waitUntilExit()
-                if p.terminationStatus != 0 {
+                p.waitUntilExit(); streamProc = nil
+                if stoppedByUser { msgs[idx].content += "\n[stopped]" }
+                else if p.terminationStatus != 0 {
                     let err = String(decoding: e.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
                     AppLog.error("alexus-chat-ollama", message: err.isEmpty ? "curl exited \(p.terminationStatus)" : err, code: Int(p.terminationStatus))
                     msgs[idx].content += "\n[Can't reach Alexus (curl exit \(p.terminationStatus)): \(err.oneLine(200))]"
@@ -157,14 +171,15 @@ final class ChatModel: ObservableObject {
             } catch { AppLog.error("alexus-chat-ollama", error); msgs[idx].content += "\n[Couldn't get a reply: \(error.localizedDescription)]" }
             msgs[idx].content = msgs[idx].content.trimmingCharacters(in: .whitespacesAndNewlines)
             Self.write(session, "assistant", msgs[idx].content)
-            busy = false
+            busy = false; replying = false
         }
     }
 
     private func finish(_ idx: Int, _ session: String) {
+        if stoppedByUser, !msgs[idx].content.hasSuffix("[stopped]") { msgs[idx].content += "\n[stopped]" }
         msgs[idx].content = msgs[idx].content.trimmingCharacters(in: .whitespacesAndNewlines)
         Self.write(session, "assistant", msgs[idx].content)
-        busy = false
+        busy = false; replying = false; streamTask = nil
     }
 
     /// LM Studio's local server (OpenAI-style, http://localhost:1234), streamed.
@@ -178,7 +193,7 @@ final class ChatModel: ObservableObject {
             p.arguments = ["-sS", "-N", "--max-time", "600", "-H", "Content-Type: application/json", "--data-binary", "@-", LocalModels.base(serverURL) + "/v1/chat/completions"]
             let i = Pipe(), o = Pipe(), e = Pipe(); p.standardInput = i; p.standardOutput = o; p.standardError = e
             do {
-                try p.run()
+                try p.run(); streamProc = p
                 i.fileHandleForWriting.write(body); try? i.fileHandleForWriting.close()
                 for await line in FileHandleLines.lines(from: o.fileHandleForReading) {
                     guard line.hasPrefix("data: "), line != "data: [DONE]",
@@ -192,8 +207,9 @@ final class ChatModel: ObservableObject {
                         msgs[idx].content += piece
                     }
                 }
-                p.waitUntilExit()
-                if p.terminationStatus != 0 { AppLog.error("alexus-chat-lmstudio", message: "curl exited \(p.terminationStatus)", code: Int(p.terminationStatus)); msgs[idx].content += "\n[Can't reach the server at \(LocalModels.base(serverURL)).]" }
+                p.waitUntilExit(); streamProc = nil
+                if stoppedByUser { msgs[idx].content += "\n[stopped]" }
+                else if p.terminationStatus != 0 { AppLog.error("alexus-chat-lmstudio", message: "curl exited \(p.terminationStatus)", code: Int(p.terminationStatus)); msgs[idx].content += "\n[Can't reach the server at \(LocalModels.base(serverURL)).]" }
             } catch { AppLog.error("alexus-chat-lmstudio", error); msgs[idx].content += "\n[Couldn't get a reply: \(error.localizedDescription)]" }
             finish(idx, session)
         }
@@ -201,10 +217,11 @@ final class ChatModel: ObservableObject {
 
     /// Apple's on-device model (Apple Intelligence), streamed. Runs on this Mac; nothing leaves it.
     private func streamApple(_ history: [[String: String]], _ idx: Int, _ session: String) {
-        Task {
-            msgs[idx].content = await LocalModels.appleReply(history: history, useCase: appleModel, webSearch: true) { text in
-                self.msgs[idx].content = text
+        streamTask = Task {
+            let text = await LocalModels.appleReply(history: history, useCase: appleModel, webSearch: true) { text in
+                if !self.stoppedByUser { self.msgs[idx].content = text }
             }
+            if !stoppedByUser { msgs[idx].content = text }
             finish(idx, session)
         }
     }
@@ -218,7 +235,7 @@ final class ChatModel: ObservableObject {
         let input = (try? JSONSerialization.data(withJSONObject: all)) ?? Data("[]".utf8)
         let session = self.session
         Task.detached {
-            let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/python3"); p.arguments = [Self.bridge, "seal"]
+            let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/python3"); p.arguments = [Self.bridge, "seal", session]   // N13: one pending seal per chat
             let i = Pipe(), o = Pipe(), e = Pipe(); p.standardInput = i; p.standardOutput = o; p.standardError = e
             let result: String
             var saved = false
@@ -444,6 +461,7 @@ struct ChatView: View {
                     .textFieldStyle(.roundedBorder).onSubmit(send).disabled(!chat.started)
                 Button("Send", action: send).disabled(!chat.started || chat.busy || text.isEmpty)
                 if chat.busy { ProgressView().controlSize(.small) }
+                if chat.replying { Button("Stop") { chat.stopReply() }.help("Stop this reply; what came so far is kept") }
             }
             .padding(8)
         }

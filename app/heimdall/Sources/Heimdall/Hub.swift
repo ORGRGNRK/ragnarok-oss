@@ -275,13 +275,19 @@ final class HubModel: ObservableObject {
             let d = h.availableData
             if d.isEmpty { h.readabilityHandler = nil; eof.signal() } else { buf.add(d) }
         }
+        let exited = DispatchSemaphore(value: 0)
+        p.terminationHandler = { _ in exited.signal() }
         guard (try? p.run()) != nil else { out.fileHandleForReading.readabilityHandler = nil; return (-1, "couldn't start \(exe)") }
         let pid = p.processIdentifier
         var timedOut = false
-        if eof.wait(timeout: .now() + timeout) == .timedOut {
+        if exited.wait(timeout: .now() + timeout) == .timedOut {
             timedOut = true
             kill(-pid, SIGTERM)
             if eof.wait(timeout: .now() + 2) == .timedOut { kill(-pid, SIGKILL); _ = eof.wait(timeout: .now() + 1) }
+            out.fileHandleForReading.readabilityHandler = nil
+        } else if eof.wait(timeout: .now() + 1) == .timedOut {
+            // N16: the command itself finished; something it left in the background still holds the pipe. That job is
+            // meant to keep running, so stop reading and report the command's own exit code.
             out.fileHandleForReading.readabilityHandler = nil
         }
         p.waitUntilExit()

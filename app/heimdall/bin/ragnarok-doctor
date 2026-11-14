@@ -387,10 +387,19 @@ class Doctor:
                 return  # rotation raced this poll; retry from the persisted cursor
             f.seek(cursor['offset'])
             data = f.read(1024 * 1024)
+        if cursor.get('skipping'):   # N24: still inside a line over 1 MB; drop it up to its newline, then read normally
+            nl = data.find(b'\n')
+            cursor['offset'] += len(data) if nl < 0 else nl + 1
+            if nl >= 0:
+                cursor.pop('skipping')
+            self.meta('cursor', cursor)
+            return
         end = data.rfind(b'\n')
         if end < 0:
-            if len(data) == 1024 * 1024:
-                raise RuntimeError('oversized unterminated source record; manual inspection required')
+            if len(data) == 1024 * 1024:   # N24: skip it (once), say so, and keep reading what comes after
+                cursor['offset'] += len(data); cursor['skipping'] = True
+                self.meta('cursor', cursor)
+                self.meta('source_gap', 'Unverified: a log line over 1 MB was skipped')
             return
         self.ingest(data[:end+1].decode('utf-8', 'replace'))
         cursor['offset'] += end + 1
@@ -832,7 +841,10 @@ class Doctor:
 
     def run(self, once=False):
         with (self.home/'daemon.lock').open('a') as lock:
-            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            try:
+                fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            except BlockingIOError:   # N25
+                raise SystemExit('the doctor is already running')
             self.recover()
             self.meta('daemon', {'pid':os.getpid(),'started':stamp()})
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
@@ -873,7 +885,14 @@ def main():
         subprocess.run([sys.executable,str(ROOT/'checks/doctor-check.py')],check=True);return
     if not config.exists():
         raise SystemExit('No daemon config; run init first')
-    c=validate_config(json.loads(config.read_text()))
+    try:   # N25: a bad config is one plain line, not a traceback
+        c=validate_config(json.loads(config.read_text()))
+    except json.JSONDecodeError as e:
+        raise SystemExit(f'{config} is not valid JSON (line {e.lineno})')
+    except (KeyError, TypeError) as e:
+        raise SystemExit(f'{config} is missing a setting: {e}')
+    except ValueError as e:
+        raise SystemExit(f'{config}: {e}')
     if a.command in ('install','uninstall'):
         plist=Path.home()/'Library/LaunchAgents'/(LABEL+'.plist')
         domain='gui/'+str(os.getuid())

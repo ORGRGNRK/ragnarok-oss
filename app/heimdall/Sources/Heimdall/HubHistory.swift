@@ -59,7 +59,7 @@ extension HubModel {
             out += commits(p.path)
             out += receipts(p.path)
             out += healHistory(p.path)
-            if ["heimdall", "ragnarok-control-center"].contains(p.name) || AppPaths.isHeimdallRepo(p.path) {
+            if AppPaths.isHeimdallRepo(p.path) {   // N30: by real path only, not by folder name
                 out += editHistory()
                 out += editFailures()
                 out += doctorHistory()

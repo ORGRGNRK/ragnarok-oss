@@ -77,10 +77,15 @@ final class Explainer: ObservableObject {
         for line in text.split(separator: "\n").reversed() {
             let l = line.lowercased()
             guard let k = l.range(of: "risk:") else { continue }
-            // K2: the FIRST level word after "RISK:" ("low (it is not high)" is low), not the scariest word anywhere
-            let after = l[k.upperBound...]
-            let hits = ["high", "medium", "low"].compactMap { r in after.range(of: r).map { (r, $0.lowerBound) } }
-            if let first = hits.min(by: { $0.1 < $1.1 }) { return first.0 }
+            // K2: whole words only ("highly" isn't "high"); a level right after not/no/never doesn't count; of the rest
+            // the LAST one wins ("not high, not medium — low" is low; "low (it is not high)" is low)
+            let words = l[k.upperBound...].split(whereSeparator: { !$0.isLetter && $0 != "'" }).map(String.init)
+            var level: String?
+            for (i, w) in words.enumerated() where ["high", "medium", "low"].contains(w) {
+                if i > 0, ["not", "no", "never", "isn't", "nor"].contains(words[i - 1]) { continue }
+                level = w
+            }
+            if let level { return level }
         }
         return "unknown"
     }

@@ -47,7 +47,10 @@ AGENTS = os.path.join(HOME, ".ragnarok", "agents")
 BRIDGE_ON = os.path.join(HOME, ".conveyor", "room.on")
 ROOM = os.environ.get("ROOM_AGENTD_ROOM", os.path.join(HERE, "room"))
 AGENT = os.path.join(HERE, "ragnarok-agent")
-POLL = max(5, int(os.environ.get("ROOM_AGENTD_POLL", "20")))
+try:
+    POLL = max(5, int(os.environ.get("ROOM_AGENTD_POLL", "20")))
+except ValueError:   # N28: ROOM_AGENTD_POLL=abc
+    POLL = 20
 MAX = max(1, int(os.environ.get("ROOM_AGENTD_MAX", "2")))
 WHO = os.environ.get("ROOM_AGENTD_WHO", "claude")
 SKIP = ("no-agent:", "no-belt:", "hand:", "belt:")
@@ -208,8 +211,8 @@ def start_run(task, dry):
         extra = ["--domain", df]
     p = subprocess.run([sys.executable, AGENT, "start", "--who", WHO, "--cwd", work_folder(),
                         "--room-task", task["id"], "--name", one(f"room {task['id']}: {task['text']}", 60)] + extra
-                       + [prompt],
-                       capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+                       + ["-"],   # N28: the task goes in on stdin, so its size can't overflow the argument list
+                       input=prompt, capture_output=True, text=True, timeout=60)
     rid = p.stdout.strip().splitlines()[-1] if p.returncode == 0 and p.stdout.strip() else None
     if not rid:
         raise RuntimeError(one(p.stderr or p.stdout or f"exit {p.returncode}", 300))
@@ -228,7 +231,7 @@ def eligible(t, bridge_on):
     return True
 
 
-def one_pass(dry=False, last_err=[None]):
+def one_pass(dry=False, last_err=[None], start_fails={}):
     st = load_state()
     try:
         tasks = json.loads(room(["tasks", "--json"]))
@@ -240,6 +243,8 @@ def one_pass(dry=False, last_err=[None]):
     if last_err[0]:
         log("room reachable again")
         last_err[0] = None
+    # N10/N28: odd room answers (not a task, no id) are skipped instead of crashing the pass
+    tasks = [t for t in tasks if isinstance(t, dict) and isinstance(t.get("id"), str) and t["id"]] if isinstance(tasks, list) else []
     open_ids = {t["id"] for t in tasks}
     going = follow(st, open_ids, dry)
     if not dry:
@@ -247,15 +252,22 @@ def one_pass(dry=False, last_err=[None]):
     if os.path.exists(PAUSED):
         return
     bridge_on = os.path.exists(BRIDGE_ON)
-    for t in sorted(tasks, key=lambda x: x.get("ts", "")):
+    for t in sorted(tasks, key=lambda x: str(x.get("ts", ""))):
         if going >= MAX:
             break
-        if t["id"] in st or not eligible(t, bridge_on):
+        if t["id"] in st or not eligible(t, bridge_on) or start_fails.get(t["id"], 0) >= 3:
             continue
         try:
             rid = start_run(t, dry)
         except Exception as e:
             log(f"{t['id']}: couldn't start an agent: {e}")
+            start_fails[t["id"]] = start_fails.get(t["id"], 0) + 1
+            if start_fails[t["id"]] == 3:   # N28: say it once in the room, then stop retrying this task
+                try:
+                    room(["say", one(f"room-agentd: couldn't start an agent for task {t['id']} after 3 tries, so it is left "
+                                     f"for a person: {e}", 600)], as_who=room_id(WHO))
+                except Exception as e2:
+                    log(f"{t['id']}: couldn't post the give-up note: {e2}")
             continue
         if dry:
             going += 1

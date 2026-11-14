@@ -75,16 +75,17 @@ struct MainView: View {
     }()
 
     private var timeline: some View {
-        VStack(spacing: 0) {
+        let shown = filtered   // 11-11 report item 22: filtered once per render, not once per use
+        return VStack(spacing: 0) {
             HStack {
                 TextField("Search everything", text: $search).textFieldStyle(.roundedBorder)
                 Toggle("Follow live", isOn: $follow).toggleStyle(.switch).controlSize(.small)
-                Text("\(filtered.count)").foregroundStyle(.secondary).monospacedDigit()
+                Text("\(shown.count)").foregroundStyle(.secondary).monospacedDigit()
             }
             .padding(8)
             Divider()
             ScrollViewReader { proxy in
-                List(filtered, selection: $selection) { e in
+                List(shown, selection: $selection) { e in
                     Row(e: e).id(e.id)
                         .contextMenu {
                             Button("Copy Title") { Clipboard.copy(e.title) }
@@ -100,7 +101,7 @@ struct MainView: View {
                     return [NSItemProvider(object: e.asText as NSString)]
                 }
                 .onChange(of: store.events.count) {
-                    if follow, let last = filtered.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                    if follow, let last = shown.last { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
             Divider()

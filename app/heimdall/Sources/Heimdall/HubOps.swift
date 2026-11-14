@@ -118,8 +118,9 @@ extension HubModel {
         }
         do {
             try proc.run(); healProc = proc
-            try? inPipe.fileHandleForWriting.write(contentsOf: Data(String(stdin.prefix(100_000)).utf8))
-            try? inPipe.fileHandleForWriting.close()
+            // N6: the whole instruction, never cut; written off the main thread so a long one can't freeze the window
+            let w = inPipe.fileHandleForWriting, all = Data(stdin.utf8)
+            DispatchQueue.global(qos: .userInitiated).async { try? w.write(contentsOf: all); try? w.close() }
         } catch { AppLog.error("hub-operation", error); output += "couldn't start: \(error.localizedDescription)"; running = nil }
     }
 

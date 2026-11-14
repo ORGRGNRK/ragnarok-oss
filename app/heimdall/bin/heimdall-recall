@@ -118,9 +118,9 @@ def failures():
     rows = list(lines(EDITS))
     for d in rows:
         if d.get("step") == "diff":
-            diffs[d.get("edit")] = " ".join(re.findall(r"[\w./-]+\.\w+", text(d.get("detail"))))
+            diffs[text(d.get("edit"))] = " ".join(re.findall(r"[\w./-]+\.\w+", text(d.get("detail"))))
         if d.get("step") == "start" and d.get("detail"):
-            starts[d.get("edit")] = text(d["detail"])
+            starts[text(d.get("edit"))] = text(d["detail"])
     seen = set()
     for d in rows:
         bad = d.get("ok") is False or d.get("step") in ("rollback", "fallback")
@@ -131,13 +131,13 @@ def failures():
         if "\n" in detail:
             fl = [l for l in detail.splitlines() if l.startswith("FAIL")]
             detail = "; ".join(fl) if fl else detail.splitlines()[-1]
-        key = (d.get("step"), detail[:120])
+        key = (text(d.get("step")), detail[:120])   # F1: hashable whatever the record holds
         if key in seen:
             continue
         seen.add(key)
-        edit = d.get("edit", "")
-        who = d.get("who", "?")
-        step = d.get("step")
+        edit = text(d.get("edit", ""))
+        who = text(d.get("who", "?"))
+        step = text(d.get("step"))
         verb = f"{step}:" if step in ("rollback", "fallback", "crash") else f"{step} failed:"
         what = f"heimdall {'launcher' if edit == 'launcher' else 'edit by ' + who}: {verb} {detail[:300]}"
         if edit in starts and edit != "launcher":   # launcher lines share one id, so its "start" isn't this event's

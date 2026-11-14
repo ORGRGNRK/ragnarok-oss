@@ -17,7 +17,7 @@ Every title and body goes through the secret scrubber (the same rules as the Mac
 leaves this script. Model reasoning is never read; Codex transcripts give tool names only.
 Standard library only; works on Python 3.9.
 """
-import argparse, datetime, glob, json, math, os, pwd, re, socket, subprocess, sys, time
+import argparse, datetime, glob, json, math, os, pwd, re, socket, stat, subprocess, sys, time
 
 TAIL = 4 * 1024 * 1024      # per file: only the last 4 MB are read
 PER_FEED = 600              # newest events kept per feed, so one noisy feed cannot push the others out
@@ -43,12 +43,19 @@ PATTERNS = [(n, re.compile(p)) for n, p in [
     ("nocodb-token", r"nc_pat_[A-Za-z0-9_-]{16,}"),
     ("jwt", r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),
     ("bearer", r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}"),
-    ("url-password", r"(?<=://)[^\s:/@]+:[^\s@/]+(?=@)"),
-    ("assignment", r"(?i)\b(?:[A-Z0-9_]*(?:password|passwd|pwd|secret|token|api[_-]?key|apikey|auth|credential)[A-Z0-9_]*)"
+    ("url-password", r"(?<=://)[^\s:/@]*:[^\s@/]+(?=@)"),
+    ("quoted-secret", r"(?i)\b[A-Z0-9_]*(?:password|passwd|passphrase|pwd|secret|token|api[_-]?key|apikey|auth|credential)[A-Z0-9_]*"
+                      r"[\"']?\s*[:=]\s*([\"'])(?!\[hidden)[^\"'\n]{4,}\1"),
+    ("assignment", r"(?i)\b(?:[A-Z0-9_]*(?:password|passwd|passphrase|pwd|secret|token|api[_-]?key|apikey|auth|credential)[A-Z0-9_]*)"
                    r"\s*[:=]\s*[\"']?(?!\[hidden)[^\s\"']{6,}"),
+    ("said-secret", r"\b(?i:password|passphrase|passwd|secret|token)\s+(?i:is|was)\s+(?!\[hidden)(?=\S*[0-9A-Z])\S{6,}"),
+]]
+# keep the command in front, hide only the value: mysql -u root -pPASSWORD shop
+KEEP_PREFIX = [(n, re.compile(p)) for n, p in [
+    ("db-password", r"(?i)(\b(?:mysql|mysqldump|mysqladmin|mariadb|mariadb-dump)\b[^\n]*?\s-p)(?!\[hidden)(\S+)"),
 ]]
 SECRET_NAME = re.compile(r"(?i)(key|token|secret|pass|auth|credential|cookie|session)")
-RANDOMISH = re.compile(r"(?<![A-Za-z0-9+_=-])[A-Za-z0-9+_=-]{32,}(?![A-Za-z0-9+_=-])")
+RANDOMISH = re.compile(r"(?<![A-Za-z0-9+/_=-])[A-Za-z0-9+/_=-]{32,}(?![A-Za-z0-9+/_=-])")
 NOT_SECRET_ENV = {"SSH_AUTH_SOCK", "XPC_SERVICE_NAME", "TERM_SESSION_ID", "SECURITYSESSIONID"}
 _values = None
 
@@ -78,13 +85,16 @@ def _random(m):
     w = m.group(0)
     hexish = all(c in "0123456789abcdefABCDEF" for c in w)
     mixed = any(c.isupper() for c in w) and any(c.islower() for c in w) and any(c.isdigit() for c in w)
-    return "[hidden:random]" if (not hexish and mixed and entropy(w) >= 4.0) else w
+    pathlike = w.startswith("/") and "+" not in w and "=" not in w and all(len(p) <= 40 for p in w.split("/"))
+    return "[hidden:random]" if (not hexish and mixed and not pathlike and entropy(w) >= 4.0) else w
 
 
 def scrub(text):
     for label, v in _values or ():
         if v in text:
             text = text.replace(v, f"[hidden:{label}]")
+    for name, rx in KEEP_PREFIX:
+        text = rx.sub(lambda m: m.group(1) + f"[hidden:{name}]", text)
     for name, rx in PATTERNS:
         text = rx.sub(f"[hidden:{name}]", text)
     return RANDOMISH.sub(_random, text)
@@ -419,12 +429,16 @@ def read_feed(name, patterns, parse, home, cutoff):
     for path in paths:
         try:
             st = os.stat(path)
+            if not stat.S_ISREG(st.st_mode):   # N26: a FIFO or device named like a log would hang the read
+                continue
             if st.st_mtime < cutoff:
                 continue
             recent += 1
             for line in tail_lines(path, st.st_size):
                 try:
-                    events.extend(parse(path, line, st.st_mtime))
+                    for e in parse(path, line, st.st_mtime):
+                        e["title"], e["body"] = str(e.get("title", "")), str(e.get("body", ""))   # N26
+                        events.append(e)
                 except Exception as e:                      # one odd line never takes the feed down
                     errors.append(f"{os.path.basename(path)}: {type(e).__name__}")
         except OSError as e:
@@ -471,7 +485,8 @@ def gather(home, host, hours, since=0.0, limit=1500, room=True):
     events = events[-limit:]
     for e in events:
         e["host"] = host
-        e["title"] = scrub(e["title"])
+        e["title"] = scrub(str(e.get("title", "")))   # N26: a number in a transcript is shown as text, not a crash
+        e["body"] = str(e.get("body", ""))
         body = scrub(e["body"][:20000])
         e["body"] = body[:BODY] + (f"\n… ({len(e['body']) - BODY} more characters not shown)" if len(e["body"]) > BODY else "")
     return {"host": host, "at": now, "hours": hours, "feeds": feeds, "events": events}
@@ -564,6 +579,16 @@ def selfcheck():
     check("ssh receipts: who and what", r[0]["actor"] == "claude" and r[0]["title"] == "$ ls  (Applied (exit=0))" and r[0]["t"] == 1794398416.0)
     m = p_room("", json.dumps({"ts": "2026-11-11T11:12:00.725Z", "id": "d527e1ca", "type": "say", "text": "hi", "by": "grok", "unverified": True}), 0)
     check("room: an unverified author is shown as unknown", m[0]["actor"] == "unknown" and m[0]["title"].startswith("⚠︎ unverified (grok)"))
+    corpus = ("redis://:FAKEredisPW99@host:6379 · mysql -u root -pFAKEmysqlPW55 shop · mkdir -p keepdir\n"
+              "secret FAKEawsSECRETkey/abc+def/ghiJKL12345mno · password = \"FAKE pass with spaces\" · "
+              "the passphrase is FAKEhorseBatteryStaple · password is wrong · ~/Developer/heimdall/Sources/Heimdall/HubHistory.swift\n"
+              + "-----BEGIN " + "OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ\n/w5eN1pDdgkvKlxaA4un2Uld+abc\n"
+              + "-----END " + "OPENSSH PRIVATE KEY-----\nafter")   # header built here so secret scanners don't flag the fake key
+    c = scrub(corpus)
+    check("scrubber: report N23 corpus hidden, ordinary text kept",
+          not any(x in c for x in ["FAKEredisPW99", "FAKEmysqlPW55", "FAKEawsSECRET", "ghiJKL12345", "FAKE pass", "FAKEhorse", "b3BlbnNz", "w5eN1p"])
+          and all(x in c for x in ["-p[hidden:db-password] shop", "mkdir -p keepdir", "password is wrong", "@host:6379",
+                                   "~/Developer/heimdall/Sources/Heimdall/HubHistory.swift", "[hidden:private-key]\nafter"]))
     check("hex (commit hashes) is not treated as a secret", scrub("commit " + "ab12" * 10) == "commit " + "ab12" * 10)
     print(f"\n{'all checks passed' if not fails else str(len(fails)) + ' FAILED'}")
     return 1 if fails else 0

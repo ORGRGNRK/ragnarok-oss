@@ -9,7 +9,11 @@ AS=owner
 usage() { sed -n '2,3p' "$0" | sed 's/^# //'; }
 if [ "${1:-}" = "--as" ]; then AS="${2:-}"; shift 2 2>/dev/null || shift $#; fi
 # E1: --as later in the line would be posted as text under the owner's name; refuse instead
-for a in "$@"; do [ "$a" = "--as" ] && { echo "room: put --as NAME first, e.g.  room --as grok say \"text\"" >&2; exit 2; }; done
+# N12: only when a name follows it, so "how do I use the --as flag" is an ordinary message
+prev=""; for a in "$@"; do
+  [ "$prev" = "--as" ] && case "$a" in owner|chris|claude|argon|grok|codex) echo "room: put --as NAME first, e.g.  room --as grok say \"text\"" >&2; exit 2;; esac
+  prev="$a"; done
+[ "$prev" = "--as" ] && { echo "room: put --as NAME first, e.g.  room --as grok say \"text\"" >&2; exit 2; }
 # item 30: Alexus user/addresses from ~/.ragnarok/local.conf (via bin/local-config.sh; defaults if it can't be found)
 LC="$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/local-config.sh"
 if [ -r "$LC" ]; then . "$LC"; else ALEXUS_USER=$(id -un) ALEXUS_HOST=alexus.local ALEXUS_TAILSCALE=alexus; fi

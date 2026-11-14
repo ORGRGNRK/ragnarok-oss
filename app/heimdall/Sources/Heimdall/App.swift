@@ -217,6 +217,11 @@ struct HeimdallApp: App {
                 if url.host == "services" { hub.tab = "hub"; hub.selected = "services:" }
                 if url.host == "hub" { hub.tab = "hub" }
                 if url.host == "room" { hub.tab = "room" }   // ?path= used to open a project in the Room's editor (removed 11-02)
+                // ragnarok://browse?url=<address>: open a web page in the Browser tab (http/https only, same rules as the address bar)
+                if url.host == "browse", let page = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                    .queryItems?.first(where: { $0.name == "url" })?.value {
+                    hub.tab = "browser"; BrowserModel.shared.go(page)
+                }
                 AppDelegate.showMain()
             }
             .frame(minWidth: 1000, minHeight: 640)

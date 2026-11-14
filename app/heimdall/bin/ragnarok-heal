@@ -148,9 +148,13 @@ GUIDE=$(for f in AGENTS.md CLAUDE.md README.md; do [ -f "$f" ] && { echo "$f"; b
 STEP_OUT="$WT.step"
 cleanup() { cd "$PROJ" 2>/dev/null; rm -f "$STEP_OUT"; git -C "$PROJ" worktree remove --force "$WT" >/dev/null 2>&1; git -C "$PROJ" branch -D "$BRANCH" >/dev/null 2>&1; }
 run_logged() {  # step command... — log every line, keep the tail for the next round. Returns the command's exit code.
-  local step=$1; shift
-  "$@" </dev/null >"$STEP_OUT" 2>&1
-  local rc=$?
+  local step=$1 rc; shift
+  # N5: in its own process group and waited on in the background, so Stop kills it at once (loop_kill_step)
+  LOOP_PGFILE="$(mktemp "${TMPDIR:-/tmp}/loop-pg.XXXXXX")"
+  /usr/bin/perl -e 'open(F, ">", shift) and print(F $$) and close(F); setpgrp(0, 0); exec { $ARGV[0] } @ARGV or exit 127' \
+    "$LOOP_PGFILE" "$@" </dev/null >"$STEP_OUT" 2>&1 &
+  wait $!; rc=$?
+  rm -f "$LOOP_PGFILE"; LOOP_PGFILE=""
   while IFS= read -r line || [ -n "$line" ]; do log "$step" 1 "$line"; printf '%s\n' "$line"; done < "$STEP_OUT"
   LAST_OUT="$(tail -c 1500 "$STEP_OUT" 2>/dev/null || true)"
   # A failing command that prints nothing is still a failure the next round has to see.
@@ -160,7 +164,8 @@ run_logged() {  # step command... — log every line, keep the tail for the next
 run_ai() {
   export HEAL_PROMPT="$PROMPT"
   case "$WHO" in
-    claude) stream ai "$REPO_BIN/claude-live" -p "$PROMPT" --permission-mode acceptEdits --allowedTools "Read,Edit,Write,Glob,Grep" ;;
+    claude) PF="$(mktemp)"; printf '%s' "$PROMPT" > "$PF"   # A8: prompt on stdin, not in the argument list
+            STREAM_STDIN="$PF" stream ai "$REPO_BIN/claude-live" -p --permission-mode acceptEdits --allowedTools "Read,Edit,Write,Glob,Grep"; rc=$?; rm -f "$PF"; (exit $rc) ;;
     grok)   stream ai grok --cwd "$WT" --always-approve -p "$PROMPT" ;;
     codex)  command -v codex >/dev/null || fail ai "codex CLI is not installed on this Mac"
             stream ai codex exec --full-auto "$PROMPT" ;;
@@ -193,16 +198,21 @@ $LAST_OUT"
   fi
   CHANGED=(); while IFS= read -r -d '' f; do CHANGED+=("$f"); done < <(git diff --cached --name-only --relative -z)   # B3
   log diff 1 "$(git diff --cached --stat)"
+  # N7: Heimdall's own source changes only through heimdall-edit (its build, selftest and rollback guard)
+  for f in ${CHANGED[@]+"${CHANGED[@]}"}; do
+    case "$f" in app/heimdall/*) save_failed; fail ai "the change touches Heimdall ($f). Heimdall is changed with heimdall-edit, which builds, self-tests and can roll back; nothing was committed" ;; esac
+  done
   if [ -n "$BUILD" ]; then
     echo "▸ stage: build"
-    if ! run_logged build /usr/bin/perl -e 'alarm 1800; exec @ARGV' /bin/zsh -lc "$BUILD"; then
-      round=$((round + 1)); continue
-    fi
+    run_logged build /usr/bin/perl -e 'alarm 1800; exec @ARGV' /bin/zsh -lc "$BUILD"; rc=$?
+    # B5: a hung build is a timeout, not a test failure, and another round won't fix it
+    [ "$rc" -eq 142 ] && { save_failed; fail build "build timed out after 30 min; stopped (no more rounds)"; }
+    [ "$rc" -ne 0 ] && { round=$((round + 1)); continue; }
   fi
   echo "▸ stage: test"
-  if ! run_logged test /usr/bin/perl -e 'alarm 600; exec @ARGV' /bin/zsh -lc "$TEST"; then
-    round=$((round + 1)); continue
-  fi
+  run_logged test /usr/bin/perl -e 'alarm 600; exec @ARGV' /bin/zsh -lc "$TEST"; rc=$?
+  [ "$rc" -eq 142 ] && { save_failed; fail test "tests timed out after 10 min; stopped (no more rounds)"; }
+  [ "$rc" -ne 0 ] && { round=$((round + 1)); continue; }
   passed=1; break
 done
 [ "$passed" = 1 ] || { save_failed; fail test "still failing after $ROUNDS rounds"; }

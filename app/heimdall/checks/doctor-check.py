@@ -98,6 +98,13 @@ class DoctorTests(unittest.TestCase):
         self.source.write_text(json.dumps(self.event())+'\n');self.d.tail()
         self.assertEqual(len(self.d.status()),2)
         self.d.tail();self.assertTrue(all(r['occurrences']==1 for r in self.d.status()))
+    def test_line_over_1mb_is_skipped_and_reading_continues(self):
+        self.source.write_text(json.dumps(self.event())+'\n');self.d.tail()   # cursor starts at the end
+        with self.source.open('a') as f:
+            f.write('{"message":"' + 'x'*(2*1024*1024+10) + '"}\n'); f.write(json.dumps(self.event(actor='after-big'))+'\n')
+        for _ in range(5): self.d.tail()
+        self.assertIn('over 1 MB', self.d.meta('source_gap'))
+        self.assertEqual(len(self.d.status()), 1)   # the line after the big one was read
     def test_first_event_after_missing_source_is_not_skipped(self):
         self.d.tail();self.assertIn('missing',self.d.meta('source_health'))
         self.source.write_text(json.dumps(self.event())+'\n');self.d.tail()

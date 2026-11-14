@@ -60,6 +60,8 @@ loop_lock "$SUPPORT/edit.lock" stale_cleanup     # one edit at a time; a lock le
 
 log start 1 "$INSTR"
 BASE="$(git -C "$REPO" rev-parse HEAD 2>/dev/null)" || fail start "not a git repo: $REPO"
+# N1: the branch the folder is on now (main, or any other); checked here, before the build, not after it
+HEADREF="$(git -C "$REPO" symbolic-ref -q HEAD)" || fail start "your folder isn't on a branch (detached HEAD); nothing was changed"
 # the app lives in app/heimdall/ of the ragnarok repo (since 2026-11-02); PREFIX is that subfolder, or empty
 PREFIX="$(git -C "$REPO" rev-parse --show-prefix)"
 git -C "$REPO" worktree add -q -b "$BRANCH" "$WT" HEAD 2>&1 || fail worktree "could not make staging copy"
@@ -71,12 +73,16 @@ never print or log secrets; do not run the app; keep it compiling. Stop when the
 
 # A2: manual mode copies tracked changes plus NEW files only under the code folders; never secret-looking files
 CODE_DIRS="Sources/ bin/ recall/ Resources/ docs/ Controls/ launcher/ room/ ops/ checks/ Package.swift make-app.sh make-launcher.sh AGENTS.md .gitignore"
-secretish() { case "$(basename "$1" | tr 'A-Z' 'a-z')" in .env*|*.pem|*.key|*.p12|*.p8|*secret*|*token*|*apikey*|*api-key*|*api_key*|id_rsa*|id_ed25519*|*password*|*credential*) return 0;; esac; return 1; }
+secretish() { case "$(basename "$1" | tr 'A-Z' 'a-z')" in .env*|.envrc|*.pem|*.key|*.p12|*.p8|*.pfx|*.jks|*.keystore|*key*.txt|*key*.json|*secret*|*token*|*apikey*|*api-key*|*api_key*|id_rsa*|id_ed25519*|id_ecdsa*|id_dsa*|*password*|*credential*) return 0;; esac; return 1; }
+# A2: what a secret looks like inside a file, whatever its name (same families as Scrub.swift)
+SECRET_RE='sk-(ant-|proj-|svcacct-)?[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|(AKIA|ASIA)[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|(sk|rk)_live_[A-Za-z0-9]{16,}|xai-[A-Za-z0-9]{20,}|nc_pat_[A-Za-z0-9_-]{16,}|AGE-SECRET-KEY-1[A-Z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
+secret_inside() { LC_ALL=C grep -qE -- "$SECRET_RE" "$1" 2>/dev/null; }
 manual_snapshot() {  # writes the patch of the owner's changes to stdout; lists skipped untracked files on stderr
   local f keep=()
   ( cd "$REPO" && git diff --binary --relative HEAD -- . )   # only this folder, paths relative to it
   while IFS= read -r -d '' f; do
     if secretish "$f"; then echo "skipped (looks like a secret): $f" >&2; continue; fi
+    if secret_inside "$REPO/$f"; then echo "skipped (has a key or token inside): $f" >&2; continue; fi
     case " $CODE_DIRS " in *" ${f%%/*}/ "*|*" $f "*) keep+=("$f") ;; *) echo "skipped (new file outside the code folders): $f" >&2 ;; esac
   done < <(cd "$REPO" && git ls-files --others --exclude-standard -z)
   # git diff --no-index takes ONE new file at a time (several at once fails), so each new file is diffed on its own
@@ -86,7 +92,8 @@ manual_snapshot() {  # writes the patch of the owner's changes to stdout; lists 
 cd "$WT/$PREFIX" || fail worktree "staging copy missing"
 echo "▸ stage: ai"   # the Hub's progress bar follows these lines
 case "$WHO" in
-  claude) stream ai "$REPO/bin/claude-live" -p "$PROMPT" --permission-mode acceptEdits --allowedTools "Read,Edit,Write,Glob,Grep,Bash(swift build*)" ;;
+  claude) PF="$(mktemp)"; printf '%s' "$PROMPT" > "$PF"   # A8: the prompt goes in on stdin, so its size has no limit
+          STREAM_STDIN="$PF" stream ai "$REPO/bin/claude-live" -p --permission-mode acceptEdits --allowedTools "Read,Edit,Write,Glob,Grep,Bash(swift build*)"; rc=$?; rm -f "$PF"; (exit $rc) ;;
   grok)   stream ai grok --cwd "$WT" --always-approve -p "$PROMPT" ;;
   codex)  command -v codex >/dev/null || fail ai "codex CLI is not installed on this Mac"
           stream ai codex exec --full-auto "$PROMPT" ;;
@@ -96,6 +103,9 @@ case "$WHO" in
           # applied from the top of the staging copy: inside a subfolder, git apply skips every file silently
           if [ -s "$PATCH" ]; then git -C "$WT" apply --index ${PREFIX:+--directory="${PREFIX%/}"} "$PATCH" 2>&1 || { rm -f "$PATCH"; fail ai "could not copy your changes into the staging copy"; }
           else rm -f "$PATCH"; fail ai "no uncommitted changes in $REPO (new files outside the code folders aren't picked up)"; fi
+          # A2: a change to a tracked file that adds a key or token is not committed (the commit goes to the Alexus backup)
+          LEAKS="$(awk '/^\+\+\+ b\//{f=substr($0,7)} /^\+[^+]/{print f"\t"substr($0,2)}' "$PATCH" | LC_ALL=C grep -E -- "$SECRET_RE" | cut -f1 | sort -u)"
+          [ -n "$LEAKS" ] && { rm -f "$PATCH"; fail ai "your changes add what looks like a key or token, so nothing was committed. Take it out of: $(echo $LEAKS)"; }
           rm -f "$PATCH" ;;
 esac
 rc=$?; [ $rc -eq 0 ] || fail ai "$WHO exited $rc"
@@ -123,10 +133,11 @@ cd "$REPO"
 if [ "$WHO" = manual ]; then
   # A1: never stash, reset --hard or clean the owner's folder. Move main to the new commit and re-sync only the index; the
   # files on disk are left exactly as they are, so anything he changed during the build stays as an uncommitted change.
-  [ "$(git symbolic-ref -q HEAD)" = refs/heads/main ] || fail merge "your folder isn't on main; nothing was installed (your files are untouched)"
-  [ "$(git rev-parse HEAD)" = "$BASE" ] || fail merge "main moved during the build; nothing was installed (your files are untouched)"
-  git update-ref -m "heimdall-edit $ID" refs/heads/main "$(git -C "$WT" rev-parse HEAD)" "$BASE" && git reset -q \
-    || fail merge "could not move main to the new commit; nothing was installed (your files are untouched)"
+  [ "$(git symbolic-ref -q HEAD)" = "$HEADREF" ] || fail merge "your folder switched branches during the build; nothing was installed (your files are untouched)"
+  [ "$(git rev-parse HEAD)" = "$BASE" ] || fail merge "${HEADREF#refs/heads/} moved during the build; nothing was installed (your files are untouched)"
+  # N2: re-sync the index for this folder only; files staged elsewhere in the monorepo stay staged
+  git update-ref -m "heimdall-edit $ID" "$HEADREF" "$(git -C "$WT" rev-parse HEAD)" "$BASE" && git reset -q -- . \
+    || fail merge "could not move ${HEADREF#refs/heads/} to the new commit; nothing was installed (your files are untouched)"
 elif ! git merge -q --ff-only "$BRANCH" 2>&1; then
   fail merge "main moved, or you have unsaved edits to the same files; nothing was installed"
 fi

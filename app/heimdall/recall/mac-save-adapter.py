@@ -20,8 +20,9 @@ _spec.loader.exec_module(_save)
 globals().update({k: v for k, v in vars(_save).items() if not k.startswith("__")})
 
 # J1: credential words only as whole parts of the name (GITHUB_TOKEN, OPENAI_API_KEY), not inside words (PATH, COMPASS)
-SECRET_KEY = re.compile(r"(^|_)(KEY|KEYS|APIKEY|TOKEN|SECRET|PAT|PASSWORD|PASSWD|PASS|PWD|BEARER|CREDENTIAL|CREDENTIALS|AUTH)(_|$)", re.I)
-URL_PASSWORD = re.compile(r"[a-z][a-z0-9+.-]*://[^/\s:@]+:([^@\s/]+)@", re.I)   # postgres://user:PASSWORD@host
+SECRET_KEY = re.compile(r"(^|_)(KEY|KEYS|APIKEY|TOKEN|SECRET|PAT|PASSWORD|PASSWD|PASS|PWD|BEARER|CREDENTIAL|CREDENTIALS|AUTH"
+                        r"|ROLE|SK|PRIVATE|DSN)(_|$)", re.I)   # ROLE: SUPABASE_SERVICE_ROLE, SK: STRIPE_SK, DSN: SENTRY_DSN
+URL_PASSWORD = re.compile(r"[a-z][a-z0-9+.-]*://[^/\s:@]*:([^@\s/]+)@", re.I)   # postgres://user:PASSWORD@host, rediss://:PASSWORD@host
 
 
 def _env_value(raw):
@@ -38,6 +39,7 @@ def _mac_secrets():
     # .env files in the owner's projects: every value whose key name says it is a credential
     paths = set(glob.glob(os.path.join(REAL_HOME, "Developer", "**", ".env"), recursive=True))
     paths |= set(glob.glob(os.path.join(REAL_HOME, "Developer", "**", ".env.*"), recursive=True))   # J1: .env.local etc.
+    paths |= set(glob.glob(os.path.join(REAL_HOME, "Developer", "**", ".envrc"), recursive=True))   # direnv files
     for path in sorted(paths):
         if "/node_modules/" in path or path.endswith((".example", ".sample", ".template", ".dist")) or not os.path.isfile(path):
             continue

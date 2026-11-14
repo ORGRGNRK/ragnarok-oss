@@ -1,0 +1,260 @@
+#!/usr/bin/env python3
+"""Ingest pipe: everything dropped in a folder, or piped in, goes to Intake on Alexus over Tailscale.
+
+  ragnarok-ingest                  watch ~/Intake forever (what the LaunchAgent runs)
+  ragnarok-ingest --once           one pass over the folder, then exit
+  some-command | ragnarok-ingest - send stdin as one text item
+  ragnarok-ingest --install        install + start the macOS LaunchAgent
+  ragnarok-ingest --uninstall      stop + remove it
+  ragnarok-ingest --status         folder counts, last receipts, is Intake reachable
+
+Sending is done by ragnarok-intake (same folder), so URL/TOKEN come from ~/.ragnarok/intake.env
+and the token is never seen here. A file is sent only after its size and mtime hold still across
+two passes. Sent files are MOVED to <folder>/.sent/, never copied. A file Intake refuses is moved
+to <folder>/.failed/ with a .why note. If Alexus is unreachable the file stays put and is retried.
+Every send is a line in ~/.ragnarok/ingest.jsonl. Nothing sent is run.
+"""
+import argparse
+import datetime
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+SENDER = HERE / "ragnarok-intake"
+LEDGER = Path.home() / ".ragnarok" / "ingest.jsonl"
+DEFAULT_DIR = Path(os.environ.get("RAGNAROK_INGEST_DIR") or Path.home() / "Intake")
+LABEL = "co.rgnrk.ragnarok-ingest"
+PLIST = Path.home() / "Library" / "LaunchAgents" / (LABEL + ".plist")
+PARTIAL = (".crdownload", ".part", ".download", ".partial", ".tmp")
+UNREACHABLE = "Alexus is unreachable"
+
+
+def now():
+    return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def log(msg):
+    print("%s %s" % (now(), msg), flush=True)
+
+
+def receipt(entry):
+    LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    entry = {"ts": now(), **entry}
+    with LEDGER.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry) + "\n")
+
+
+def parse_sent(out):
+    got = {}
+    for line in out.splitlines():
+        if ":" in line:
+            key, val = line.split(":", 1)
+            got[key.strip()] = val.strip()
+    return got
+
+
+def send(args_list, stdin_text=None):
+    """Run ragnarok-intake. Returns ('ok', fields) / ('retry', why) / ('refused', why)."""
+    try:
+        res = subprocess.run([sys.executable, str(SENDER), *args_list], input=stdin_text,
+                             capture_output=True, text=True, timeout=6 * 60 * 60)
+    except subprocess.TimeoutExpired:
+        return "retry", "timed out"
+    if res.returncode == 0:
+        fields = parse_sent(res.stdout)
+        if fields.get("sha256"):
+            return "ok", fields
+        return "refused", "ragnarok-intake exited 0 but printed no sha256"
+    why = (res.stderr or res.stdout).strip() or "exit %s" % res.returncode
+    if UNREACHABLE in why or "not set up" in why:
+        return "retry", why
+    return "refused", why
+
+
+def unique(dest):
+    if not dest.exists():
+        return dest
+    stem, suf = dest.stem, dest.suffix
+    n = 1
+    while True:
+        cand = dest.with_name("%s-%d%s" % (stem, n, suf))
+        if not cand.exists():
+            return cand
+        n += 1
+
+
+def candidates(folder):
+    for p in sorted(folder.iterdir()):
+        name = p.name
+        if name.startswith(".") or name.lower().endswith(PARTIAL) or name == "Icon\r":
+            continue
+        if p.is_file() and not p.is_symlink():
+            yield p
+
+
+def one_pass(folder, seen, args):
+    """seen: path -> (size, mtime) from the last pass. A file goes once it has held still."""
+    sent_dir, failed_dir = folder / ".sent", folder / ".failed"
+    current = {}
+    for p in candidates(folder):
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        sig = (st.st_size, st.st_mtime)
+        current[p] = sig
+        if seen.get(p) != sig and not args.now:
+            continue  # new or still changing; check again next pass
+        extra = ["--sender", args.sender, "--tag", args.tag] + (["--project", args.project] if args.project else [])
+        status, info = send(extra + [str(p)])
+        if status == "ok":
+            sent_dir.mkdir(exist_ok=True)
+            dest = unique(sent_dir / p.name)
+            shutil.move(str(p), str(dest))
+            receipt({"result": "sent", "file": p.name, "moved_to": str(dest), "id": info.get("id"),
+                     "sha256": info.get("sha256"), "bytes": info.get("bytes"), "stored": info.get("stored")})
+            log("sent %s -> Intake #%s (%s)" % (p.name, info.get("id"), info.get("stored")))
+            current.pop(p, None)
+        elif status == "refused":
+            failed_dir.mkdir(exist_ok=True)
+            dest = unique(failed_dir / p.name)
+            shutil.move(str(p), str(dest))
+            dest.with_name(dest.name + ".why").write_text(info + "\n", encoding="utf-8")
+            receipt({"result": "refused", "file": p.name, "moved_to": str(dest), "why": info[:500]})
+            log("REFUSED %s: %s" % (p.name, info[:200]))
+            current.pop(p, None)
+        else:
+            log("waiting on Alexus, %s stays: %s" % (p.name, info[:200]))
+            return current  # Alexus is down; don't hammer it with the rest this pass
+    return current
+
+
+def watch(args):
+    folder = args.dir.expanduser()
+    folder.mkdir(parents=True, exist_ok=True)
+    log("watching %s every %ss" % (folder, args.every))
+    seen = {}
+    while True:
+        try:
+            seen = one_pass(folder, seen, args)
+        except Exception as exc:  # keep the pipe alive; the error is logged
+            log("pass failed: %s: %s" % (exc.__class__.__name__, exc))
+        if args.once:
+            if seen and not args.now:  # new files need a second look to prove they are done
+                time.sleep(min(args.every, 3))
+                args.now = True
+                seen = one_pass(folder, seen, args)
+            return
+        time.sleep(args.every)
+
+
+def from_stdin(args):
+    text = sys.stdin.read()
+    if not text.strip():
+        sys.exit("Nothing on stdin. Nothing was sent.")
+    extra = ["--sender", args.sender, "--tag", args.tag, "--kind", "text"]
+    if args.title:
+        extra += ["--title", args.title]
+    if args.project:
+        extra += ["--project", args.project]
+    status, info = send(extra + [text])
+    if status == "ok":
+        receipt({"result": "sent", "file": "<stdin>", "id": info.get("id"), "sha256": info.get("sha256"),
+                 "bytes": info.get("bytes")})
+        print("Intake #%s sha256:%s" % (info.get("id"), info.get("sha256")))
+        return
+    receipt({"result": status, "file": "<stdin>", "why": info[:500]})
+    sys.exit(info)
+
+
+def install(args):
+    folder = args.dir.expanduser()
+    folder.mkdir(parents=True, exist_ok=True)
+    logs = Path.home() / ".ragnarok" / "ingest.log"
+    py = "/usr/bin/python3" if os.path.exists("/usr/bin/python3") else sys.executable  # survives brew upgrades
+    prog = [py, str(Path(__file__).resolve()), "--dir", str(folder), "--every", str(args.every)]
+    items = "".join("<string>%s</string>" % s.replace("&", "&amp;").replace("<", "&lt;") for s in prog)
+    PLIST.parent.mkdir(parents=True, exist_ok=True)
+    PLIST.write_text("""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>%s</string>
+<key>ProgramArguments</key><array>%s</array>
+<key>RunAtLoad</key><true/>
+<key>KeepAlive</key><true/>
+<key>ThrottleInterval</key><integer>30</integer>
+<key>StandardOutPath</key><string>%s</string>
+<key>StandardErrorPath</key><string>%s</string>
+</dict></plist>
+""" % (LABEL, items, logs, logs), encoding="utf-8")
+    uid = str(os.getuid())
+    subprocess.run(["launchctl", "bootout", "gui/%s/%s" % (uid, LABEL)], capture_output=True)
+    res = subprocess.run(["launchctl", "bootstrap", "gui/" + uid, str(PLIST)], capture_output=True, text=True)
+    if res.returncode != 0:
+        sys.exit("launchctl bootstrap failed: %s" % res.stderr.strip())
+    print("installed %s, watching %s, log %s" % (LABEL, folder, logs))
+
+
+def uninstall(_args):
+    subprocess.run(["launchctl", "bootout", "gui/%s/%s" % (os.getuid(), LABEL)], capture_output=True)
+    if PLIST.exists():
+        PLIST.unlink()
+    print("removed %s (files in the folder are untouched)" % LABEL)
+
+
+def status(args):
+    folder = args.dir.expanduser()
+    def count(d):
+        return sum(1 for p in d.iterdir() if p.is_file() and not p.name.endswith(".why")) if d.is_dir() else 0
+    waiting = len(list(candidates(folder))) if folder.is_dir() else 0
+    print("folder:  %s  waiting %d, sent %d, failed %d" % (folder, waiting, count(folder / ".sent"), count(folder / ".failed")))
+    res = subprocess.run(["launchctl", "print", "gui/%s/%s" % (os.getuid(), LABEL)], capture_output=True, text=True)
+    state = next((l.split("=", 1)[1].strip() for l in res.stdout.splitlines() if l.strip().startswith("state =")), None)
+    print("agent:   %s" % (state or "not installed"))
+    r = subprocess.run([sys.executable, str(SENDER), "--search", "__ingest_reachability_probe__"],
+                       capture_output=True, text=True, timeout=30)
+    print("intake:  %s" % ("reachable" if r.returncode == 0 else (r.stderr.strip() or "error")[:200]))
+    if LEDGER.exists():
+        lines = LEDGER.read_text(encoding="utf-8").splitlines()[-5:]
+        print("last receipts:")
+        for line in lines:
+            print("  " + line)
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Ingest pipe to Intake over Tailscale.")
+    ap.add_argument("stdin", nargs="?", help="'-' to send stdin as one text item")
+    ap.add_argument("--dir", type=Path, default=DEFAULT_DIR)
+    ap.add_argument("--every", type=int, default=5, help="seconds between passes")
+    ap.add_argument("--once", action="store_true")
+    ap.add_argument("--now", action="store_true", help="don't wait for a file to hold still")
+    ap.add_argument("--sender", default=os.environ.get("RAGNAROK_ACTOR") or "ingest-pipe")
+    ap.add_argument("--tag", default="ingest-pipe")
+    ap.add_argument("--project", default="")
+    ap.add_argument("--title", default="")
+    ap.add_argument("--install", action="store_true")
+    ap.add_argument("--uninstall", action="store_true")
+    ap.add_argument("--status", action="store_true")
+    args = ap.parse_args()
+    if not SENDER.is_file():
+        sys.exit("ragnarok-intake is missing next to this script: %s" % SENDER)
+    if args.install:
+        return install(args)
+    if args.uninstall:
+        return uninstall(args)
+    if args.status:
+        return status(args)
+    if args.stdin == "-":
+        return from_stdin(args)
+    if args.stdin:
+        sys.exit("Unknown argument %r. Use '-' for stdin, or ragnarok-intake for one file." % args.stdin)
+    watch(args)
+
+
+if __name__ == "__main__":
+    main()

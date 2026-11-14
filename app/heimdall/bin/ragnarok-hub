@@ -67,6 +67,7 @@ def inspect(d):
         p["dirty"] = len((git(d, "status", "--porcelain", "--", ".") or "").splitlines())
         url = git(d, "remote", "get-url", "origin") or (git(d, "remote") and git(d, "remote", "get-url", git(d, "remote").splitlines()[0]))
         if url:
+            url = url.split("?", 1)[0].split("#", 1)[0]   # N27: no ?private_token=… in the list
             p["remote"] = url.split("@")[-1].replace("https://", "").replace("github.com:", "github.com/").removesuffix(".git")
             ahead = git(d, "rev-list", "--count", "@{u}..HEAD")
             p["unpushed"] = int(ahead) if ahead is not None and ahead.isdigit() else (None if git(d, "rev-parse", "HEAD") is None else -1)
@@ -94,22 +95,23 @@ def inspect(d):
 
 
 def projects(roots):
-    seen, out = set(), []
+    seen, out, dirs = set(), [], []
     for r in roots:
         try:
             names = sorted(n for n in os.listdir(r) if not n.startswith("."))
         except OSError:
             continue
-        for n in names:
-            d = os.path.join(r, n)
-            if not os.path.isdir(d) or d.endswith(".app"):
-                continue
-            canon = os.path.realpath(d).lower()
-            link = os.path.islink(d)
-            if canon in seen and not link:
-                continue
-            seen.add(canon)
-            out.append(inspect(d))
+        dirs += [os.path.join(r, n) for n in names]
+    # N27: real folders first, then links, so a link that sorts first can't hide the folder it points to
+    for d in sorted(dirs, key=os.path.islink):
+        if not os.path.isdir(d) or d.endswith(".app"):
+            continue
+        canon = os.path.realpath(d).lower()
+        link = os.path.islink(d)
+        if canon in seen and not link:
+            continue
+        seen.add(canon)
+        out.append(inspect(d))
     return sorted(out, key=lambda p: -p["modified"])
 
 
@@ -129,7 +131,10 @@ def containers():
 def main():
     args, roots = sys.argv[1:], []
     while "--root" in args:
-        i = args.index("--root"); roots.append(os.path.expanduser(args[i + 1])); del args[i:i + 2]
+        i = args.index("--root")
+        if i + 1 >= len(args):
+            sys.exit("ragnarok-hub: --root needs a folder")   # N27
+        roots.append(os.path.expanduser(args[i + 1])); del args[i:i + 2]
     if args:
         sys.exit(__doc__)
     json.dump({"host": socket.gethostname().split(".")[0], "at": int(time.time()),

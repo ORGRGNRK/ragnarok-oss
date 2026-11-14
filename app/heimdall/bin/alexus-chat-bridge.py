@@ -103,6 +103,10 @@ def q(text):
             return f"${tag}${text}${tag}$"
 
 
+class Refused(RuntimeError):
+    """The database answered and said no (bad SQL, a constraint): sending it again won't help."""
+
+
 def psql(rb, sql):
     try:
         r = subprocess.run(rb.on_alexus("docker exec -i ck-ragnarok-hq-postgres-1 psql -U kit_admin -d clientdata -v ON_ERROR_STOP=1 -q -t -A", timeout=5),
@@ -112,18 +116,25 @@ def psql(rb, sql):
     if r.returncode == 255:
         raise RuntimeError("Alexus is unreachable over ssh")
     if r.returncode != 0:
-        raise RuntimeError(f"the database refused it: {(r.stderr.strip().splitlines() or ['exit %d' % r.returncode])[-1][:200]}")
+        raise Refused(f"the database refused it: {(r.stderr.strip().splitlines() or ['exit %d' % r.returncode])[-1][:200]}")
     return r.stdout.strip()
 
 
 def retry_pending(rb):
-    """H2: seals saved while Alexus was unreachable are sent now (oldest first); kept if it still fails."""
+    """H2: seals saved while Alexus was unreachable are sent now, one at a time, oldest first.
+    N14: one the database refuses moves to pending/failed/ (kept, not retried) and the rest still go;
+    if Alexus can't be reached, all of them stay for next time."""
     sent = 0
     for f in sorted(glob.glob(os.path.join(PENDING, "*.sql"))):
         try:
             with open(f) as h:
                 psql(rb, h.read())
             os.remove(f); sent += 1
+        except Refused as e:
+            bad = os.path.join(PENDING, "failed")
+            os.makedirs(bad, mode=0o700, exist_ok=True)
+            os.replace(f, os.path.join(bad, os.path.basename(f)))
+            print(f"a saved summary was refused by the database and moved to {bad}: {e}", file=sys.stderr)
         except (OSError, RuntimeError):
             break
     return sent
@@ -140,6 +151,8 @@ def seal():
     if not any(m.get("role") == "user" for m in messages):
         print(json.dumps({"skipped": "nothing was said"})); return
     rb = bridge()
+    # N13: the app passes its chat's session id; a newer seal of the same chat replaces one still waiting to be sent
+    session = re.sub(r"[^A-Za-z0-9]", "", sys.argv[2])[:40] if len(sys.argv) > 2 else ""
     # H1: unique even for two seals in the same second
     packet_id = f"SW-{datetime.datetime.now():%Y%m%d-%H%M%S}-{secrets.token_hex(2)}-{PROJECT}"
     prompt = ("Summarize this AI chat session in two concise sections:\n"
@@ -178,7 +191,10 @@ COMMIT;"""
     except RuntimeError as e:
         # H2: keep it to send next time, and say so in one line (the app keeps the chat open)
         os.makedirs(PENDING, mode=0o700, exist_ok=True)
-        pf = os.path.join(PENDING, packet_id + ".sql")
+        pf = os.path.join(PENDING, packet_id + (f".{session}" if session else "") + ".sql")
+        if session:
+            for old in glob.glob(os.path.join(PENDING, f"*.{session}.sql")):
+                os.remove(old)   # the same chat sealed again while offline: only the newest summary is sent
         with open(os.open(pf, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as h:
             h.write(sql)
         fail(f"couldn't save the summary to the database: {e}. The transcript is saved and the summary will be sent next time.")

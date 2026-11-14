@@ -182,16 +182,18 @@ def load():
     out = []
     for p in glob.glob(os.path.join(BASE, "*.jsonl")):
         out += records_from(p)[0]
-    return sorted(out, key=lambda r: r.get("ts", ""))
+    # N9: a record whose ts isn't text (a number, null) can't be ordered with the rest; it is left out
+    return sorted((r for r in out if isinstance(r.get("ts"), str)), key=lambda r: r["ts"])
 
 
 def spec_lines(r, indent):
     out = []
     if r.get("outcome"):
         out.append(f"{indent}outcome: {r['outcome']}")
-    for x in r.get("proof") or []:
+    as_list = lambda v: [v] if isinstance(v, str) else (v if isinstance(v, list) else [])   # N11: "run" is one proof
+    for x in as_list(r.get("proof")):
         out.append(f"{indent}proof:   {x}")
-    for x in r.get("walls") or []:
+    for x in as_list(r.get("walls")):
         out.append(f"{indent}wall:    {x}")
     return out
 
@@ -206,7 +208,7 @@ def show(r):
         body = f"{tag}{ref}" + (f" — {body}" if body else "")
     else:
         body = tag + body
-    print(f"{t}  {r['by']:>8}  {body}")
+    print(f"{t}  {r.get('by', '?'):>8}  {body}")
     if k == "task":
         for line in spec_lines(r, " " * 20):
             print(line)
@@ -216,10 +218,12 @@ def task_states(recs):
     tasks = {}
     for r in recs:
         if r.get("type") == "task":
-            tasks[r["id"]] = {"id": r["id"], "text": r.get("text", ""), "by": r["by"], "ts": r["ts"], "state": "open", "owner": None}
+            if not isinstance(r.get("id"), str) or not r["id"]:
+                continue   # N10: a task with no id can't be claimed or finished; left out
+            tasks[r["id"]] = {"id": r["id"], "text": r.get("text", ""), "by": r.get("by", "?"), "ts": r.get("ts", ""), "state": "open", "owner": None}
             for f in ("outcome", "proof", "walls"):
                 if r.get(f):
-                    tasks[r["id"]][f] = r[f]
+                    tasks[r["id"]][f] = [r[f]] if f != "outcome" and isinstance(r[f], str) else r[f]   # N11
         elif r.get("type") in ("claim", "done") and r.get("ref") in tasks:
             t = tasks[r["ref"]]
             t["state"] = "claimed" if r["type"] == "claim" else "done"

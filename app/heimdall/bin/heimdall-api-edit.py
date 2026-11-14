@@ -111,6 +111,15 @@ def main():
         target = (folder / f["path"]).resolve()
         if folder not in target.parents:
             die(f"refused path outside the app folder: {f['path']}; nothing was written")
+        if target.is_dir():
+            die(f"refused: {f['path']} is a folder, not a file; nothing was written")
+        p = target.parent
+        while p != folder:   # a parent that is a file (AGENTS.md/x.swift) can't hold a file
+            if p.exists() and not p.is_dir():
+                die(f"refused: {f['path']} would go inside {p.relative_to(folder)}, which is a file; nothing was written")
+            p = p.parent
+        if any(t == target for _, t, _ in plan):
+            die(f"the model sent {f['path']} twice; nothing was written")
         plan.append((f["path"], target, f["content"]))
     # G3: never overwrite uncommitted work in those files
     st = subprocess.run(["git", "-C", str(folder), "status", "--porcelain", "--"] + [str(t) for _, t, _ in plan],
@@ -118,10 +127,22 @@ def main():
     if st.returncode == 0 and st.stdout.strip():
         die("these files have uncommitted changes, so nothing was written (use bin/heimdall-edit, which works on a "
             "staging copy):\n" + st.stdout.rstrip())
-    for rel, target, content in plan:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        existed = target.exists()
-        target.write_text(content)
+    # G2: every file is written to a temp name next to it first; the real names change only when all writes worked
+    staged = []
+    try:
+        for rel, target, content in plan:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            tmp = target.with_name(f".{target.name}.api-edit-{os.getpid()}")
+            tmp.write_text(content)
+            if target.exists():
+                os.chmod(tmp, target.stat().st_mode & 0o7777)
+            staged.append((rel, target, tmp, target.exists()))
+    except OSError as e:
+        for _, _, tmp, _ in staged:
+            tmp.unlink(missing_ok=True)
+        die(f"couldn't write the change ({e}); nothing was written")
+    for rel, target, tmp, existed in staged:
+        os.replace(tmp, target)
         receipt(provider, "Updated" if existed else "Created", target)
         print(f"wrote {rel}", flush=True)
     print(str(reply.get("summary", "")), flush=True)

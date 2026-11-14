@@ -235,8 +235,13 @@ enum SelfTest {
         print("\(tcOK ? "ok  " : "FAIL") web-tool-calls")
         if !tcOK { ok = false }
         let riskOK = Explainer.risk(in: "RISK: low (it is not high)") == "low" && Explainer.risk(in: "RISK: medium") == "medium"
+            && Explainer.risk(in: "RISK: none of this is highly risky, low") == "low"
+            && Explainer.risk(in: "RISK: not high, not medium — low") == "low" && Explainer.risk(in: "RISK: high") == "high"
         let t0 = Date(); let (hubRC, _) = HubModel.run("/bin/sh", ["-c", "sleep 30 & sleep 30"], timeout: 1)
+        // N16: a command that leaves a job in the background and exits is done, with its own exit code
+        let t1 = Date(); let (bgRC, bgOut) = HubModel.run("/bin/sh", ["-c", "echo bg; sleep 30 & echo parent-done"], timeout: 10)
         let hubTimeoutOK = hubRC == 124 && Date().timeIntervalSince(t0) < 6
+            && bgRC == 0 && bgOut.contains("parent-done") && !bgOut.contains("[stopped") && Date().timeIntervalSince(t1) < 4
         let (h1, held) = ShellSession.holdIncompleteEscape("red \u{1B}[3")
         let escOK = h1 == "red " && held == "\u{1B}[3" && ShellSession.holdIncompleteEscape("x\u{1B}[31m").1.isEmpty
         let k25 = riskOK && hubTimeoutOK && escOK
@@ -409,14 +414,26 @@ enum SelfTest {
         curl https://sam:hunter2pass@example.com/x · env value plainvalue-9f8e7d6c · Bearer abcdefghijklmnop1234
         random Zq8Lm2Xv9Rt4Yp7Kw3Nb6Hs1Jd5Gf0Qa end
         keep commit 989728b3c1f0e2d4a5b6c7d8e9f0a1b2c3d4e5f6, path ~/Developer/heimdall/Sources/Heimdall/HubHistory.swift, age1fido2-hmac1qqpxwg8r4nn
+        redis://:FAKEredisPW99@host:6379 · mysql -u root -pFAKEmysqlPW55 shop · mkdir -p keepdir
+        secret FAKEawsSECRETkey/abc+def/ghiJKL12345mno · password = "FAKE pass with spaces" · the passphrase is FAKEhorseBatteryStaple · password is wrong
         """
         let red = Scrub.clean(sample)
-        let gone = ["abc123def", fakeGH, "1QQPQZRFR7", "hunter2pass", "plainvalue-9f8e7d6c", "abcdefghijklmnop1234", "Zq8Lm2Xv9Rt4"]
+        let gone = ["abc123def", fakeGH, "1QQPQZRFR7", "hunter2pass", "plainvalue-9f8e7d6c", "abcdefghijklmnop1234", "Zq8Lm2Xv9Rt4",
+                    "FAKEredisPW99", "FAKEmysqlPW55", "FAKEawsSECRET", "ghiJKL12345", "FAKE pass", "FAKEhorse"]
         let kept = ["989728b3c1f0e2d4a5b6c7d8e9f0a1b2c3d4e5f6", "~/Developer/heimdall/Sources/Heimdall/HubHistory.swift", "age1fido2-hmac1qqpxwg8r4nn",
-                    "[hidden:env:TEST_API_KEY]", "[hidden:github-token]", "[hidden:url-password]", " end", " ok"]
+                    "[hidden:env:TEST_API_KEY]", "[hidden:github-token]", "[hidden:url-password]", " end", " ok",
+                    "mysql -u root -p[hidden:db-password] shop", "mkdir -p keepdir", "password is wrong", "@host:6379"]
         let redOK = gone.allSatisfy { !red.contains($0) } && kept.allSatisfy { red.contains($0) }
         print("\(redOK ? "ok  " : "FAIL") scrub: \(red.replacingOccurrences(of: "\n", with: " ⏎ "))")
         if !redOK { ok = false }
+        // a private key read line by line (ragnarok-ai-log): hidden from BEGIN to END, the lines around it kept
+        var keyLines = Scrub.Lines()
+        let keyBody = ["MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7", "w5eN1pDdgkvKlxaA4un2Uld/", "short+/piece=="]
+        let keyIn = ["before\n", "-----BEGIN PRIVATE KEY-----\n"] + keyBody.map { $0 + "\n" } + ["-----END PRIVATE KEY-----\n", "after\n"]
+        let keyOut = keyIn.map { keyLines.feed($0) }.joined()
+        let keyOK = keyOut == "before\n[hidden:private-key]\nafter\n" && !keyLines.inKey
+        print("\(keyOK ? "ok  " : "FAIL") scrub-key-lines: \(keyOut.replacingOccurrences(of: "\n", with: " ⏎ "))")
+        if !keyOK { ok = false }
         Scrub.values = []; Scrub.loaded = false
         // Money tab: three bank CSV shapes, amounts, dates, categories, repeating charges, duplicate-safe import (temp file)
         let chase = "Details,Posting Date,Description,Amount,Type,Balance\nDEBIT,10/03/2026,\"STARBUCKS STORE 123, SEATTLE\",-5.75,DEBIT_CARD,100\nCREDIT,10/01/2026,PAYROLL ACME,1500.00,ACH,1600\nDEBIT,10/02/2026,NETFLIX.COM,-15.49,DEBIT_CARD,1584.51\n"

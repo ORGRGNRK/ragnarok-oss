@@ -2,10 +2,13 @@ import Foundation
 
 /// Local secret scrubber: everything an AI may read (Shell output, logs via bin/ragnarok-ai-log) goes through here first.
 /// Runs on this Mac only; nothing is sent anywhere. Three layers:
-///   1. known secret formats (cloud/API keys, tokens, private keys, JWTs, age secrets, user:pass@ in URLs, key=value secrets)
+///   1. known secret formats (cloud/API keys, tokens, private keys, JWTs, age secrets, user:pass@ and :pass@ in URLs,
+///      key=value and key="quoted value" secrets, "the password is X", mysql -pPASSWORD); a private key read line by line
+///      (filterStdin) stays hidden from its BEGIN line to its END line
 ///   2. exact values: secret-named environment variables (*KEY*, *TOKEN*, *SECRET*, *PASS*, *AUTH*, *CREDENTIAL*) from the
 ///      app and from a login zsh, plus any line in ~/.ragnarok/scrub-values (one value per line, yours to add; keep it 0600)
-///   3. long random-looking strings (≥32 chars, mixed case + digits, high entropy); hex (commit hashes) and paths are kept
+///   3. long random-looking strings (≥32 chars, mixed case + digits, high entropy, / and + count as part of them);
+///      hex (commit hashes) and paths are kept
 /// Replacements say what was hidden, never the value: [hidden:github-token], [hidden:env:OPENAI_API_KEY], [hidden:random].
 enum Scrub {
     nonisolated static let patterns: [(String, String)] = [
@@ -23,9 +26,19 @@ enum Scrub {
         ("nocodb-token", #"nc_pat_[A-Za-z0-9_-]{16,}"#),
         ("jwt", #"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"#),
         ("bearer", #"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}"#),
-        ("url-password", #"(?<=://)[^\s:/@]+:[^\s@/]+(?=@)"#),
-        ("assignment", #"(?i)\b(?:[A-Z0-9_]*(?:password|passwd|pwd|secret|token|api[_-]?key|apikey|auth|credential)[A-Z0-9_]*)\s*[:=]\s*["']?(?!\[hidden)[^\s"']{6,}"#),
+        ("url-password", #"(?<=://)[^\s:/@]*:[^\s@/]+(?=@)"#),   // user:pw@ and :pw@ (redis)
+        ("quoted-secret", #"(?i)\b[A-Z0-9_]*(?:password|passwd|passphrase|pwd|secret|token|api[_-]?key|apikey|auth|credential)[A-Z0-9_]*["']?\s*[:=]\s*(["'])(?!\[hidden)[^"'\n]{4,}\1"#),
+        ("assignment", #"(?i)\b(?:[A-Z0-9_]*(?:password|passwd|passphrase|pwd|secret|token|api[_-]?key|apikey|auth|credential)[A-Z0-9_]*)\s*[:=]\s*["']?(?!\[hidden)[^\s"']{6,}"#),
+        // "the passphrase is FAKEhorse…": only a value with a digit or capital, so "password is wrong" stays readable
+        ("said-secret", #"\b(?i:password|passphrase|passwd|secret|token)\s+(?i:is|was)\s+(?!\[hidden)(?=\S*[0-9A-Z])\S{6,}"#),
     ]
+    /// Rules that keep the command in front ($1) and hide only the value: `mysql -u root -pPASSWORD shop`.
+    nonisolated static let keepPrefix: [(String, String)] = [
+        ("db-password", #"(?i)(\b(?:mysql|mysqldump|mysqladmin|mariadb|mariadb-dump)\b[^\n]*?\s-p)(?!\[hidden)(\S+)"#),
+    ]
+    nonisolated(unsafe) static var compiledKeep: [(String, NSRegularExpression)] = keepPrefix.compactMap { n, p in
+        (try? NSRegularExpression(pattern: p)).map { (n, $0) }
+    }
     nonisolated(unsafe) static var compiled: [(String, NSRegularExpression)] = patterns.compactMap { n, p in
         (try? NSRegularExpression(pattern: p)).map { (n, $0) }
     }
@@ -71,12 +84,19 @@ enum Scrub {
         var c: [Character: Int] = [:]; for ch in s { c[ch, default: 0] += 1 }
         let n = Double(s.count); return c.values.reduce(0) { $0 - (Double($1) / n) * log2(Double($1) / n) }
     }
-    nonisolated static let randomish = try! NSRegularExpression(pattern: #"(?<![A-Za-z0-9+_=-])[A-Za-z0-9+_=-]{32,}(?![A-Za-z0-9+_=-])"#)
+    nonisolated static let randomish = try! NSRegularExpression(pattern: #"(?<![A-Za-z0-9+/_=-])[A-Za-z0-9+/_=-]{32,}(?![A-Za-z0-9+/_=-])"#)
+    /// A path, not a key: starts with / , has no + or = , and no piece between slashes is longer than 40.
+    nonisolated static func pathLike(_ w: Substring) -> Bool {
+        w.hasPrefix("/") && !w.contains("+") && !w.contains("=") && !w.split(separator: "/").contains { $0.count > 40 }
+    }
 
     nonisolated static func clean(_ text: String) -> String {
         if !loaded { loadValues() }
         var t = text
         for (label, v) in values where t.contains(v) { t = t.replacingOccurrences(of: v, with: "[hidden:\(label)]") }
+        for (name, re) in compiledKeep {
+            t = re.stringByReplacingMatches(in: t, range: NSRange(t.startIndex..., in: t), withTemplate: "$1[hidden:\(name)]")
+        }
         for (name, re) in compiled {
             t = re.stringByReplacingMatches(in: t, range: NSRange(t.startIndex..., in: t), withTemplate: "[hidden:\(name)]")
         }
@@ -87,7 +107,7 @@ enum Scrub {
             let w = Substring(ns.substring(with: m.range))
             let hex = w.allSatisfy { $0.isHexDigit }
             let mixed = w.contains(where: \.isUppercase) && w.contains(where: \.isLowercase) && w.contains(where: \.isNumber)
-            guard !hex, mixed, entropy(w) >= 4.0 else { continue }
+            guard !hex, mixed, !pathLike(w), entropy(w) >= 4.0 else { continue }
             out += ns.substring(with: NSRange(location: last, length: m.range.location - last)) + "[hidden:random]"
             last = m.range.location + m.range.length
         }
@@ -95,9 +115,30 @@ enum Scrub {
     }
 
     /// `Heimdall --scrub`: stdin → scrubbed stdout (used by bin/ragnarok-ai-log).
+    /// Line by line, with memory: from `-----BEGIN … PRIVATE KEY-----` every line is hidden until the END line.
+    struct Lines {
+        var inKey = false
+        nonisolated static let begin = #"-----BEGIN [A-Z ]*PRIVATE KEY-----"#, end = #"-----END [A-Z ]*PRIVATE KEY-----"#
+        nonisolated mutating func feed(_ line: String) -> String {
+            if inKey {
+                guard let r = line.range(of: Self.end, options: .regularExpression) else { return "" }
+                inKey = false
+                let rest = String(line[r.upperBound...])
+                return rest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : Scrub.clean(rest)
+            }
+            if let r = line.range(of: Self.begin, options: .regularExpression),
+               line.range(of: Self.end, options: .regularExpression, range: r.upperBound..<line.endIndex) == nil {
+                inKey = true
+                return Scrub.clean(String(line[..<r.lowerBound])) + "[hidden:private-key]\n"
+            }
+            return Scrub.clean(line)
+        }
+    }
+
     nonisolated static func filterStdin() -> Never {
         loadValues()
-        while let line = readLine(strippingNewline: false) { FileHandle.standardOutput.write(Data(clean(line).utf8)) }
+        var lines = Lines()
+        while let line = readLine(strippingNewline: false) { FileHandle.standardOutput.write(Data(lines.feed(line).utf8)) }
         exit(0)
     }
 }

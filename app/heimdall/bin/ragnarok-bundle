@@ -2,14 +2,16 @@
 # ragnarok-bundle — pack everything Ragnarok needs into one private file you can reinstall from.
 #   bin/ragnarok-bundle [out-folder]          default ~/Ragnarok-Backups
 # Makes ragnarok-bundle-<date>.tar.gz (mode 600) holding:
-#   repos/<name>.bundle      full git history (all branches + tags) of heimdall, alexus-core, scripts, ygg-mcp-business, conveyor
+#   repos/<name>.bundle      full git history (all branches + tags) of the ragnarok monorepo (heimdall, alexus-core,
+#                            ygg-mcp-business and ~/scripts live in it), plus scripts and conveyor when they are their own repos
 #   repos/<name>.uncommitted.patch / .untracked.tar   work not yet committed, if any (so nothing in progress is lost)
 #   apps/Ragnarok.app, apps/Heimdall-known-good.app
 #   launchagents/com.heimdall.corpus.plist           the nightly code-search rebuild
-#   data/ragnarok/                                    ~/.ragnarok (logs, receipts, access log; locks/temp left out)
+#   data/ragnarok/                                    ~/.ragnarok (logs, receipts, access log; locks/temp, git worktrees
+#                                                     (their commits are in the repo bundles) and build folders left out)
 #   home-scripts/                                     ~/scripts (ragnarok-save, ragnarok-hq-mcp.sh, …)
 #   install.sh, README.txt, AI-INSTALL.md            how to put it back (AI-INSTALL.md: step list for an AI doing it)
-# NOT inside (by design; see README.txt): ssh keys, API keys, the Apple Development certificate, the 748 MB search index
+# NOT inside (by design; see README.txt): ssh keys, API keys and token files (filtered, and listed in README.txt), the Apple Development certificate, the 748 MB search index
 # (rebuilds), Homebrew/Xcode, and everything that lives on Alexus.
 # Locked to your hardware keys when ~/.ragnarok/bundle-keys/*.txt has their recipients (see UNLOCK.txt beside it).
 # The file has your history and logs in it: keep it private. It is written only to this Mac; nothing is uploaded.
@@ -17,11 +19,20 @@ set -euo pipefail
 OUT="${1:-$HOME/Ragnarok-Backups}"
 STAMP="$(date +%Y%m%d-%H%M)"
 W="$(mktemp -d)/ragnarok-bundle-$STAMP"
+trap 'rm -rf "$(dirname "$W")"' EXIT   # a failed run never leaves a copy of ~/.ragnarok in TMPDIR
 mkdir -p "$W"/{repos,apps,launchagents,data,home-scripts} "$OUT"
-REPOS=("$HOME/Developer/heimdall" "$HOME/Developer/alexus-core" "$HOME/Developer/scripts" "$HOME/Developer/ygg-mcp-business" "$HOME/conveyor")
+# The monorepo first: heimdall, alexus-core, ygg-mcp-business and ~/scripts are links into it on this Mac.
+REPOS=("$HOME/Developer/ragnarok" "$HOME/Developer/heimdall" "$HOME/Developer/alexus-core" "$HOME/Developer/scripts" "$HOME/Developer/ygg-mcp-business" "$HOME/conveyor")
+DONE_TOPS=""
 for r in "${REPOS[@]}"; do
   n="$(basename "$r")"
-  [ -d "$r/.git" ] || [ -f "$r/.git" ] || { echo "skip $n (not a git repo)"; continue; }
+  [ -e "$r" ] || { echo "skip $n (not here)"; continue; }
+  top="$(git -C "$r" rev-parse --show-toplevel 2>/dev/null || true)"
+  [ -n "$top" ] || { echo "skip $n (not a git repo)"; continue; }
+  top="$(cd "$top" && pwd -P)"
+  case "$DONE_TOPS" in *"|$top|"*) echo "skip $n (inside $(basename "$top"), already bundled)"; continue;; esac
+  DONE_TOPS="$DONE_TOPS|$top|"
+  r="$top"; n="$(basename "$top")"
   git -C "$r" bundle create -q "$W/repos/$n.bundle" --all
   echo "$(git -C "$r" rev-parse --abbrev-ref HEAD) $(git -C "$r" rev-parse --short HEAD)" > "$W/repos/$n.head"
   if [ -n "$(git -C "$r" status --porcelain)" ]; then
@@ -35,27 +46,52 @@ cp -R "$HOME/Applications/Ragnarok.app" "$W/apps/Ragnarok.app"
 KG="$HOME/Library/Application Support/Heimdall-known-good/Heimdall.app"
 [ -d "$KG" ] && cp -R "$KG" "$W/apps/Heimdall-known-good.app"
 cp "$HOME/Library/LaunchAgents/com.heimdall.corpus.plist" "$W/launchagents/" 2>/dev/null || true
-rsync -a --exclude '*.lock' --exclude 'heal/' --exclude 'heal-locks/' --exclude '*.inflight' --exclude 'heimdall-api.json' \
+# Secrets stay out (README says so): token files, .env files, the scrub list, the bundle keys themselves.
+# Sockets and pipes (ssh connection sockets live here) can't be copied; macOS's rsync has no switch to skip them.
+SPECIALS="$(dirname "$W")/specials.txt"
+(cd "$HOME/.ragnarok" && find . \( -type s -o -type p \) | sed 's|^\./|/|') > "$SPECIALS"
+rsync -a --exclude-from="$SPECIALS" --exclude '*.lock' --exclude 'heal/' --exclude 'heal-locks/' --exclude '*.inflight' --exclude 'heimdall-api.json' \
+  --exclude '*token*' --exclude '*.env' --exclude '.env*' --exclude 'scrub-values' --exclude 'bundle-keys/' \
+  --exclude '*secret*' --exclude '*.pem' --exclude '*.key' \
+  --exclude 'worktrees/' --exclude 'worktree/' --exclude '.build/' \
   "$HOME/.ragnarok/" "$W/data/ragnarok/"
-[ -d "$HOME/scripts" ] && rsync -a "$HOME/scripts/" "$W/home-scripts/"
+# ~/scripts is only copied when it is a real folder; on this Mac it is a link into the repo, which is bundled above.
+[ -d "$HOME/scripts" ] && [ ! -L "$HOME/scripts" ] && rsync -a "$HOME/scripts/" "$W/home-scripts/"
+# Anything left that looks like a secret is taken out too, and listed in README.txt.
+LEFT_OUT="$(grep -rlE 'sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_|AKIA[0-9A-Z]{16}|xox[baprs]-|-----BEGIN [A-Z ]*PRIVATE KEY-----|(api[_-]?key|token|secret|password)["'"'"' ]*[:=]["'"'"' ]*[A-Za-z0-9/+_-]{16,}' \
+  "$W/data" "$W/home-scripts" 2>/dev/null || true)"
+if [ -n "$LEFT_OUT" ]; then
+  while IFS= read -r f; do rm -f "$f"; done <<< "$LEFT_OUT"
+  LEFT_OUT="$(printf '%s\n' "$LEFT_OUT" | sed "s|$W/||")"
+  echo "left out $(printf '%s\n' "$LEFT_OUT" | wc -l | tr -d ' ') file(s) that look like secrets (listed in README.txt)"
+fi
 
 cat > "$W/install.sh" <<'INSTALL'
 #!/bin/bash
 # Put Ragnarok back on this Mac from this bundle. Never overwrites: anything already there is left alone.
 #   ./install.sh
 set -uo pipefail
+shopt -s nullglob
 B="$(cd "$(dirname "$0")" && pwd)"
 say() { printf '%s\n' "$*"; }
 for b in "$B"/repos/*.bundle; do
   n="$(basename "$b" .bundle)"
   case "$n" in conveyor) dest="$HOME/conveyor" ;; *) dest="$HOME/Developer/$n" ;; esac
   if [ -e "$dest" ]; then say "keep   $dest (already there)"; continue; fi
-  read -r br _ < "$B/repos/$n.head"
+  br=main; [ -f "$B/repos/$n.head" ] && read -r br _ < "$B/repos/$n.head"
   git clone -q -b "$br" "$b" "$dest" && git -C "$dest" remote rename origin bundle >/dev/null 2>&1
   [ -f "$B/repos/$n.uncommitted.patch" ] && git -C "$dest" apply "$B/repos/$n.uncommitted.patch" 2>/dev/null
   [ -f "$B/repos/$n.untracked.tar" ] && tar -xf "$B/repos/$n.untracked.tar" -C "$dest"
   say "made   $dest ($br)"
 done
+# The monorepo's old homes are links into it.
+if [ -d "$HOME/Developer/ragnarok/.git" ]; then
+  for pair in heimdall:app/heimdall alexus-core:agents/alexus-core ygg-mcp-business:connector/ygg-business; do
+    l="$HOME/Developer/${pair%%:*}"; t="$HOME/Developer/ragnarok/${pair#*:}"
+    [ -e "$l" ] || [ ! -d "$t" ] || { ln -s "$t" "$l" && say "link   $l -> $t"; }
+  done
+  [ -e "$HOME/scripts" ] || { ln -s "$HOME/Developer/ragnarok/ops/mac-scripts" "$HOME/scripts" && say "link   ~/scripts"; }
+fi
 # Alexus backup remote for heimdall (bin/heimdall-edit pushes there). Address from the bundled ~/.ragnarok/local.conf if any.
 ALEXUS_SSH="$(id -un)@alexus.local"
 LC="$HOME/Developer/heimdall/bin/local-config.sh"
@@ -102,6 +138,10 @@ NOT IN THIS BUNDLE (do these yourself on a new Mac)
      ~/Developer/heimdall/recall/build-corpus.sh (needs Alexus for the embeddings).
   8. Everything on Alexus (room, containers, MCP servers, the backups/heimdall.git copy) stays on Alexus.
 
+LEFT OUT BECAUSE THEY LOOK LIKE SECRETS (copy them yourself if you need them)
+  token files, .env files, scrub-values and bundle-keys/ in ~/.ragnarok, plus:
+${LEFT_OUT:-  (nothing else)}
+
 ALSO A BACKUP: every Ragnarok edit is pushed to Alexus (<ALEXUS_USER>@<ALEXUS_HOST>:backups/heimdall.git).
 
 WHAT'S INSIDE
@@ -138,8 +178,12 @@ AIDOC
 # Lock it to the hardware keys in ~/.ragnarok/bundle-keys/*.txt (age + age-plugin-fido2-hmac). When keys exist the
 # bundle is ONLY written locked (tar streams straight into age; no unlocked copy touches the disk). --unlocked overrides.
 KEYS="$HOME/.ragnarok/bundle-keys"
-RCPT="$(grep -hoE 'age1[0-9a-z-]+' "$KEYS"/*.txt 2>/dev/null | sort -u)"
+RCPT="$(grep -hoE 'age1[0-9a-z-]+' "$KEYS"/*.txt 2>/dev/null | sort -u || true)"
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:$PATH"
+if [ -n "$RCPT" ] && [ "${UNLOCKED:-}" != 1 ] && ! { command -v age >/dev/null && command -v age-plugin-fido2-hmac >/dev/null; }; then
+  echo "can't lock: keys are set up in $KEYS but age or age-plugin-fido2-hmac is missing. Install them (see UNLOCK.txt), or run with UNLOCKED=1 to write an unlocked bundle." >&2
+  exit 1
+fi
 if [ -n "$RCPT" ] && [ "${UNLOCKED:-}" != 1 ] && command -v age >/dev/null && command -v age-plugin-fido2-hmac >/dev/null; then
   TAR="$OUT/$(basename "$W").tar.gz.age"
   ARGS=(); while read -r r; do ARGS+=(-r "$r"); done <<< "$RCPT"
@@ -162,5 +206,5 @@ else
   ( umask 077; tar -czf "$TAR" -C "$(dirname "$W")" "$(basename "$W")" )
   [ -n "$RCPT" ] || echo "note: no keys in $KEYS, so this bundle is NOT locked"
 fi
-chmod 600 "$TAR"; rm -rf "$(dirname "$W")"
+chmod 600 "$TAR"
 echo "bundle: $TAR ($(du -h "$TAR" | cut -f1))"
