@@ -1,0 +1,14 @@
+{
+ "about-sideways/C-constrained": {
+  "secs": 2.6,
+  "raw": "{\n  \"category\": \"device\",\n  \"make\": \"UNKNOWN\",\n  \"model_family\": \"UNKNOWN\",\n  \"model_exact\": \"UNKNOWN\",\n  \"color\": \"black\",\n  \"port_type\": \"stand\",\n  \"storage\": \"256 GB\",\n  \"battery_pct\": \"UNKNOWN\",\n  \"carrier_lock\": \"SIM locked\",\n  \"imei\": \"35 000000 000000 0\",\n  \"powers_on\": \"12:30\",\n  \"condition_back\": \"UNKNOWN\",\n  \"condition_screen\": \"UNKNOWN\",\n  \"scene\": \"indoor\"\n}"
+ },
+ "about-upright/C-constrained": {
+  "secs": 2.6,
+  "raw": "{\n  \"category\": \"device\",\n  \"make\": \"Apple\",\n  \"model_family\": \"iPhone\",\n  \"model_exact\": \"iPhone 12 Pro Max\",\n  \"color\": \"black\",\n  \"port_type\": \"none\",\n  \"storage\": \"256 GB\",\n  \"battery_pct\": \"unknown\",\n  \"carrier_lock\": \"SIM locked\",\n  \"imei\": \"35 000000 000000 0\",\n  \"powers_on\": \"12:30\",\n  \"condition_back\": \"unknown\",\n  \"condition_screen\": \"unknown\",\n  \"scene\": \"unknown\"\n}"
+ },
+ "screenoff-lit/C-constrained": {
+  "secs": 2.1,
+  "raw": "{\n  \"category\": \"device\",\n  \"make\": \"UNKNOWN\",\n  \"model_family\": \"UNKNOWN\",\n  \"model_exact\": \"UNKNOWN\",\n  \"color\": \"black\",\n  \"port_type\": \"UNKNOWN\",\n  \"storage\": \"UNKNOWN\",\n  \"battery_pct\": \"UNKNOWN\",\n  \"carrier_lock\": \"UNKNOWN\",\n  \"imei\": \"UNKNOWN\",\n  \"powers_on\": \"UNKNOWN\",\n  \"condition_back\": \"UNKNOWN\",\n  \"condition_screen\": \"UNKNOWN\",\n  \"scene\": \"device_on_stand\"\n}"
+ }
+}

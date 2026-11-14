@@ -1,0 +1,266 @@
+#!/usr/bin/env python3
+"""Failing services on this Mac and on Alexus.
+
+Same three lists the Hub shows: MCP servers, Mac launch agents, and containers
+on this laptop and on Alexus. Each container line says which machine it is on.
+Services that need a login are left out of both the report and any restart.
+A restart is only `docker restart` (over ssh with BatchMode, so it cannot ask
+for a password) or `launchctl kickstart` for a job that already exited non-zero.
+An MCP server that failed to connect is reported and not logged into.
+
+  ragnarok-services              # print what is failing
+  ragnarok-services status
+  ragnarok-services restart      # bring the failing ones back; skip login-needed
+  ragnarok-services selfcheck
+"""
+import argparse
+import getpass
+import datetime
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+LOGIN = re.compile(
+    r"needs authentication|needs sign-?in|sign-?in required|needs a login|"
+    r"login required|\blog ?in\b|authentication required|unauthorized|\b401\b|password required",
+    re.I)
+SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,120}$")
+SAFE_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,200}$")
+SAFE_HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.:-]{0,252}$")
+SAFE_USER = re.compile(r"^[a-z_][A-Za-z0-9_.-]{0,31}$")
+
+
+def needs_login(text):
+    return bool(text) and LOGIN.search(text) is not None
+
+
+def parse_mcp(text):
+    """Hub lines: `name: target - ✔ Connected` / `! Needs authentication` / `✘ Failed — why`."""
+    rows = []
+    for line in text.splitlines():
+        dash = line.rfind(" - ")
+        colon = line.find(": ")
+        if dash < 0 or colon < 0 or colon > dash:
+            continue
+        status = line[dash + 3:].strip()
+        if status.startswith(("✔", "✓")):
+            state = "ok"
+        elif status.startswith("!"):
+            state = "auth"
+        elif status.startswith(("✘", "✗", "×")):
+            state = "fail"
+        else:
+            continue
+        why = status.split(" — ", 1)[1].strip() if " — " in status else status
+        if state != "ok" and (state == "auth" or needs_login(status) or needs_login(why)):
+            state = "auth"
+        detail = "connected" if state == "ok" else "needs a login" if state == "auth" else (why or status)[:90]
+        rows.append({"kind": "mcp", "name": line[:colon].strip(), "state": state, "detail": detail})
+    return rows
+
+
+def parse_jobs(text):
+    """launchctl list: pid, last exit, label. A waiting job that exited 0 is not failing."""
+    rows = []
+    for line in text.splitlines():
+        fields = line.split("\t")
+        if len(fields) != 3 or fields[2] in ("Label", ""):
+            continue
+        pid, code, label = fields
+        if pid != "-" or code in ("0", "-"):
+            continue
+        if not code.lstrip("-").isdigit() or needs_login(label):
+            continue
+        rows.append({"kind": "job", "name": label, "state": "fail", "detail": "last exit " + code})
+    return rows
+
+
+def parse_containers(text, where):
+    """docker ps lines: name, status. Up is fine. Exited 0 finished on purpose.
+    `where` is laptop or Alexus, and it stays on the row."""
+    if where not in ("laptop", "Alexus"):
+        raise ValueError("container location must be laptop or Alexus")
+    rows = []
+    for line in text.splitlines():
+        fields = line.split("\t")
+        if len(fields) < 2 or not fields[0] or fields[0] == "NAMES":
+            continue
+        name, status = fields[0].strip(), fields[1].strip()
+        if status.startswith("Up") and "unhealthy" not in status.lower():
+            continue
+        if re.match(r"Exited \(0\)", status):
+            continue
+        failing = ("unhealthy" in status.lower() or status.startswith(("Exited (", "Dead", "Restarting")))
+        if not failing:
+            continue
+        state = "auth" if needs_login(name) or needs_login(status) else "fail"
+        rows.append({"kind": "container", "name": name, "state": state, "where": where,
+                     "detail": "needs a login" if state == "auth" else status[:90]})
+    return rows
+
+
+def failing(rows):
+    return [r for r in rows if r["state"] == "fail"]
+
+
+def skipped(rows):
+    return [r for r in rows if r["state"] == "auth"]
+
+
+def read_conf(path):
+    host, user, tail = "alexus.local", getpass.getuser(), "alexus"
+    file = Path(path)
+    if not file.is_file():
+        return host, user, tail
+    found = {}
+    for line in file.read_text(errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        value = value.strip().strip("\"'")
+        found[key.strip()] = value
+    if SAFE_HOST.match(found.get("ALEXUS_HOST", "")) and not found["ALEXUS_HOST"].startswith("-"):
+        host = found["ALEXUS_HOST"]
+    if SAFE_USER.match(found.get("ALEXUS_USER", "")):
+        user = found["ALEXUS_USER"]
+    if SAFE_HOST.match(found.get("ALEXUS_TAILSCALE", "")) and not found["ALEXUS_TAILSCALE"].startswith("-"):
+        tail = found["ALEXUS_TAILSCALE"]
+    return host, user, tail
+
+
+def run(args, timeout):
+    try:
+        done = subprocess.run(args, text=True, capture_output=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return 1, str(e)
+    # Success is the command's own output. Failure text is kept for the note, not parsed as a list.
+    return done.returncode, done.stdout if done.returncode == 0 else (done.stderr or done.stdout)
+
+
+def collect(home, runner=run):
+    """Read the live lists. Login-needed rows stay in `skipped` and never in `failing`."""
+    conf = os.environ.get("RAGNAROK_LOCAL_CONF", str(Path(home) / ".ragnarok/local.conf"))
+    host, user, tail = read_conf(conf)
+    notes = []
+    code, out = runner(["/bin/zsh", "-lc", "cd ~ && claude mcp list"], 60)
+    mcp = parse_mcp(out) if code == 0 else []
+    if code != 0:
+        notes.append("MCP list unavailable")
+    code, out = runner(["/bin/launchctl", "list"], 10)
+    jobs = parse_jobs(out) if code == 0 else []
+    if code != 0:
+        notes.append("launchctl list unavailable")
+    containers, reached = [], False
+    cmd = "docker ps -a --format '{{.Names}}\\t{{.Status}}'"
+    code, out = runner(["/bin/zsh", "-lc", cmd], 20)
+    if code == 0:
+        containers.extend(parse_containers(out, "laptop"))
+    elif "not found" in out.lower():
+        notes.append("Docker isn't installed on this laptop")
+    else:
+        notes.append("Docker on this laptop isn't running, so its containers weren't listed")
+    for target in (user + "@" + host, user + "@" + tail):
+        code, out = runner(["/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=6", target, cmd], 20)
+        if code == 0:
+            containers.extend(parse_containers(out, "Alexus"))
+            reached = True
+            break
+    if not reached:
+        notes.append("Alexus not reachable without a login; its containers were left out")
+    rows = mcp + jobs + containers
+    return {"failing": failing(rows), "skipped": skipped(rows), "notes": notes}
+
+
+def restart_plan(rows):
+    """Only failing rows with a safe name. Login-needed rows are not in `rows`."""
+    plan = []
+    for row in rows:
+        if row["state"] != "fail":
+            continue
+        if row["kind"] == "container" and SAFE_NAME.match(row["name"]):
+            plan.append(row)
+        elif row["kind"] == "job" and SAFE_LABEL.match(row["name"]):
+            plan.append(row)
+    return plan
+
+
+def do_restart(rows, home, runner=run):
+    host, user, tail = read_conf(os.environ.get("RAGNAROK_LOCAL_CONF", str(Path(home) / ".ragnarok/local.conf")))
+    target = None
+    for candidate in (user + "@" + host, user + "@" + tail):
+        code, _ = runner(["/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=6", candidate, "true"], 12)
+        if code == 0:
+            target = candidate
+            break
+    uid = str(os.getuid())
+    results = []
+    for row in restart_plan(rows):
+        if row["kind"] == "container" and row.get("where") == "laptop":
+            code, out = runner(["/bin/zsh", "-lc", "docker restart " + row["name"]], 60)
+        elif row["kind"] == "container":
+            if target is None:
+                results.append({**row, "ok": False, "detail": "Alexus needs a login; not restarted"})
+                continue
+            code, out = runner(["/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=6",
+                                target, "docker", "restart", row["name"]], 60)
+        else:
+            code, out = runner(["/bin/launchctl", "kickstart", "gui/%s/%s" % (uid, row["name"])], 30)
+        results.append({**row, "ok": code == 0, "detail": "restarted" if code == 0 else (out or "restart failed")[:160]})
+    return results
+
+
+def log_results(home, results):
+    path = Path(home) / ".ragnarok/ragnarok-services.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with path.open("a") as handle:
+        for row in results:
+            handle.write(json.dumps({"ts": stamp, "kind": row["kind"], "name": row["name"],
+                                      "where": row.get("where", ""), "ok": row["ok"],
+                                      "detail": row["detail"][:160]}, sort_keys=True) + "\n")
+    if path.exists():
+        path.chmod(0o600)
+
+
+def show(report):
+    print("Failing services. Ones that need a login are left out.")
+    if not report["failing"]:
+        print("None failing.")
+    for row in report["failing"]:
+        place = ("  " + row["where"]) if row.get("where") else ""
+        print("  %s%s  %s  %s" % (row["kind"], place, row["name"], row["detail"]))
+    print("Left out because they need a login: %d" % len(report["skipped"]))
+    for note in report["notes"]:
+        print(note)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("command", nargs="?", choices=("status", "restart", "selfcheck"), default="status")
+    args = parser.parse_args(argv)
+    home = str(Path.home())
+    if args.command == "selfcheck":
+        check = Path(__file__).resolve().parents[1] / "checks/services-check.py"
+        done = subprocess.run([sys.executable, str(check)], check=False)
+        raise SystemExit(done.returncode)
+    report = collect(home)
+    if args.command == "status":
+        show(report)
+        return
+    results = do_restart(report["failing"], home)
+    if results:
+        log_results(home, results)
+    show(report)
+    if not results:
+        print("Nothing to restart. MCP connection failures are reported only; they are not logged into.")
+        return
+    for row in results:
+        print("%s  %s  %s" % ("restarted" if row["ok"] else "not restarted", row["name"], row["detail"]))
+
+
+if __name__ == "__main__":
+    main()

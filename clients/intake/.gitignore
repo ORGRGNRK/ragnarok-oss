@@ -1,0 +1,6 @@
+.env
+.env.*
+backups/
+.test/
+money-reports/
+blobs/

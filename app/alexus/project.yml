@@ -1,0 +1,74 @@
+name: ALEXUS
+options:
+  bundleIdPrefix: co.rgnrk
+  deploymentTarget:
+    macOS: '14.0'
+    iOS: '17.0'
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    ALEXUS_CANONICAL_SOURCE_ROOT: '$(SRCROOT)'
+    DEVELOPMENT_TEAM: F6GQ67QRFA
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: '0.1.0'
+    CURRENT_PROJECT_VERSION: '1'
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    GENERATE_INFOPLIST_FILE: YES
+    INFOPLIST_KEY_CFBundleDisplayName: ALEXUS
+    INFOPLIST_KEY_ALEXUSSourceRoot: '$(ALEXUS_CANONICAL_SOURCE_ROOT)'
+    INFOPLIST_KEY_NSFaceIDUsageDescription: Authorize this exact ALEXUS repair with your enrolled device key.
+targets:
+  ALEXUSMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+      - path: Resources
+        buildPhase: resources
+        excludes: ["Assets.xcassets", "ALEXUSiOS.entitlements"]
+      - path: Host
+        buildPhase: resources
+        excludes: ["__pycache__", "*.swift", "check_*.py", "install-*.py"]
+    info:
+      path: Support/Info-mac.plist
+      properties:
+        ALEXUSSourceRoot: '$(ALEXUS_CANONICAL_SOURCE_ROOT)'
+        CFBundleIconFile: AppIcon
+        NSLocalNetworkUsageDescription: Connect to your Alexus server for private local-model chat and owner control.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: co.rgnrk.alexus.mac
+        ENABLE_APP_SANDBOX: NO
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+        INFOPLIST_KEY_CFBundleIconFile: AppIcon
+    scheme:
+      testTargets: [ALEXUSCoreTests]
+  ALEXUSiOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: Resources
+        buildPhase: resources
+        excludes: ["AppIcon.icns", "ALEXUSiOS.entitlements"]
+    info:
+      path: Support/Info-ios.plist
+      properties:
+        CFBundleURLTypes:
+          - CFBundleURLName: co.rgnrk.alexus.owner-auth
+            CFBundleURLSchemes: [alexus-owner]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: co.rgnrk.alexus.ios
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: Connect to your owner-paired ALEXUS Mac for private repair control.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: '1,2'
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+  ALEXUSCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [Tests, Sources/Evidence.swift]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: co.rgnrk.alexus.coretests

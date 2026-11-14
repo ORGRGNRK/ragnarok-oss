@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Standalone CLOSE. Replaces conveyor-close, which PATCHes the operator's dashboard
+# intent queue and any linked reminder row. Here there is no queue to tell,
+# so the outcome is appended to a local ledger and reported as handled.
+set -uo pipefail
+ROOT="${CONVEYOR_ROOT:-$(dirname "$(dirname "$(readlink -f "$0")")")}"
+OUT="$ROOT/logs/closed.jsonl"
+mkdir -p "$(dirname "$OUT")" || exit 1
+printf '{"ts":"%s","task":"%s","pending":"%s","where":"%s","at":"%s","seat":"%s"}\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${1:-}" "${2:-}" "${3:-}" "${4:-}" "${CONVEYOR_LEG_SEAT:-}" >> "$OUT" || exit 1

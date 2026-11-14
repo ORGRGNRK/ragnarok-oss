@@ -1,0 +1,364 @@
+{
+  "schema_version": "1.4",
+  "shortcut": {
+    "name": "CLI Tools",
+    "platform": "macOS",
+    "source": "screenshot + edits",
+    "share_url": "https://www.icloud.com/shortcuts/9a0c463b5fab47439c24596c84462127",
+    "description": "Takes a natural-language description, asks the on-device model for the best matching macOS command line tool, verifies it with a shell script, records the lookup in the app's history, and optionally runs a checked command with the tool."
+  },
+  "actions": [
+    {
+      "id": "a1",
+      "type": "receive_input",
+      "label": "Receive",
+      "params": {
+        "input_types": "Apps and 18 more",
+        "input_types_note": "Collapsed in UI; 19 types total, only 'Apps' shown",
+        "from": [
+          "Quick Actions"
+        ],
+        "if_no_input": "Continue"
+      },
+      "outputs": [
+        "Shortcut Input"
+      ]
+    },
+    {
+      "id": "a2",
+      "type": "ask_for_input",
+      "label": "Ask for Text",
+      "params": {
+        "input_type": "Text",
+        "prompt": "What command line tool are you looking for?",
+        "placeholder": "e.g. find which process is using port 8080"
+      },
+      "outputs": [
+        "Provided Input"
+      ]
+    },
+    {
+      "id": "a3",
+      "type": "use_model",
+      "label": "Use On-Device model",
+      "params": {
+        "model": "On-Device",
+        "prompt_template": "Identify the single best macOS command-line utility for this task:\n\n{{a2.Provided Input}}\n\nOutput exactly two lines:\nFirst line: the executable's command name and nothing else. No label such as \"Command:\", no arguments, quotes or backticks.\nSecond line: one sentence explaining its purpose and basic usage.\n\nNo headings, markdown, introductory text, or additional lines.\nDo not recommend destructive commands when a safer alternative is suitable."
+      },
+      "outputs": [
+        "Response"
+      ]
+    },
+    {
+      "id": "a4",
+      "type": "split_text",
+      "label": "Split",
+      "params": {
+        "input": "{{a3.Response}}",
+        "separator": "New Lines"
+      },
+      "outputs": [
+        "Split Text"
+      ]
+    },
+    {
+      "id": "a5",
+      "type": "get_item_from_list",
+      "label": "Get First Item from Split Text",
+      "params": {
+        "position": "First Item",
+        "input": "{{a4.Split Text}}"
+      },
+      "outputs": [
+        "Item from List"
+      ]
+    },
+    {
+      "id": "a6",
+      "type": "run_shell_script",
+      "label": "Run Shell Script",
+      "description": "Extracts the command name from the model's first line (tolerating labels such as \"Command:\", list markers, backticks, arguments and trailing descriptions), validates it against an allowlist pattern, checks it is a real executable, and collects a summary and manual excerpt. First output line is always STATUS: OK, NOT_FOUND or INVALID. Always exits 0 so routing is done on the STATUS line.",
+      "params": {
+        "shell": "/bin/zsh",
+        "input": "{{a5.Item from List}}",
+        "pass_input": "as arguments",
+        "script": "export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin\n\nraw=$1\n# First line only. The on-device model doesn't always follow the format, so tolerate:\n#   a `backticked` command inside prose   ->  the backticked text\n#   labels (\"Command: lsof\", \"Line 1: lsof\", \"Tool name - lsof\") and list markers (\"1. lsof\", \"- lsof\")\n#   arguments or a trailing description (\"lsof -i :8080\", \"lsof: lists open files\")  ->  first word\n# Case is preserved because some macOS tools are case-sensitive (SetFile, PlistBuddy).\nline=$(printf '%s\\n' \"$raw\" | head -n 1)\nif [[ $line == *'`'?*'`'* ]]; then\n  line=${line#*\\`}\n  line=${line%%\\`*}\nfi\ntool=$(printf '%s\\n' \"$line\" | tr -d '*\"'\\' | sed -E \\\n  -e 's/^[[:space:]]+//' \\\n  -e 's/^([->]+|[0-9]+[.)])[[:space:]]+//' \\\n  -e 's/^([Ll]ine[[:space:]]*1|[Cc]ommand|[Tt]ool|[Ee]xecutable|[Uu]tility|[Pp]rogram|[Aa]nswer)([[:space:]]+[Nn]ame)?([[:space:]]*:|[[:space:]]+-)[[:space:]]*//' \\\n  -e 's/[[:space:]].*$//' \\\n  -e 's/[.,:;]+$//')\n\n# Allowlist pattern: must start with a letter, digit or underscore (blocks option-like input such as -rf)\nif [[ ${#tool} -eq 0 || ${#tool} -gt 64 || ! \"$tool\" =~ ^[A-Za-z0-9_][A-Za-z0-9_.+-]*$ ]]; then\n  echo \"STATUS: INVALID\"\n  echo \"Reason: model output is not a plausible command name.\"\n  echo \"Model said: $(printf '%s\\n' \"$raw\" | head -n 1)\"\n  exit 0\nfi\n\n# whence -p returns a real executable path only (not builtins, aliases or functions)\nbin=$(whence -p \"$tool\" 2>/dev/null)\nif [[ -z \"$bin\" ]]; then\n  echo \"STATUS: NOT_FOUND\"\n  echo \"Tool: $tool\"\n  echo \"Reason: not an executable on PATH (it may be a shell builtin or alias, or not installed).\"\n  exit 0\nfi\n\necho \"STATUS: OK\"\necho \"Tool: $tool\"\necho \"Path: $bin\"\n\nwhatis_out=$(whatis \"$tool\" 2>/dev/null)\n# Prefer the tool's own page (\"ls(1) - list directory contents\") over pages that merely mention it,\n# such as the shell builtins page, which lists ls-F.\nsummary=$(printf '%s\\n' \"$whatis_out\" | awk -v t=\"$tool(\" 'index($0, t) == 1 { print; exit }')\n[[ -z $summary ]] && summary=$(printf '%s\\n' \"$whatis_out\" | awk -v t=\", $tool(\" 'index($0, t) && !/^builtin\\(/ { print; exit }')\n[[ -z $summary ]] && summary=$(printf '%s\\n' \"$whatis_out\" | head -n 1)\nif [[ -n \"$summary\" ]]; then\n  echo \"Summary: $summary\"\nelse\n  echo \"Summary: unavailable (the whatis database may be missing; this does not mean the tool is invalid)\"\nfi\necho\n\nif man -w \"$tool\" >/dev/null 2>&1; then\n  text=$(MANWIDTH=80 man \"$tool\" 2>/dev/null)\n  if command -v col >/dev/null 2>&1; then\n    text=$(printf '%s\\n' \"$text\" | col -b)\n  fi\n  # Start at SYNOPSIS or DESCRIPTION rather than the header, up to 30 lines\n  excerpt=$(printf '%s\\n' \"$text\" | awk '/^(SYNOPSIS|DESCRIPTION)/{p=1} p{print; n++} n>=30{exit}')\n  [[ -z \"$excerpt\" ]] && excerpt=$(printf '%s\\n' \"$text\" | head -n 30)\n  echo \"Manual excerpt:\"\n  printf '%s\\n' \"$excerpt\"\nelse\n  echo \"Manual: no man page found for $tool\"\nfi"
+      },
+      "outputs": [
+        "Shell Script Result"
+      ]
+    },
+    {
+      "id": "a6r",
+      "type": "save_record",
+      "label": "Save Lookup",
+      "description": "Records every lookup in the app's history database, the source of truth, including ones that fail verification. Status, tool and path are read from the STATUS/Tool/Path lines of a6.",
+      "params": {
+        "record": "lookup",
+        "fields": {
+          "query": "{{a2.Provided Input}}",
+          "model_response": "{{a3.Response}}",
+          "model_first_line": "{{a5.Item from List}}",
+          "verification": "{{a6.Shell Script Result}}"
+        }
+      },
+      "outputs": [
+        "Record"
+      ]
+    },
+    {
+      "id": "a7",
+      "type": "if",
+      "label": "If",
+      "params": {
+        "input": "{{a6.Shell Script Result}}",
+        "condition": "begins with",
+        "value": "STATUS: OK"
+      },
+      "branches": {
+        "then": [
+          {
+            "id": "a8",
+            "type": "choose_from_menu",
+            "label": "Choose from menu",
+            "params": {
+              "prompt": "Run a command with this tool?",
+              "items": [
+                "Run a Command",
+                "Done"
+              ]
+            },
+            "branches": {
+              "Run a Command": [
+                {
+                  "id": "a8s2",
+                  "type": "list",
+                  "label": "List",
+                  "description": "Bundles the lookup result and the model's response so the next script receives them as $1 and $2.",
+                  "params": {
+                    "items": [
+                      "{{a6.Shell Script Result}}",
+                      "{{a3.Response}}"
+                    ]
+                  },
+                  "outputs": [
+                    "List"
+                  ]
+                },
+                {
+                  "id": "a8s3",
+                  "type": "run_shell_script",
+                  "label": "Suggest Command",
+                  "description": "Picks a `backticked` example from the model's explanation that starts with the verified tool, or falls back to the bare tool name.",
+                  "params": {
+                    "shell": "/bin/zsh",
+                    "input": "{{a8s2.List}}",
+                    "pass_input": "as arguments",
+                    "script": "export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin\n\n# $1 = lookup result (has a \"Tool:\" line), $2 = the model's full response.\ntool=$(printf '%s\\n' \"$1\" | sed -n 's/^Tool: //p' | head -n 1)\n\n# Prefer a `backticked` example from the model's explanation that starts with the verified tool.\nsuggestion=\"\"\nrest=$2\nwhile [[ $rest == *'`'?*'`'* ]]; do\n  rest=${rest#*\\`}\n  span=${rest%%\\`*}\n  rest=${rest#*\\`}\n  if [[ ${span%% *} == \"$tool\" ]]; then\n    suggestion=$span\n    break\n  fi\ndone\nprintf '%s\\n' \"${suggestion:-$tool}\""
+                  },
+                  "outputs": [
+                    "Shell Script Result"
+                  ]
+                },
+                {
+                  "id": "a8s4",
+                  "type": "ask_for_input",
+                  "label": "Ask for Command",
+                  "params": {
+                    "input_type": "Text",
+                    "prompt": "Run a command with this tool? Edit it first (replace placeholders such as <port>). It is checked before it runs, and the command and its result are saved to History. Cancel to finish without running anything.",
+                    "default_answer": "{{a8s3.Shell Script Result}}",
+                    "placeholder": "Command to run"
+                  },
+                  "outputs": [
+                    "Provided Input"
+                  ]
+                },
+                {
+                  "id": "a8s5",
+                  "type": "list",
+                  "label": "List",
+                  "params": {
+                    "items": [
+                      "{{a6.Shell Script Result}}",
+                      "{{a8s4.Provided Input}}"
+                    ]
+                  },
+                  "outputs": [
+                    "List"
+                  ]
+                },
+                {
+                  "id": "a8s6",
+                  "type": "run_shell_script",
+                  "label": "Verify Command",
+                  "description": "Checks the command before anything runs: a single line with no shell operators, starting with the tool verified in a6 and still resolving to the same path, not a destructive or privileged tool, and without options that write files or run other programs. First output line is always STATUS: SAFE or STATUS: BLOCKED.",
+                  "params": {
+                    "shell": "/bin/zsh",
+                    "input": "{{a8s5.List}}",
+                    "pass_input": "as arguments",
+                    "script": "export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin\n\n# $1 = lookup result (has \"Tool:\" and \"Path:\" lines), $2 = the command the user confirmed.\n# First output line is always STATUS: SAFE or STATUS: BLOCKED. Always exits 0.\ntool=$(printf '%s\\n' \"$1\" | sed -n 's/^Tool: //p' | head -n 1)\nexpected=$(printf '%s\\n' \"$1\" | sed -n 's/^Path: //p' | head -n 1)\ncmd=$(printf '%s' \"$2\" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')\n\nblock() {\n  echo \"STATUS: BLOCKED\"\n  echo \"Command: $cmd\"\n  echo \"Reason: $1\"\n  exit 0\n}\n\n[[ -z $tool ]] && block \"the lookup step did not verify a tool.\"\n[[ -z $cmd ]] && block \"the command is empty.\"\n[[ $cmd == *$'\\n'* ]] && block \"the command must be a single line.\"\n(( ${#cmd} > 300 )) && block \"the command is longer than 300 characters.\"\n\n# One plain command only: no chaining, pipes, redirection, substitution or escapes.\nif [[ $cmd == *[\\;\\&\\|\\<\\>\\`\\$\\(\\)\\{\\}\\\\]* ]]; then\n  [[ $cmd == *'<'*'>'* ]] && block \"replace placeholders such as <port> with real values.\"\n  block \"shell operators ( ; & | < > \\` \\$ ( ) { } \\\\ ) are not allowed. Run one command with no pipes, redirection or substitution.\"\nfi\n\n# Split the way the run step will (zsh word splitting, quotes removed), never via eval.\nwords=(\"${(@Q)${(z)cmd}}\")\n[[ ${words[1]} != \"$tool\" ]] && block \"the command must start with the verified tool \\\"$tool\\\", not \\\"${words[1]}\\\".\"\n\n# Re-verify the executable: it must still resolve to the same file the lookup found.\nbin=$(whence -p \"$tool\" 2>/dev/null)\n[[ -z $bin ]] && block \"\\\"$tool\\\" is no longer an executable on PATH.\"\n[[ -n $expected && $bin != \"$expected\" ]] && block \"\\\"$tool\\\" now resolves to $bin instead of $expected.\"\n\n# Tools that delete, overwrite, escalate privileges or change system state are never run.\ncase $tool in\n  rm|rmdir|unlink|srm|shred|dd|truncate|mv|cp|ln|install|tee|chmod|chown|chgrp|chflags|xattr|\\\n  sudo|su|doas|login|passwd|kill|killall|pkill|shutdown|reboot|halt|launchctl|csrutil|nvram|\\\n  pmset|systemsetup|networksetup|scutil|fdesetup|diskutil|hdiutil|asr|tmutil|softwareupdate|\\\n  installer|pkgutil|pfctl|security|dscl|sysadminctl|spctl|osascript|open|crontab|at|mkfs*|newfs*)\n    block \"\\\"$tool\\\" can delete or change data or system settings, so this app won't run it.\" ;;\nesac\n\n# Options that make otherwise read-only tools write files or run other programs.\nfor (( i = 2; i <= ${#words}; i++ )); do\n  w=${words[i]}\n  case \"$tool:$w\" in\n    find:-delete|find:-exec*|find:-ok*|find:-fprint*)\n      block \"find's $w option can delete files or run other commands.\" ;;\n    sed:-i*|sed:--in-place*|perl:-i*|ruby:-i*)\n      block \"$tool $w edits files in place.\" ;;\n    curl:-o|curl:-O|curl:--output*|curl:--remote-name*|curl:-T|curl:--upload-file*|wget:*)\n      block \"$tool $w would write or upload files.\" ;;\n    defaults:write|defaults:delete|defaults:import|defaults:rename|git:push|git:reset|git:clean|brew:*)\n      block \"\\\"$tool $w\\\" changes settings, repositories or installed software.\" ;;\n  esac\ndone\n\necho \"STATUS: SAFE\"\necho \"Command: $cmd\"\necho \"Path: $bin\""
+                  },
+                  "outputs": [
+                    "Shell Script Result"
+                  ]
+                },
+                {
+                  "id": "a8s7",
+                  "type": "if",
+                  "label": "If",
+                  "params": {
+                    "input": "{{a8s6.Shell Script Result}}",
+                    "condition": "begins with",
+                    "value": "STATUS: SAFE"
+                  },
+                  "branches": {
+                    "then": [
+                      {
+                        "id": "a8s8",
+                        "type": "run_shell_script",
+                        "label": "Run Command",
+                        "description": "Repeats the safety check, then runs the approved command as an argument list (no eval) with no stdin, a 15-second limit and a 1 MB output cap. First output line is always EXIT: <code>, EXIT: TIMEOUT, EXIT: OUTPUT_LIMIT or EXIT: NOT_RUN.",
+                        "params": {
+                          "shell": "/bin/zsh",
+                          "input": "{{a8s6.Shell Script Result}}",
+                          "pass_input": "as arguments",
+                          "script": "export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin\nzmodload zsh/datetime\n\n# $1 = the verify step's result. Only a command it marked SAFE is run, and the same checks are\n# repeated here so this step can't run anything the verify step didn't approve.\n# First output line is always EXIT: <code>, EXIT: TIMEOUT, EXIT: OUTPUT_LIMIT or EXIT: NOT_RUN. Always exits 0.\ncmd=$(printf '%s\\n' \"$1\" | sed -n 's/^Command: //p' | head -n 1)\nif [[ $1 != \"STATUS: SAFE\"* || -z $cmd || $cmd == *[\\;\\&\\|\\<\\>\\`\\$\\(\\)\\{\\}\\\\]* ]]; then\n  echo \"EXIT: NOT_RUN\"\n  echo \"Reason: the command was not verified as safe.\"\n  exit 0\nfi\n\n# Run as an argument list (no eval), with no stdin, a 15-second limit and a 1 MB cap on any\n# file it writes, including its own output (ulimit -f counts 512-byte blocks).\nwords=(\"${(@Q)${(z)cmd}}\")\nout=$(mktemp -t cli-tools)\nstart=$EPOCHREALTIME\n( ulimit -f 2048; exec \"${words[@]}\" ) </dev/null >\"$out\" 2>&1 &\npid=$!\n( sleep 15; kill -TERM $pid ) >/dev/null 2>&1 &\nwatcher=$!\nwait $pid\ncode=$?\nkill $watcher 2>/dev/null\nelapsed=$(( EPOCHREALTIME - start ))\n\nif (( elapsed >= 15 )); then\n  echo \"EXIT: TIMEOUT\"\n  echo \"Note: stopped after 15 seconds (interactive or long-running commands aren't supported).\"\nelif (( code == 153 )); then\n  echo \"EXIT: OUTPUT_LIMIT\"\n  echo \"Note: stopped after writing 1 MB of output.\"\nelse\n  echo \"EXIT: $code\"\nfi\nprintf 'Duration: %.1fs\\n' $elapsed\necho \"Output:\"\nlines=$(wc -l < \"$out\" | tr -d ' ')\nif [[ ! -s $out ]]; then\n  echo \"(no output)\"\nelse\n  head -n 200 \"$out\" | cut -c 1-500\n  (( lines > 200 )) && echo \"… $(( lines - 200 )) more lines not shown\"\nfi\nrm -f \"$out\""
+                        },
+                        "outputs": [
+                          "Shell Script Result"
+                        ]
+                      },
+                      {
+                        "id": "a8s9",
+                        "type": "save_record",
+                        "label": "Save Command Run",
+                        "description": "Attaches the command, its verification and its result to the lookup saved in a6r.",
+                        "params": {
+                          "record": "command_run",
+                          "parent": "{{a6r.Record}}",
+                          "fields": {
+                            "command": "{{a8s4.Provided Input}}",
+                            "verification": "{{a8s6.Shell Script Result}}",
+                            "result": "{{a8s8.Shell Script Result}}"
+                          }
+                        },
+                        "outputs": [
+                          "Record"
+                        ]
+                      },
+                      {
+                        "id": "a8s10",
+                        "type": "if",
+                        "label": "If",
+                        "params": {
+                          "input": "{{a8s8.Shell Script Result}}",
+                          "condition": "begins with",
+                          "value": "EXIT: 0"
+                        },
+                        "branches": {
+                          "then": [],
+                          "otherwise": [
+                            {
+                              "id": "a8s11",
+                              "type": "show_alert",
+                              "label": "Show Alert",
+                              "params": {
+                                "title": "The command didn't succeed",
+                                "message": "{{a8s8.Shell Script Result}}"
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "otherwise": [
+                      {
+                        "id": "a8s12",
+                        "type": "save_record",
+                        "label": "Save Blocked Command",
+                        "description": "Records the blocked attempt and the reason against the lookup saved in a6r.",
+                        "params": {
+                          "record": "command_run",
+                          "parent": "{{a6r.Record}}",
+                          "fields": {
+                            "command": "{{a8s4.Provided Input}}",
+                            "verification": "{{a8s6.Shell Script Result}}",
+                            "result": ""
+                          }
+                        },
+                        "outputs": [
+                          "Record"
+                        ]
+                      },
+                      {
+                        "id": "a8s13",
+                        "type": "show_alert",
+                        "label": "Show Alert",
+                        "params": {
+                          "title": "Command blocked",
+                          "message": "{{a8s6.Shell Script Result}}"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ],
+              "Done": []
+            },
+            "description": "The lookup is already saved. Run a Command tries the tool; Done ends the run."
+          }
+        ],
+        "otherwise": [
+          {
+            "id": "a7o1",
+            "type": "show_alert",
+            "label": "Show Alert",
+            "params": {
+              "title": "Lookup failed",
+              "message": "{{a6.Shell Script Result}}"
+            }
+          },
+          {
+            "id": "a7o2",
+            "type": "stop_shortcut",
+            "label": "Stop This Shortcut",
+            "params": {}
+          }
+        ]
+      }
+    }
+  ],
+  "variables": {
+    "magic": [
+      "Shortcut Input",
+      "Provided Input",
+      "Response",
+      "Split Text",
+      "Item from List",
+      "Shell Script Result",
+      "List",
+      "Record",
+      "Current Date"
+    ]
+  },
+  "flow": [
+    "a1",
+    "a2",
+    "a3",
+    "a4",
+    "a5",
+    "a6",
+    "a6r",
+    "a7"
+  ],
+  "notes": [
+    "a6, a7 and a8 were added or reworked after the original screenshot (validation, STATUS routing, safer manual extraction).",
+    "a3's prompt and a6's name extraction were hardened after testing: the on-device model sometimes answers \"command: lsof\" or adds arguments, which the original cleanup rejected as INVALID. INVALID output now includes the model's first line.",
+    "1.4: the app's history database is the source of truth. a6r saves every lookup (including NOT_FOUND and INVALID); a8s9 and a8s12 attach each command, its verification and its result. Notes is no longer written by the pipeline; export a lookup to Notes from the History window instead.",
+    "Running a command: the model's example is suggested, you confirm or edit it, a8s6 verifies it, a8s8 re-checks and runs it. A non-zero exit or a blocked command shows an alert.",
+    "In the Shortcuts app, replace {{...}} placeholders with the real variables from the variable picker.",
+    "The original screenshot was cropped at the bottom; actions below the visible area, such as an End Menu, may exist.",
+    "Failed lookups stop with an alert. To keep them as diagnostic records instead, move the Save/Cancel menu out of the If's 'then' branch."
+  ]
+}

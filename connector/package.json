@@ -1,0 +1,27 @@
+{
+  "name": "ragnarok-connector",
+  "version": "1.0.0",
+  "description": "Ragnarok's one MCP server: receipted tools over the data layer's Postgres (client tables from client/schema.json + read-only business tools). Every call leaves a hash-chained receipt.",
+  "type": "module",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "stdio": "node dist/src/stdio.js",
+    "http": "node dist/src/http.js",
+    "e2e": "node dist/test/e2e.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "pg": "8.23.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/pg": "8.23.1",
+    "typescript": "5.9.3",
+    "vitest": "5.0.5"
+  },
+  "engines": { "node": ">=22" }
+}

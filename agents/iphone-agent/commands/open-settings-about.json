@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "0.1",
+  "version": "1.0.0",
+  "id": "com.yggdrasil.iphone.open-settings-about",
+  "name": "Open iPhone About",
+  "description": "Open Settings, choose General, then open About and verify each screen.",
+  "safety": { "risk": "reversible" },
+  "steps": [
+    {
+      "id": "open-settings-general",
+      "action": "openApp",
+      "app": { "name": "General" },
+      "expect": {
+        "all": [{ "app": { "name": "Settings" } }, { "screenText": "About" }]
+      }
+    },
+    {
+      "id": "open-about",
+      "action": "tap",
+      "target": { "text": "About", "minimumConfidence": 0.8 },
+      "expect": { "screenText": "iOS Version" }
+    }
+  ],
+  "postconditions": [
+    { "all": [{ "app": { "name": "Settings" } }, { "screenText": "iOS Version" }] }
+  ]
+}

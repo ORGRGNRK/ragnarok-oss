@@ -1,0 +1,382 @@
+#!/usr/bin/env python3
+"""git-history-scan — find credentials in a repo's ENTIRE git history, not just HEAD.
+
+owner, 2026-09-09, by text after a coder asked about their repo:
+"Honestly just going to strip the cress and open it up." He tapped intent #108
+approved. Stripping the WORKING TREE is the obvious half and it is the half that
+does nothing: `git rm .env` removes a file from HEAD and leaves every byte of it
+in the object store, published in full the moment the repo goes public. History
+is what a clone hands over.
+
+WHAT IT DOES
+  Walks every reachable object (`git rev-list --objects --all` — every branch,
+  tag, remote-tracking ref and stash, i.e. exactly what a push publishes), keeps
+  the blobs, and reports two tiers:
+
+    LIVE  — an exact match against a credential value read off THIS BOX right
+            now, in-process, by ragnarok-save's collect_secrets(). A LIVE hit is
+            a key that works today. Rotating it is not optional.
+    SHAPE — a hit on one of ragnarok-save's credential SHAPES. It may be dead,
+            rotated, a placeholder or a test fixture. It is a candidate, and
+            this script deliberately does not claim otherwise.
+
+  For each hit it reports whether the blob is still reachable from HEAD or is
+  HISTORY-ONLY, which is the whole point of the exercise: a history-only hit is
+  invisible to every tool that reads the working tree.
+
+WHAT IT NEVER DOES
+  Print, log, or pass a secret value. Findings carry a label, a sha256 prefix of
+  the value, the path and the commit — never the value. This script's own output
+  is read by AI sessions whose transcripts are backed up unredacted (Memories
+  recfNzTleJ9pBIlTR), so a scanner that printed context lines would be a second
+  copy of the leak it just found. For the same reason it never shells out with a
+  secret in argv (argv is visible in `ps` and lands in ~/crew/logs/merged.jsonl).
+
+  It also never REWRITES anything. No filter-repo, no rebase, no force-push.
+  Rewriting published history is archive-first territory and the owner's call; this
+  tells him which commits would need it.
+
+  Redaction is IMPORTED from ~/scripts/ragnarok-save, never copied — the same
+  rule ragnarok-corpus follows. Two copies of a credential list means one of them
+  is out of date and nobody knows which.
+
+USAGE
+  git-history-scan                       # every git repo under ~/repos plus
+                                         #   ~/crew ~/panes ~/scripts
+  git-history-scan ~/repos/phone-grader  # one repo
+  git-history-scan --shapes-only         # skip the Airtable/live-value load
+  git-history-scan --json                # machine-readable
+
+EXIT   0 = no findings   1 = findings   2 = the scan itself failed
+"""
+
+import argparse
+import hashlib
+import importlib.machinery
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+import time
+
+HOME = os.path.expanduser("~")
+# ragnarok/ops/tools: the redaction copy sits next to this file; ~/scripts/ragnarok-save is the Alexus original
+_HERE = os.path.dirname(os.path.realpath(__file__))
+SAVE_SCRIPT = os.environ.get("GHS_SAVE_SCRIPT") or next((p for p in (os.path.join(_HERE, "ragnarok-save"), os.path.join(HOME, "scripts", "ragnarok-save")) if os.path.exists(p)), os.path.join(_HERE, "ragnarok-save"))
+STATE_DIR = os.environ.get("GHS_STATE_DIR", os.path.join(HOME, ".local", "state", "ragnarok"))
+
+# Default scan set. ~/repos is walked live rather than listed, so a repo cloned
+# tomorrow is covered with no edit here (the F55-IP rule). The three outside it
+# are named because ~/repos is NOT the full inventory of code on this box, and
+# ~/scripts in particular is the likeliest open-source candidate — it holds the
+# transferable boot machinery (Memories recvSuC39SZLKKIdM).
+EXTRA_ROOTS = [os.path.join(HOME, d) for d in ("crew", "panes", "scripts")]
+
+BINARY_SNIFF = 8192
+# There is deliberately NO size cap. The first version skipped blobs over 4 MB as
+# "a binary/asset, not a key file" — backwards for this box, where the biggest
+# TEXT blobs are logs, transcripts and corpus/vector dumps, i.e. the secret-dense
+# sources. That skip silently passed over recall/data/vectors.jsonl in ~/scripts
+# on the first run. The NUL sniff below is the real binary test; a large text blob
+# through finditer costs seconds.
+
+
+def log(msg):
+    print(msg, flush=True)
+
+
+def load_save_module():
+    """Import ~/scripts/ragnarok-save. It has no .py suffix, so SourceFileLoader.
+
+    Same mechanism as ragnarok-corpus/compile.py. The module is import-safe: all
+    of its work is under a __main__ guard.
+    """
+    spec = importlib.util.spec_from_loader(
+        "ragnarok_save", importlib.machinery.SourceFileLoader("ragnarok_save", SAVE_SCRIPT))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def load_live_secrets(save, shapes_only):
+    """Live credential VALUES, in-process, never through argv.
+
+    A test seam ($GHS_SECRETS_FILE, one value per line) exists so fixtures can
+    exercise the LIVE tier without touching Airtable or reading a real .env.
+
+    Returns (values, sources, degraded) — `degraded` is True when the live load
+    was skipped or came back short, because "0 LIVE findings" from a scan that
+    loaded no live values is not a clean bill of health and must not read as one.
+    """
+    seam = os.environ.get("GHS_SECRETS_FILE")
+    if seam:
+        try:
+            with open(seam, encoding="utf-8") as fh:
+                vals = {ln.strip() for ln in fh if len(ln.strip()) >= save.MIN_SECRET_LEN}
+            return vals, [f"seam:{os.path.basename(seam)}"], False
+        except OSError as exc:
+            return set(), [], f"seam unreadable: {exc}"
+
+    if shapes_only:
+        return set(), [], "--shapes-only: live values not loaded"
+
+    try:
+        _nocodb, values, sources = save.collect_secrets()
+    except Exception as exc:                       # never let this kill the scan
+        return set(), [], f"live load failed: {exc.__class__.__name__}: {exc}"
+    degraded = False if values else "live load returned no values"
+    return values, sources, degraded
+
+
+def git(repo, *args, binary=False):
+    return subprocess.run(["git", "-C", repo, *args],
+                          capture_output=True, text=not binary, check=False)
+
+
+def is_repo(path):
+    """A real repository with its own object store.
+
+    `.git` being a FILE means a linked worktree — same objects as its parent, so
+    scanning it duplicates every finding (the ALEXUS-android-clone lesson in
+    ~/CLAUDE.md, from the other direction).
+    """
+    return os.path.isdir(os.path.join(path, ".git"))
+
+
+def discover_repos():
+    found = []
+    repos_dir = os.path.join(HOME, "repos")
+    if os.path.isdir(repos_dir):
+        for name in sorted(os.listdir(repos_dir)):
+            p = os.path.join(repos_dir, name)
+            if is_repo(p):
+                found.append(p)
+    for p in EXTRA_ROOTS:
+        if is_repo(p) and p not in found:
+            found.append(p)
+    # the Mac keeps its repos in ~/Developer (one or two folders deep)
+    dev = os.path.join(HOME, "Developer")
+    if os.path.isdir(dev):
+        for a in sorted(os.listdir(dev)):
+            pa = os.path.join(dev, a)
+            if is_repo(pa):
+                if pa not in found: found.append(pa)
+            elif os.path.isdir(pa):
+                for b in sorted(os.listdir(pa)):
+                    pb = os.path.join(pa, b)
+                    if is_repo(pb) and pb not in found: found.append(pb)
+    return found
+
+
+def fingerprint(value):
+    return hashlib.sha256(value.encode("utf-8", "replace")).hexdigest()[:12]
+
+
+def head_paths(repo):
+    r = git(repo, "ls-tree", "-r", "--format=%(objectname) %(path)", "HEAD")
+    live = {}
+    if r.returncode == 0:
+        for line in r.stdout.splitlines():
+            sha, _, path = line.partition(" ")
+            live.setdefault(sha, []).append(path)
+    return live
+
+
+def introducing_commits(repo, blob_sha, limit=3):
+    r = git(repo, "log", "--all", "--format=%h %ad", "--date=short",
+            f"--find-object={blob_sha}")
+    if r.returncode != 0:
+        return []
+    return [ln for ln in r.stdout.splitlines() if ln.strip()][:limit]
+
+
+def scan_repo(repo, live_values, save):
+    """Returns (findings, stats). A finding never contains a secret value."""
+    r = git(repo, "rev-list", "--objects", "--all")
+    if r.returncode != 0:
+        return None, {"error": r.stderr.strip()[:200] or "rev-list failed"}
+
+    # object sha -> the path it was seen at (rev-list gives one; good enough as a
+    # label, and the commit lookup below is the authoritative locator).
+    names = {}
+    order = []
+    for line in r.stdout.splitlines():
+        sha, _, path = line.partition(" ")
+        if len(sha) == 40 and sha not in names:
+            names[sha] = path
+            order.append(sha)
+
+    in_head = head_paths(repo)
+    findings = []
+    stats = {"objects": len(order), "blobs": 0, "bytes": 0, "binary": 0}
+
+    # One batch process for the whole repo: streaming, and no value ever reaches
+    # a command line.
+    proc = subprocess.Popen(["git", "-C", repo, "cat-file", "--batch"],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    try:
+        for sha in order:
+            proc.stdin.write((sha + "\n").encode())
+            proc.stdin.flush()
+            header = proc.stdout.readline().decode("utf-8", "replace").split()
+            if len(header) != 3:
+                continue
+            _oid, otype, size = header[0], header[1], int(header[2])
+            body = proc.stdout.read(size)
+            proc.stdout.read(1)                     # trailing newline
+            if otype != "blob":
+                continue
+            stats["blobs"] += 1
+            stats["bytes"] += size
+            if b"\x00" in body[:BINARY_SNIFF]:
+                stats["binary"] += 1
+                continue
+            text = body.decode("utf-8", "replace")
+
+            hits = []
+            for value in live_values:
+                if value in text:
+                    hits.append(("LIVE", "live-credential", fingerprint(value)))
+            for label, rx in save.PATTERNS:
+                for m in rx.finditer(text):
+                    # Header patterns capture a prefix; the credential is what
+                    # follows it. Fingerprint the whole match either way — it is
+                    # a one-way hash, never reversed, and only ever compared.
+                    hits.append(("SHAPE", label, fingerprint(m.group(0))))
+
+            if not hits:
+                continue
+
+            seen = set()
+            deduped = []
+            for tier, label, fp in hits:
+                if (tier, label, fp) in seen:
+                    continue
+                seen.add((tier, label, fp))
+                deduped.append({"tier": tier, "label": label, "fingerprint": fp})
+
+            findings.append({
+                "blob": sha[:12],
+                "path": names.get(sha, "(unnamed)"),
+                "in_head": sha in in_head,
+                "head_paths": in_head.get(sha, []),
+                "commits": introducing_commits(repo, sha),
+                "hits": deduped,
+            })
+    finally:
+        try:
+            proc.stdin.close()
+        except Exception:
+            pass
+        proc.wait(timeout=30)
+
+    return findings, stats
+
+
+def render(repo, findings, stats):
+    name = repo.replace(HOME, "~")
+    if findings is None:
+        log(f"\n=== {name} — SCAN FAILED: {stats.get('error')}")
+        return
+    live = [f for f in findings if any(h["tier"] == "LIVE" for h in f["hits"])]
+    hist_only = [f for f in findings if not f["in_head"]]
+    log(f"\n=== {name}")
+    log(f"    {stats['objects']:,} objects, {stats['blobs']:,} blobs scanned "
+        f"({stats['bytes'] / 1e6:.1f} MB; {stats['binary']} binary skipped, "
+        f"no size cap)")
+    if not findings:
+        log("    no credential shapes found in any reachable blob")
+        return
+    log(f"    {len(findings)} blob(s) with hits — {len(live)} LIVE, "
+        f"{len(hist_only)} history-only (absent from HEAD)")
+    for f in findings:
+        where = "IN HEAD" if f["in_head"] else "HISTORY-ONLY"
+        log(f"    [{where}] {f['path']}  blob {f['blob']}")
+        for h in f["hits"]:
+            log(f"        {h['tier']:5s} {h['label']:16s} sha256:{h['fingerprint']}")
+        for c in f["commits"]:
+            log(f"        introduced/removed in {c}")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("repos", nargs="*", help="repo paths (default: all on this box)")
+    ap.add_argument("--shapes-only", action="store_true",
+                    help="skip loading live credential values (no Airtable read)")
+    ap.add_argument("--json", action="store_true", help="machine-readable output")
+    ap.add_argument("--report", help="write the report here (default: state dir)")
+    args = ap.parse_args()
+
+    try:
+        save = load_save_module()
+    except Exception as exc:
+        print(f"git-history-scan: cannot import redaction from {SAVE_SCRIPT}: {exc}",
+              file=sys.stderr)
+        return 2
+
+    live_values, sources, degraded = load_live_secrets(save, args.shapes_only)
+
+    repos = [os.path.abspath(os.path.expanduser(p)) for p in args.repos] or discover_repos()
+    bad = [p for p in repos if not is_repo(p)]
+    if bad:
+        for p in bad:
+            print(f"git-history-scan: not a repository with its own object store: {p}",
+                  file=sys.stderr)
+        return 2
+
+    started = time.time()
+    if not args.json:
+        log("git-history-scan — every reachable blob, not just the working tree")
+        log(f"  {len(live_values)} live credential value(s) loaded for exact match"
+            + (f" (sources: {', '.join(sorted(set(sources)))})" if sources else ""))
+        if degraded:
+            log(f"  !! LIVE TIER DEGRADED: {degraded}")
+            log("     0 LIVE findings below does NOT mean no live credential is present.")
+        log(f"  {len(save.PATTERNS)} credential shapes; {len(repos)} repo(s)")
+
+    results = {}
+    total = 0
+    for repo in repos:
+        findings, stats = scan_repo(repo, live_values, save)
+        results[repo.replace(HOME, "~")] = {"findings": findings, "stats": stats}
+        if findings:
+            total += len(findings)
+        if not args.json:
+            render(repo, findings, stats)
+
+    report = {
+        "scanned_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "live_values_loaded": len(live_values),
+        "live_sources": sorted(set(sources)),
+        "live_tier_degraded": degraded,
+        "shapes": [lbl for lbl, _ in save.PATTERNS],
+        "repos": results,
+        "elapsed_s": round(time.time() - started, 1),
+    }
+
+    path = args.report or os.path.join(STATE_DIR, "git-history-scan.json")
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(report, fh, indent=2)
+    except OSError as exc:
+        print(f"git-history-scan: could not write report: {exc}", file=sys.stderr)
+
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        log(f"\n{total} blob(s) with hits across {len(repos)} repo(s) "
+            f"in {report['elapsed_s']}s")
+        log(f"report: {path}")
+        log("\nA LIVE hit is a credential that works today — rotate it, and note that")
+        log("removing the file from HEAD does not remove it from a clone. A SHAPE hit")
+        log("may be dead, a placeholder or a test fixture; this script does not guess.")
+        log("Nothing here was rewritten. History rewriting is the owner's call.")
+
+    return 1 if total else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

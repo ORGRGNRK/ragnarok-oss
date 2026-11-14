@@ -1,0 +1,15 @@
+# Only package.json, lockfile, tsconfig, src/, sql/, evals/ and two scripts go into the image.
+**
+!package.json
+!package-lock.json
+!tsconfig.json
+!src/**
+!sql/**
+!evals/**
+!scripts/run-evals.mjs
+!scripts/mcp-check.mjs
+# belt and braces
+**/.env
+**/.env.*
+**/*.dump
+**/node_modules

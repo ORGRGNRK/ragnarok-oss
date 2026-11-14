@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "0.1",
+  "id": "com.yggdrasil.iphone.open-notes",
+  "name": "Open Notes",
+  "description": "Authored from: open Notes and check for Notes",
+  "safety": {
+    "risk": "reversible",
+    "requiresConfirmation": false
+  },
+  "steps": [
+    {
+      "id": "open-notes",
+      "action": "openApp",
+      "app": {
+        "name": "Notes"
+      },
+      "expect": {
+        "screenText": "Notes"
+      }
+    }
+  ],
+  "postconditions": [
+    {
+      "screenText": "Notes"
+    }
+  ],
+  "inputs": {},
+  "version": "1.0.0",
+  "preconditions": [],
+  "onFailure": {
+    "behavior": "stop"
+  }
+}

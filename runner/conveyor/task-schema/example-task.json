@@ -1,0 +1,68 @@
+{
+  "schema_version": "conveyor-task/0.1",
+  "id": "pipe-dupes-norm-test",
+  "title": "Add a unit test for dupes.norm vendor matching",
+  "goal": "dupes.norm has a small test proving that vendor names differing only in case, spaces and punctuation normalise to the same string.",
+  "project": "ragnarok-pipe",
+  "root": "/opt/ragnarok-pipe",
+  "files_to_touch": [
+    {
+      "path": "app/dupes.py",
+      "action": "read",
+      "why": "norm() is the function under test; do not change it"
+    },
+    {
+      "path": "tests/test_dupes_norm.py",
+      "action": "create",
+      "why": "the new test"
+    }
+  ],
+  "steps": [
+    "Read norm() in app/dupes.py (about 3 lines) and do not edit it.",
+    "Create tests/test_dupes_norm.py that imports norm from app.dupes using plain asserts, no pytest.",
+    "Assert norm('Harbor Test-Bakery.') == norm('HARBOR TEST BAKERY') and norm(None) == ''.",
+    "Assert two different vendors (e.g. 'Harbor Bakery' and 'Harbor Bank') do NOT match.",
+    "Print OK as the last line when every assert passes."
+  ],
+  "constraints": {
+    "network": "none",
+    "secrets": "none",
+    "write_scope": [
+      "tests/test_dupes_norm.py"
+    ],
+    "notes": [
+      "Do not touch the database, .env, db.env, data/ or the running service."
+    ]
+  },
+  "acceptance": {
+    "checks": [
+      {
+        "claim": "test file exists",
+        "verify": "test -s tests/test_dupes_norm.py"
+      },
+      {
+        "claim": "test passes and prints OK",
+        "verify": ".venv/bin/python tests/test_dupes_norm.py",
+        "expect": "^OK$"
+      },
+      {
+        "claim": "app/dupes.py is unchanged",
+        "verify": "git diff --quiet -- app/dupes.py"
+      }
+    ],
+    "expected_result": "Running the test with the app venv exits 0 and prints OK; no other file changes."
+  },
+  "limits": {
+    "max_files_changed": 1,
+    "max_lines_changed": 40,
+    "timeout_s": 300
+  },
+  "depends_on": [],
+  "status": "queue",
+  "provenance": {
+    "proposed_by": "planner:local-llama-server",
+    "source": "planner",
+    "proposed_at": "2026-10-28T00:45:00-07:00",
+    "approved_by": null
+  }
+}

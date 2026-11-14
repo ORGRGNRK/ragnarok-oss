@@ -1,0 +1,9 @@
+.build/
+build/
+.DS_Store
+# Build outputs and macOS junk
+dist/
+DerivedData/
+*.log
+._*
+HANDOFF-grokbot.md

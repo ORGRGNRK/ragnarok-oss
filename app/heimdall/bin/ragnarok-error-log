@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""Write one row to public."Run Errors" on Alexus (clientdata).
+
+Stdin is one JSON object: source, area, message, and optional run_id, who,
+exit_code, backup. A blank message is not a row. The message is stored whole
+after secrets are scrubbed. Exit code is only a column: a row is written
+whether the process exited 0 or not.
+
+RAGNAROK_ERROR_SINK=off      do nothing (tests)
+RAGNAROK_ERROR_SINK=/path    append the row JSON there instead of Postgres
+RAGNAROK_ERROR_PG            argv of the psql command (tests, a throwaway db)
+RAGNAROK_DB_SSH              ssh prefix, same shape as memory.py
+"""
+import getpass
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+
+PATTERNS = [
+    ("private-key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)")),
+    ("age-secret", re.compile(r"AGE-(?:SECRET-KEY|PLUGIN-[A-Z0-9-]+?)-1[A-Z0-9]{20,}")),
+    ("anthropic-key", re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}")),
+    ("openai-key", re.compile(r"sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}")),
+    ("xai-key", re.compile(r"xai-[A-Za-z0-9]{20,}")),
+    ("github-token", re.compile(r"(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})")),
+    ("bearer", re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}")),
+    ("url-password", re.compile(r"(?<=://)[^\s:/@]+:[^\s@/]+(?=@)")),
+    ("assignment", re.compile(
+        r"""(?i)\b(?:[A-Z0-9_]*(?:password|passwd|pwd|secret|token|api[_-]?key|apikey|auth|credential)[A-Z0-9_]*)\s*[:=]\s*["']?(?!\[hidden)[^\s"']{6,}""")),
+]
+
+
+def scrub(text):
+    out = text or ""
+    path = os.path.expanduser("~/.ragnarok/scrub-values")
+    try:
+        listed = open(path).read().splitlines()
+    except OSError:
+        listed = []
+    for line in listed:
+        value = line.strip()
+        if len(value) >= 6 and not value.startswith("#") and value in out:
+            out = out.replace(value, "[hidden:listed]")
+    for name, pattern in PATTERNS:
+        out = pattern.sub("[hidden:%s]" % name, out)
+    return out.replace("\x00", "")
+
+
+def dollar(text, blob):
+    tag, n = "$re$", 0
+    while tag in blob:
+        n += 1
+        tag = "$re%s$" % n
+    return tag + text + tag
+
+
+def psql_command():
+    override = os.environ.get("RAGNAROK_ERROR_PG")
+    if override:
+        return [shlex.split(override)]
+    remote = ("docker exec -i ragnarok-data-postgres-1 psql -U kit_admin -d clientdata "
+              "-X -q -v ON_ERROR_STOP=1")
+    custom = os.environ.get("RAGNAROK_DB_SSH")
+    if custom:
+        return [shlex.split(custom) + [remote]]
+    opts = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5"]
+    hosts = []
+    if os.environ.get("RAGNAROK_DB_HOST"):
+        hosts.append(os.environ["RAGNAROK_DB_HOST"])
+    conf = {}
+    try:
+        for line in open(os.path.expanduser("~/.ragnarok/local.conf"), encoding="utf-8"):
+            k, sep, v = line.strip().partition("=")
+            if sep and not k.startswith("#"):
+                conf[k.strip()] = v.strip().strip("\"'")
+    except OSError:
+        pass
+    ok = lambda v: bool(v) and not v.startswith("-") and re.fullmatch(r"[A-Za-z0-9._:@-]{1,253}", v)
+    user = conf.get("ALEXUS_USER") if ok(conf.get("ALEXUS_USER")) else getpass.getuser()
+    for key, default in (("ALEXUS_HOST", "alexus.local"), ("ALEXUS_TAILSCALE", "alexus")):
+        hosts.append(user + "@" + (conf.get(key) if ok(conf.get(key)) else default))
+    return [opts + [host, remote] for host in hosts]
+
+
+def insert_sql(row):
+    blob = "\n".join(str(row.get(k) or "") for k in ("source", "area", "run_id", "who", "exit_code", "backup", "message"))
+
+    def field(key):
+        value = row.get(key)
+        if value is None or value == "":
+            return "NULL"
+        return dollar(str(value), blob)
+
+    return (
+        'INSERT INTO public."Run Errors" (source, area, run_id, who, exit_code, backup, message) VALUES ('
+        + ", ".join(field(k) for k in ("source", "area", "run_id", "who", "exit_code", "backup", "message"))
+        + ");\n"
+    )
+
+
+def push(row):
+    """Store one scrubbed row. Returns the stored message, or None when the message is blank."""
+    message = scrub(row.get("message") or "")
+    if not message.strip():
+        return None
+    stored = dict(row, message=message)
+    sink = os.environ.get("RAGNAROK_ERROR_SINK", "")
+    if sink == "off":
+        return message
+    if sink.startswith("/"):
+        line = json.dumps({k: stored.get(k) for k in
+                           ("source", "area", "run_id", "who", "exit_code", "backup", "message")},
+                          ensure_ascii=False)
+        with open(sink, "a") as handle:
+            handle.write(line + "\n")
+        return message
+    sql = insert_sql(stored)
+    last = "run error was not stored"
+    for cmd in psql_command():
+        try:
+            done = subprocess.run(cmd, input=sql, text=True, capture_output=True, timeout=20)
+        except (OSError, subprocess.TimeoutExpired):
+            last = "run error was not stored"
+            continue
+        if done.returncode == 0:
+            return message
+        last = "run error was not stored"
+    sys.stderr.write(last + "\n")
+    return None
+
+
+def main():
+    try:
+        row = json.loads(sys.stdin.read() or "{}")
+    except json.JSONDecodeError:
+        sys.stderr.write("run error was not stored\n")
+        return 1
+    if not isinstance(row, dict) or not str(row.get("source") or "").strip() or not str(row.get("area") or "").strip():
+        sys.stderr.write("run error was not stored\n")
+        return 1
+    stored = push(row)
+    if stored is None and (row.get("message") or "").strip():
+        return 1
+    if stored:
+        sys.stdout.write(stored)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

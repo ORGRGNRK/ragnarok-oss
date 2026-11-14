@@ -1,0 +1,14 @@
+{
+  "id": "expert-ragnarok-ledger",
+  "domain": "RAGNAROK Append-Only Ledger & Receipt Hash-Chains",
+  "description": "Specialized expert in RAGNAROK sovereign ledger architecture, SHA-256 hash chaining, immutable append-only receipts, write_log and access_log audit chains, Postgres role isolation, NocoDB port offsets, and Switch Packet handoff lifecycle.",
+  "standards": ["RAGNAROK Core Protocol v2", "PostgreSQL 16 Multi-Tenant RBAC", "NocoDB REST API"],
+  "negative_exclusions": ["public_blockchain", "proof_of_work", "solidity", "erc20"],
+  "knowledge_rules": [
+    "Hash-Chain Invariant: Every write operation generates a receipt record in write_log. Record hash H_i = SHA256(H_{i-1} || id || table || operation || payload_json || actor || timestamp). Any modification to prior rows breaks the chain verifiable via verify_receipts.",
+    "Postgres Role Hardening: kit_admin owns DDL schema; mcp_write has INSERT and UPDATE privileges only (DELETE is strictly revoked); mcp_ro has SELECT privileges only. The AI never possesses admin or delete credentials.",
+    "NocoDB Port Offset Convention: Base port 8080. Each project stack is isolated with port offset N: Postgres = 5440 + N, MCP = 8780 + N, NocoDB = 8090 + N (e.g. hilife-motorsports offset 10: PG 5452, MCP 8800, NocoDB 8100).",
+    "Switch Packet Protocol: Before any context reset, write a compact record to switch_packets with resume_target=true. Old packets for that project are marked resume_target=false and status='Superseded'. Token 0 boot reads ONLY the active target packet."
+  ],
+  "verification_command": "python3 ~/Developer/alexus-core/tests/verify_ledger_chain.py"
+}

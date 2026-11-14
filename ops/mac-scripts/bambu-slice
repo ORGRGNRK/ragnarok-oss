@@ -1,0 +1,203 @@
+#!/bin/bash
+# bambu-slice: slice a model with the Bambu Studio on Alexus, from the Mac, with no GUI.
+# It uses the real Bambu Studio CLI inside the bambustudio container and real P1S profiles.
+# It only makes a file. It never talks to the printer.
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: bambu-slice MODEL [options]
+       bambu-slice --check FILE.gcode.3mf [options]
+
+Slices MODEL (.stl, .3mf, .step, .stp, .obj) for a Bambu Lab P1S on Alexus and writes a .gcode.3mf.
+
+After slicing it reads the settings back out of the file and fails, writing nothing, unless these all match what was
+asked: printer, 0.4 mm nozzle, filament profile, process profile, layer height, infill, plate, supports on or off.
+It also reads the rotation stored in the file. A .stl, .step or .obj must stay exactly as exported unless you pass --orient.
+With --orient, or for a .3mf that may carry its own rotation, the rotation is reported and not compared.
+
+Options:
+  -o, --output FILE   Where to write it (default: MODEL's name + .gcode.3mf, in the current folder)
+  --filament NAME     Bambu Studio filament profile (default: "Bambu PETG Basic @BBL X1C")
+  --process NAME      Bambu Studio process profile (default: "0.16mm Optimal @BBL X1C")
+  --layer MM          Layer height (default: 0.16)
+  --infill PERCENT    Infill, 0-100 (default: 100)
+  --plate NAME        Build plate (default: "Textured PEI Plate")
+  --orient            Let Bambu Studio choose the orientation (default: keep the model as exported)
+  --supports          Turn on supports (default: off)
+  --check FILE        Slice nothing: check an existing .gcode.3mf against the options, using no network
+  -h, --help          Show this help
+
+The defaults are PETG, 0.16 mm, 100% infill, on a P1S with a 0.4 mm nozzle. A profile named with "@BBL X1C"
+is Bambu's shared X1C/P1S profile. Bambu Studio itself lists it as compatible with the P1S.
+
+Environment: BAMBU_SSH (default claude@alexus), BAMBU_SSH_KEY (default ~/.ssh/id_claude).
+
+Example: bambu-slice bridge_START_gap5.5_drop7.stl -o bridge_START.gcode.3mf
+EOF
+}
+
+MODEL="" OUT="" ORIENT=0 SUPPORT=0 CHECK=""
+FILAMENT="Bambu PETG Basic @BBL X1C"
+PROCESS="0.16mm Optimal @BBL X1C"
+LAYER=0.16 INFILL=100
+PLATE="Textured PEI Plate"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    -o|--output) OUT=${2:?--output needs a path}; shift 2 ;;
+    --filament) FILAMENT=${2:?--filament needs a name}; shift 2 ;;
+    --process) PROCESS=${2:?--process needs a name}; shift 2 ;;
+    --layer) LAYER=${2:?--layer needs a number}; shift 2 ;;
+    --infill) INFILL=${2:?--infill needs a number}; shift 2 ;;
+    --plate) PLATE=${2:?--plate needs a name}; shift 2 ;;
+    --orient) ORIENT=1; shift ;;
+    --supports) SUPPORT=1; shift ;;
+    --check) CHECK=${2:?--check needs a file}; shift 2 ;;
+    -*) echo "bambu-slice: unknown option $1" >&2; usage >&2; exit 2 ;;
+    *) [ -z "$MODEL" ] || { echo "bambu-slice: only one model at a time" >&2; exit 2; }; MODEL=$1; shift ;;
+  esac
+done
+[[ "$LAYER" =~ ^0?\.[0-9]+$ ]] || { echo "bambu-slice: bad --layer: $LAYER" >&2; exit 2; }
+[[ "$INFILL" =~ ^[0-9]+$ ]] && [ "$INFILL" -le 100 ] || { echo "bambu-slice: bad --infill: $INFILL" >&2; exit 2; }
+for v in "$FILAMENT" "$PROCESS" "$PLATE"; do
+  [[ "$v" =~ ^[A-Za-z0-9\ @._+-]+$ ]] || { echo "bambu-slice: bad profile name: $v" >&2; exit 2; }
+done
+# Read back what the slicer actually wrote and compare every setting that was asked for.
+verify() {
+  /usr/bin/python3 -I - "$1" "$FILAMENT" "$PROCESS" "$LAYER" "$INFILL" "$PLATE" "$SUPPORT" "$KEEP_ROTATION" <<'PY'
+import re, sys, zipfile
+path, filament, process, layer, infill, plate, support, keep_rotation = sys.argv[1:9]
+archive = zipfile.ZipFile(path)
+g = archive.read("Metadata/plate_1.gcode").decode("utf-8", "replace")
+model = archive.read("3D/3dmodel.model").decode("utf-8", "replace")
+# Each <item> and <component> transform starts with a 3x3 rotation; 1 0 0 0 1 0 0 0 1 means not rotated.
+rotations = [[float(v) for v in t.split()[:9]]
+             for t in re.findall(r"<(?:item|component)\b[^>]*\btransform=\"([^\"]+)\"", model)]
+rotated = any(abs(v - i) > 1e-6 for r in rotations for v, i in zip(r, [1, 0, 0, 0, 1, 0, 0, 0, 1]))
+def setting(key):
+    m = re.search(rf"^; {key} = (.*)$", g, re.M)
+    return m.group(1).strip().strip('"') if m else None
+def number(key):
+    try:
+        return float(setting(key))
+    except (TypeError, ValueError):
+        return None
+moves = len(re.findall(r"^G1 ", g, re.M))
+wanted = [
+    ("printer", setting("printer_settings_id"), "Bambu Lab P1S 0.4 nozzle"),
+    ("nozzle", number("nozzle_diameter"), 0.4),
+    ("filament", setting("filament_settings_id"), filament),
+    ("process", setting("print_settings_id"), process),
+    ("layer height", number("layer_height"), float(layer)),
+    ("infill", setting("sparse_infill_density"), f"{infill}%"),
+    ("plate", setting("curr_bed_type"), plate),
+    ("supports", setting("enable_support"), support),
+]
+problems = [f"{name} is {got!r}, asked for {want!r}" for name, got, want in wanted if got != want]
+if moves < 100:
+    problems.append(f"only {moves} moves")
+if not rotations:
+    problems.append("no rotation found in the file")
+if keep_rotation == "1" and rotated:
+    problems.append(f"model was rotated: {rotations}")
+if problems:
+    sys.exit("bambu-slice: bad result: " + "; ".join(problems))
+print(f"Checked: P1S, {filament} ({setting('filament_type')}), {process}, {setting('layer_height')} mm, "
+      f"{setting('sparse_infill_density')} infill, {setting('nozzle_diameter')} mm nozzle, {plate}, "
+      f"supports {'on' if support == '1' else 'off'}, {'rotated' if rotated else 'not rotated'}, {moves} moves")
+PY
+}
+
+KEEP_ROTATION=$((1 - ORIENT))
+if [ -n "$CHECK" ]; then
+  [ -f "$CHECK" ] || { echo "bambu-slice: no such file: $CHECK" >&2; exit 2; }
+  verify "$CHECK"
+  exit
+fi
+
+[ -n "$MODEL" ] || { usage >&2; exit 2; }
+[ -f "$MODEL" ] || { echo "bambu-slice: no such file: $MODEL" >&2; exit 2; }
+EXT=$(printf '%s' "${MODEL##*.}" | tr '[:upper:]' '[:lower:]')
+case "$EXT" in stl|3mf|step|stp|obj) ;; *) echo "bambu-slice: unsupported file type .$EXT" >&2; exit 2 ;; esac
+[ "$EXT" != 3mf ] || KEEP_ROTATION=0
+if [ -z "$OUT" ]; then
+  stem=$(basename "$MODEL"); OUT="${stem%.*}.gcode.3mf"
+fi
+mkdir -p "$(dirname "$OUT")"
+
+exec </dev/null   # ssh must not eat the caller's stdin, e.g. inside a read loop
+
+HOST=${BAMBU_SSH:-claude@alexus}
+KEY=${BAMBU_SSH_KEY:-$HOME/.ssh/id_claude}
+OPTS=(-i "$KEY" -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes -o ConnectTimeout=10)
+JOB="job-$(date +%Y%m%d-%H%M%S)-$$"
+REMOTE="bambustudio/config/jobs/$JOB"        # on Alexus, under claude@'s home
+INSIDE="/config/jobs/$JOB"                   # the same folder, seen from the container
+cleanup() { ssh "${OPTS[@]}" "$HOST" "rm -rf -- ~/$REMOTE" 2>/dev/null || true; }
+trap cleanup EXIT
+
+ssh "${OPTS[@]}" "$HOST" "mkdir -p ~/$REMOTE"
+scp -q "${OPTS[@]}" "$MODEL" "$HOST:$REMOTE/model.$EXT"
+
+# Bambu's profiles inherit from each other; the CLI wants them flattened into one file each.
+ssh "${OPTS[@]}" "$HOST" docker exec -i -u abc bambustudio /lsiopy/bin/python3 -I - \
+  "$INSIDE" "'$PROCESS'" "'$FILAMENT'" "$LAYER" "$INFILL" "$SUPPORT" <<'PY'
+import json, pathlib, sys
+job, process, filament, layer, infill, support = sys.argv[1:7]
+root = pathlib.Path("/opt/bambustudio/resources/profiles/BBL")
+index = {}
+for kind in ("machine", "process", "filament"):
+    for p in (root / kind).rglob("*.json"):
+        try:
+            d = json.loads(p.read_text())
+        except ValueError:
+            continue
+        if "name" in d:
+            index[(kind, d["name"])] = d
+
+def flat(kind, name):
+    if (kind, name) not in index:
+        sys.exit(f"bambu-slice: no {kind} profile named: {name}")
+    d = index[(kind, name)]
+    out = flat(kind, d["inherits"]) if d.get("inherits") else {}
+    for inc in d.get("include", []):
+        out.update(flat(kind, inc))
+    out.update(d)
+    out.pop("include", None)
+    out["inherits"] = ""
+    return out
+
+machine_name = "Bambu Lab P1S 0.4 nozzle"
+machine = flat("machine", machine_name)
+proc = flat("process", process)
+fil = flat("filament", filament)
+for prof, name in ((proc, process), (fil, filament)):
+    if machine_name not in prof.get("compatible_printers", []):
+        sys.exit(f"bambu-slice: {name} is not compatible with {machine_name}")
+proc["layer_height"] = layer
+proc["sparse_infill_density"] = f"{infill}%"
+if infill == "100":
+    proc["sparse_infill_pattern"] = "zig-zag"
+proc["enable_support"] = "1" if support == "1" else "0"
+for key, prof in (("machine", machine), ("process", proc), ("filament", fil)):
+    pathlib.Path(job, f"{key}.json").write_text(json.dumps(prof))
+PY
+
+echo "Slicing on Alexus (claude@): $(basename "$MODEL") for P1S, $FILAMENT, $LAYER mm, $INFILL% infill"
+ssh "${OPTS[@]}" "$HOST" docker exec -u abc -w "$INSIDE" -e LC_ALL=C -e LD_LIBRARY_PATH=/opt/bambustudio/bin bambustudio \
+  timeout 900 /opt/bambustudio/bin/bambu-studio --datadir "$INSIDE/data" \
+  --load-settings "'machine.json;process.json'" --load-filaments filament.json \
+  --curr-bed-type "'$PLATE'" --orient "$ORIENT" --arrange 1 --slice 0 \
+  --outputdir "$INSIDE" --export-3mf out.gcode.3mf "model.$EXT" >"${TMPDIR:-/tmp}/$JOB.log" 2>&1 || {
+    echo "bambu-slice: slicing failed. Last lines:" >&2; tail -20 "${TMPDIR:-/tmp}/$JOB.log" >&2
+    rm -f "${TMPDIR:-/tmp}/$JOB.log"; exit 1
+  }
+rm -f "${TMPDIR:-/tmp}/$JOB.log"
+
+scp -q "${OPTS[@]}" "$HOST:$REMOTE/out.gcode.3mf" "$OUT.part"
+
+# Trust the file, not the exit code.
+if ! verify "$OUT.part"; then rm -f "$OUT.part"; exit 1; fi
+mv "$OUT.part" "$OUT"
+echo "Wrote $OUT"

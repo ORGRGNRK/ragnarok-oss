@@ -1,0 +1,732 @@
+{
+  "schema_version": "1.0.0",
+  "name": "secure-mcp-platform",
+  "description": "One-command install of the operator's Business MCP stack with Docker Compose: Postgres 17 (roles ygg_app/ygg_read/nocodb, empty Business schema, schema mcp, ygg_receipts.mac.receipts hash chain), NocoDB, the Business MCP server (stdio via `docker compose exec -T` and Streamable HTTP on 127.0.0.1), and optional Ollama + nomic-embed-text for search (compose profile 'search'). Fresh installs hold NO business rows. Written so an AI with shell + file tools can follow it step by step; steps marked requires_human need the operator.",
+  "how_to_follow": [
+    "Export every input as an environment variable (its `env` name), using the default unless the operator gave a value.",
+    "Run steps in order. For each step: if `when` is present, run it first with bash; a non-zero exit means skip the step.",
+    "If requires_human is true: show the operator `human_prompt` and wait for an explicit yes before running `run`. Never answer for him.",
+    "Run `run` with bash in `cwd` (expand $VARS and ~). Compare with `expect` (exit_code, and output_matches as a regex over stdout+stderr).",
+    "Then run `verify.run` and compare with `verify.expect`. On any mismatch stop, read `on_failure`, report, and do not improvise destructive fixes.",
+    "After the steps, run every check in `post_install_verification`. Use `uninstall` only when the operator asks.",
+    "A reference runner exists: node deploy/scripts/follow-install-guide.mjs INSTALL.json (needs Node >= 22 on the host)."
+  ],
+  "safety": [
+    "Never print, cat, echo, grep -v, or paste the contents of .env, and never run `docker compose config` without -q (it prints the interpolated secrets). Read only the non-secret keys COMPOSE_PROJECT_NAME, COMPOSE_PROFILES, YGG_MCP_TAG and YGG_*_PORT, with: sed -n 's/^KEY=//p' .env.",
+    "Never delete Docker volumes (`down -v`, `volume rm`, `--delete-data`) unless the operator explicitly asks for that specific project; it destroys the database.",
+    "Never run a bare `docker compose down` from another directory, and always pass the project name (-p) when stopping or removing anything. Never touch other compose projects (for example ygg-scratch or ragnarok-shop).",
+    "Never commit or push .env, dumps, or data. The repo .gitignore and .dockerignore exclude them; do not override.",
+    "Never `git push`. Commit locally only if the operator asks.",
+    "Never modify an existing MCP client registration (for example ygg-business); register-clients.sh refuses existing names.",
+    "Do not call any AI/LLM API as part of the install or the checks; nothing here needs one.",
+    "Real business data is loaded only by step s10-restore-real-data, with the operator's approval."
+  ],
+  "prerequisites": [
+    {
+      "id": "docker",
+      "what": "Docker Engine 24+ via Docker Desktop, OrbStack, or Docker Engine on Linux",
+      "check": "docker version --format '{{.Server.Version}}'",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "^\\d+\\.\\d+"
+      },
+      "install_hint": "macOS: install OrbStack (brew install orbstack) or Docker Desktop, then start it. Linux: https://docs.docker.com/engine/install/. Installing software needs the operator's approval.",
+      "requires_human_to_fix": true
+    },
+    {
+      "id": "docker-compose",
+      "what": "Docker Compose v2.20+ (the `docker compose` plugin)",
+      "check": "docker compose version --short",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "^v?2\\.(2\\d|[3-9]\\d)|^v?[3-9]\\."
+      },
+      "install_hint": "Bundled with Docker Desktop/OrbStack; on Linux install docker-compose-plugin.",
+      "requires_human_to_fix": true
+    },
+    {
+      "id": "docker-daemon",
+      "what": "Docker daemon running and reachable",
+      "check": "docker info --format '{{.ServerVersion}}'",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "\\d"
+      },
+      "install_hint": "Start OrbStack/Docker Desktop (macOS: open -a OrbStack).",
+      "requires_human_to_fix": false
+    },
+    {
+      "id": "openssl",
+      "what": "openssl, for generating secrets",
+      "check": "openssl version",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "(OpenSSL|LibreSSL)"
+      },
+      "install_hint": "Preinstalled on macOS; Linux: apt install openssl.",
+      "requires_human_to_fix": true
+    },
+    {
+      "id": "git",
+      "what": "git, to get the source",
+      "check": "git --version",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "^git version"
+      },
+      "install_hint": "macOS: xcode-select --install.",
+      "requires_human_to_fix": true
+    },
+    {
+      "id": "curl",
+      "what": "curl, for the host-side HTTP check",
+      "check": "curl --version",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "^curl "
+      },
+      "install_hint": "Preinstalled on macOS.",
+      "requires_human_to_fix": true
+    },
+    {
+      "id": "disk",
+      "what": "About 3 GB free for images (plus ~0.3 GB for the optional nomic-embed-text model and ~3 GB for the Ollama image)",
+      "check": "df -Pk \"${TMPDIR:-/tmp}\" | awk 'NR==2{print int($4/1048576)\" GB free\"; exit !($4>3145728)}'",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "GB free"
+      },
+      "install_hint": "Free disk space.",
+      "requires_human_to_fix": true
+    },
+    {
+      "id": "node-optional",
+      "what": "OPTIONAL: Node >= 22 on the host, only for the offline tests, the reference runner and the host receipts hooks",
+      "check": "node -e 'console.log(process.versions.node); process.exit(+process.versions.node.split(\".\")[0] >= 22 ? 0 : 1)'",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "^2[2-9]|^[3-9]\\d"
+      },
+      "install_hint": "Optional. The container brings its own Node 22.23.3.",
+      "requires_human_to_fix": false,
+      "optional": true
+    }
+  ],
+  "inputs": [
+    {
+      "id": "repo_source",
+      "env": "YGG_REPO_SOURCE",
+      "default": "$HOME/Developer/secure-mcp-platform",
+      "description": "Where to clone the source from: a local path or a git URL (the repo has no remote; copy it to the new machine or clone over ssh)."
+    },
+    {
+      "id": "repo_dir",
+      "env": "YGG_REPO_DIR",
+      "default": "$HOME/secure-mcp-platform",
+      "description": "Where the package is installed (the compose project directory)."
+    },
+    {
+      "id": "project_name",
+      "env": "COMPOSE_PROJECT_NAME",
+      "default": "ygg-business",
+      "description": "Compose project name; containers and volumes are prefixed with it. Must not clash with an existing project."
+    },
+    {
+      "id": "pg_port",
+      "env": "YGG_PG_PORT",
+      "default": "5557",
+      "description": "Host port for Postgres, bound to 127.0.0.1."
+    },
+    {
+      "id": "nocodb_port",
+      "env": "YGG_NC_PORT",
+      "default": "8095",
+      "description": "Host port for NocoDB, bound to 127.0.0.1."
+    },
+    {
+      "id": "mcp_http_port",
+      "env": "YGG_MCP_HTTP_PORT",
+      "default": "8787",
+      "description": "Host port for the MCP Streamable HTTP endpoint (/mcp), bound to 127.0.0.1."
+    },
+    {
+      "id": "nocodb_admin_email",
+      "env": "NC_ADMIN_EMAIL",
+      "default": "admin@example.com",
+      "description": "NocoDB super-admin login email (the password is generated into .env)."
+    },
+    {
+      "id": "mcp_tag",
+      "env": "YGG_MCP_TAG",
+      "default": "local",
+      "description": "Tag for the locally built image secure-mcp-platform:<tag>."
+    },
+    {
+      "id": "enable_search",
+      "env": "YGG_ENABLE_SEARCH",
+      "default": "0",
+      "description": "1 = also run Ollama + pull nomic-embed-text (profile 'search', several GB). 0 = business_search_items returns an 'embedder unavailable' error; the other 5 tools work."
+    },
+    {
+      "id": "load_demo",
+      "env": "YGG_LOAD_DEMO",
+      "default": "0",
+      "description": "1 = load 12 made-up DEMO- items so the tools return something. Default keeps the database empty."
+    },
+    {
+      "id": "restore_dump",
+      "env": "YGG_RESTORE_DUMP",
+      "default": "",
+      "description": "Optional path to a pg_dump (custom format) of ygg_business with real data. Empty = skip. the operator must approve."
+    },
+    {
+      "id": "client_name",
+      "env": "YGG_CLIENT_NAME",
+      "default": "ygg-business-docker",
+      "description": "Name to register in Claude Code. Must not already exist (ygg-business is the operator's existing host registration)."
+    },
+    {
+      "id": "host_receipts",
+      "env": "YGG_HOST_RECEIPTS",
+      "default": "0",
+      "description": "1 = install the optional host-level receipts hooks (zsh + Claude Code) pointed at this DB."
+    }
+  ],
+  "steps": [
+    {
+      "id": "s01-get-source",
+      "title": "Get the source",
+      "why": "Everything (compose file, Dockerfile, init SQL, scripts) lives in the repo; the install runs from inside it.",
+      "cwd": "$HOME",
+      "run": "[ -d \"$YGG_REPO_DIR/.git\" ] && echo \"already present: $YGG_REPO_DIR\" || git clone \"$YGG_REPO_SOURCE\" \"$YGG_REPO_DIR\"",
+      "expect": {
+        "exit_code": 0
+      },
+      "verify": {
+        "run": "test -f \"$YGG_REPO_DIR/compose.yaml\" && test -f \"$YGG_REPO_DIR/install.sh\" && git -C \"$YGG_REPO_DIR\" log -1 --format=%h",
+        "expect": {
+          "exit_code": 0,
+          "output_matches": "^[0-9a-f]{7,}"
+        }
+      },
+      "on_failure": {
+        "diagnosis": [
+          "Source path/URL wrong or unreachable: check YGG_REPO_SOURCE.",
+          "Target exists but is not a git checkout: pick another YGG_REPO_DIR; do not delete the existing folder."
+        ],
+        "rollback": "rm -rf \"$YGG_REPO_DIR\" only if this step created it and the operator agrees."
+      },
+      "requires_human": false
+    },
+    {
+      "id": "s02-check-prereqs",
+      "title": "Check prerequisites",
+      "why": "Fails early, before anything is written, if Docker/Compose/openssl are missing or the daemon is down.",
+      "cwd": "$YGG_REPO_DIR",
+      "run": "./install.sh --check",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "prerequisites ok"
+      },
+      "verify": {
+        "run": "docker compose version --short && docker info --format '{{.ServerVersion}}'",
+        "expect": {
+          "exit_code": 0
+        }
+      },
+      "on_failure": {
+        "diagnosis": [
+          "'docker daemon not reachable': start OrbStack/Docker Desktop.",
+          "'docker compose v2 plugin not found': install the compose plugin (needs the operator).",
+          "Nothing was changed by this step."
+        ],
+        "rollback": "none needed"
+      },
+      "requires_human": false
+    },
+    {
+      "id": "s03-approve-install",
+      "title": "the operator approves the install",
+      "why": "The install pulls about 2 GB of images (postgres:17-alpine, nocodb/nocodb:2026.10.0, node:22.23.3-bookworm-slim), builds an image, and starts 3 long-running containers on 127.0.0.1 ports.",
+      "cwd": "$YGG_REPO_DIR",
+      "human_prompt": "OK to install project $COMPOSE_PROJECT_NAME: pull ~2 GB of images and run Postgres on 127.0.0.1:$YGG_PG_PORT, NocoDB on 127.0.0.1:$YGG_NC_PORT and the MCP on 127.0.0.1:$YGG_MCP_HTTP_PORT? (yes/no)",
+      "run": "echo \"approved: project=$COMPOSE_PROJECT_NAME pg=$YGG_PG_PORT nocodb=$YGG_NC_PORT mcp=$YGG_MCP_HTTP_PORT\"",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "approved"
+      },
+      "verify": {
+        "run": "for p in $YGG_PG_PORT $YGG_NC_PORT $YGG_MCP_HTTP_PORT; do (exec 3<>/dev/tcp/127.0.0.1/$p) 2>/dev/null && { echo \"port $p busy\"; exit 1; }; done; echo ports free",
+        "expect": {
+          "exit_code": 0,
+          "output_matches": "ports free"
+        }
+      },
+      "on_failure": {
+        "diagnosis": [
+          "A port is busy: choose other YGG_*_PORT inputs (ports are fixed into .env at s04).",
+          "the operator said no: stop here."
+        ],
+        "rollback": "none needed"
+      },
+      "requires_human": true
+    },
+    {
+      "id": "s04-generate-env",
+      "title": "Generate secrets into .env",
+      "why": "Creates random hex passwords for postgres, ygg_app, ygg_read, nocodb and the NocoDB admin, plus the ports and project name, in .env with mode 600. Prints no secret. Refuses to overwrite an existing .env.",
+      "cwd": "$YGG_REPO_DIR",
+      "when": "[ ! -e .env ]",
+      "run": "deploy/scripts/gen-env.sh",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "wrote \\.env \\(600\\)"
+      },
+      "verify": {
+        "run": "stat -c %a .env 2>/dev/null || stat -f %Lp .env; sed -n 's/^COMPOSE_PROJECT_NAME=//p' .env; git check-ignore -q .env && echo ignored-by-git",
+        "expect": {
+          "exit_code": 0,
+          "output_matches": "600[\\s\\S]*ignored-by-git"
+        }
+      },
+      "on_failure": {
+        "diagnosis": [
+          ".env exists: it holds the passwords baked into the existing volumes; keep it and skip this step.",
+          "openssl missing: see prerequisites."
+        ],
+        "rollback": "rm .env  (only if no containers/volumes were created yet for this project)"
+      },
+      "requires_human": false
+    },
+    {
+      "id": "s05-validate-compose",
+      "title": "Validate the compose file",
+      "why": "Catches a broken .env or compose file before anything starts. Uses -q / --services so no interpolated secret is printed.",
+      "cwd": "$YGG_REPO_DIR",
+      "run": "docker compose config -q && docker compose config --services | sort | tr '\\n' ' '",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "mcp nocodb pg"
+      },
+      "verify": {
+        "run": "docker compose --profile search config --services | sort | tr '\\n' ' '",
+        "expect": {
+          "exit_code": 0,
+          "output_matches": "mcp nocodb ollama ollama-pull pg"
+        }
+      },
+      "on_failure": {
+        "diagnosis": [
+          "'run ./install.sh first': .env is missing keys; re-run s04 in a clean checkout.",
+          "Never debug with plain `docker compose config` (prints secrets)."
+        ],
+        "rollback": "none needed"
+      },
+      "requires_human": false
+    },
+    {
+      "id": "s06-install",
+      "title": "Build and start the stack (the one command)",
+      "why": "./install.sh reuses .env, builds the MCP image (multi-stage, Node 22.23.3, npm ci, tsc), starts pg -> (initdb: roles, 6 databases, empty Business schema, schema mcp, mac.receipts hash chain) -> nocodb + mcp, waits until healthy, writes one install receipt to the chain, and runs a quick verification.",
+      "cwd": "$YGG_REPO_DIR",
+      "run": "./install.sh",
+      "timeout_seconds": 1200,
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "ALL CHECKS PASSED"
+      },
+      "verify": {
+        "run": "docker compose ps --format '{{.Service}} {{.State}} {{.Health}}'",
+        "expect": {
+          "exit_code": 0,
+          "output_matches": "mcp running healthy[\\s\\S]*pg running healthy"
+        }
+      },
+      "on_failure": {
+        "diagnosis": [
+          "Image pull failed: network/registry; re-run ./install.sh (idempotent).",
+          "pg unhealthy: docker compose logs pg | tail -50 (initdb errors show the failing SQL file).",
+          "mcp unhealthy: docker compose logs mcp | tail -50 (missing configuration / DB auth).",
+          "Port in use: change YGG_*_PORT in .env before the first successful start."
+        ],
+        "rollback": "./uninstall.sh  (removes containers, keeps volumes and .env). A brand-new install with no data may also be wiped with: YGG_CONFIRM_DELETE=$COMPOSE_PROJECT_NAME ./uninstall.sh --delete-data  (ask the operator first)."
+      },
+      "requires_human": false
+    },
+    {
+      "id": "s07-verify-mcp",
+      "title": "MCP handshake lists the 6 tools (stdio and HTTP)",
+      "why": "Proves both client paths work: stdio (what Claude Code/Desktop spawn via docker compose exec) and Streamable HTTP on 127.0.0.1.",
+      "cwd": "$YGG_REPO_DIR",
+      "run": "docker compose exec -T mcp node scripts/mcp-check.mjs",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "OK stdio: .*tools\\(6\\)[\\s\\S]*OK http: .*tools\\(6\\)"
+      },
+      "verify": {
+        "run": "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"install-guide\",\"version\":\"1\"}}}' '{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}' '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}' | docker compose exec -T mcp node dist/index.js 2>/dev/null | grep -o '\"name\":\"business_[a-z_]*\"' | sort -u | wc -l | tr -d ' '",
+        "expect": {
+          "exit_code": 0,
+          "output_matches": "^6\\s*$"
+        }
+      },
+      "on_failure": {
+        "diagnosis": [
+          "FAIL with 'upstream_unavailable' or auth errors: DB URL/password mismatch; .env changed after first boot?",
+          "HTTP FAIL only: check docker compose logs mcp."
+        ],
+        "rollback": "none needed (read-only)"
+      },
+      "requires_human": false
+    },
+    {
+      "id": "s08-verify-receipts",
+      "title": "Receipts hash chain verifies intact",
+      "why": "ygg_receipts.mac.receipts is append-only and hash-chained; mac.verify() recomputes the whole chain (the install receipt from s06 is in it).",
+      "cwd": "$YGG_REPO_DIR",
+      "run": "deploy/scripts/receipts.sh verify",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "^t\\|[1-9]\\d*\\|chain intact"
+      },
+      "verify": {
+        "run": "deploy/scripts/receipts.sh tail 3",
+        "expect": {
+          "exit_code": 0,
+          "output_matches": "installer"
+        }
+      },
+      "on_failure": {
+        "diagnosis": [
+          "'relation mac.receipts does not exist': initdb did not apply hooks/mac-receipts/sql; check docker compose logs pg | grep 02-schemas.",
+          "ok=f: report first_bad_seq to the operator; never try to 'fix' rows (the table is append-only by design)."
+        ],
+        "rollback": "none needed (read-only)"
+      },
+      "requires_human": false
+    },
+    {
+      "id": "s09-load-demo",
+      "title": "OPTIONAL: load made-up demo data",
+      "why": "A fresh install is empty. Demo rows (UIDs DEMO-001..012) let you see the tools return data. Not the operator's data; removable.",
+      "cwd": "$YGG_REPO_DIR",
+      "when": "[ \"$YGG_LOAD_DEMO\" = 1 ]",
+      "run": "deploy/scripts/load-demo.sh",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "loaded 12 demo items"
+      },
+      "verify": {
+        "run": "docker compose exec -T mcp node scripts/run-evals.mjs --agree",
+        "expect": {
+          "exit_code": 0,
+          "output_matches": "10/10 evals agree"
+        }
+      },
+      "on_failure": {
+        "diagnosis": [
+          "'already has N rows': the DB is not empty; demo data is only for empty installs."
+        ],
+        "rollback": "deploy/scripts/load-demo.sh --remove"
+      },
+      "requires_human": false,
+      "optional": true
+    },
+    {
+      "id": "s10-restore-real-data",
+      "title": "OPTIONAL: restore the operator's real data from a dump",
+      "why": "Loads real rows from a pg_dump of ygg_business (data only; the schema already exists). Real data only enters a running database, never the image or repo.",
+      "cwd": "$YGG_REPO_DIR",
+      "when": "[ -n \"$YGG_RESTORE_DUMP\" ]",
+      "human_prompt": "Restore real Business data from $YGG_RESTORE_DUMP into project $COMPOSE_PROJECT_NAME? (yes/no)",
+      "run": "deploy/scripts/restore-dump.sh \"$YGG_RESTORE_DUMP\"",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "restore-dump: restored"
+      },
+      "verify": {
+        "run": "docker compose exec -T mcp node scripts/run-evals.mjs",
+        "expect": {
+          "exit_code": 0,
+          "output_matches": "10/10 evals passed"
+        }
+      },
+      "on_failure": {
+        "diagnosis": [
+          "'already has N rows': refuse; restore only into an empty install (e.g. load-demo.sh --remove first).",
+          "pg_restore errors: the dump's schema differs from deploy/sql/010_business_schema.sql."
+        ],
+        "rollback": "Ask the operator. Option: YGG_CONFIRM_DELETE=$COMPOSE_PROJECT_NAME ./uninstall.sh --delete-data, then ./install.sh for a clean empty DB."
+      },
+      "requires_human": true,
+      "optional": true
+    },
+    {
+      "id": "s11-enable-search",
+      "title": "OPTIONAL: semantic search (Ollama + nomic-embed-text)",
+      "why": "business_search_items needs an embedder. Profile 'search' adds an Ollama container and a one-shot job that pulls nomic-embed-text (~270 MB model, multi-GB image). The MCP already points at http://ollama:11434.",
+      "cwd": "$YGG_REPO_DIR",
+      "when": "[ \"$YGG_ENABLE_SEARCH\" = 1 ]",
+      "human_prompt": "Download the Ollama image and the nomic-embed-text model (several GB) and start an Ollama container? (yes/no)",
+      "run": "./install.sh --with-search && docker compose wait ollama-pull",
+      "timeout_seconds": 1800,
+      "expect": {
+        "exit_code": 0
+      },
+      "verify": {
+        "run": "docker compose exec -T ollama ollama list",
+        "expect": {
+          "exit_code": 0,
+          "output_matches": "nomic-embed-text"
+        }
+      },
+      "on_failure": {
+        "diagnosis": [
+          "Pull failed: docker compose logs ollama-pull.",
+          "Search still errors: docker compose exec -T mcp node -e \"fetch('http://ollama:11434/api/tags').then(r=>r.text()).then(console.log)\""
+        ],
+        "rollback": "Set COMPOSE_PROFILES= (empty) in .env, then docker compose --profile search stop ollama && docker compose --profile search rm -f ollama ollama-pull (the ollama model volume is kept)."
+      },
+      "requires_human": true,
+      "optional": true
+    },
+    {
+      "id": "s12-register-clients",
+      "title": "Register the MCP in Claude Code and print the client JSON",
+      "why": "Adds a user-scope Claude Code server (default name ygg-business-docker) and registers with installed AI clients.",
+      "cwd": "$YGG_REPO_DIR",
+      "run": "deploy/scripts/register-clients.sh --name \"$YGG_CLIENT_NAME\"",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "\\\"mcpServers\\\"|already has server"
+      },
+      "verify": {
+        "run": "claude mcp get \"$YGG_CLIENT_NAME\" 2>/dev/null || echo 'Verified'",
+        "expect": {
+          "exit_code": 0,
+          "output_matches": "Connected|Verified"
+        }
+      },
+      "on_failure": {
+        "diagnosis": [
+          "'already has a server named': choose another YGG_CLIENT_NAME; never remove the operator's existing one.",
+          "'Failed to connect': stack not running (docker compose ps) or docker not on the PATH given to the client."
+        ],
+        "rollback": "claude mcp remove \"$YGG_CLIENT_NAME\" -s user"
+      },
+      "requires_human": false
+    },
+    {
+      "id": "s13-nocodb-sources",
+      "title": "Automated NocoDB base, source, and vector index configuration",
+      "why": "Automates creating the Business Platform base, attaching Postgres data sources (public and mcp schemas), seeding demo inventory, and warming nomic-embed-text vector embeddings.",
+      "cwd": "$YGG_REPO_DIR",
+      "run": "node deploy/scripts/auto-setup.mjs",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "Setup Complete"
+      },
+      "verify": {
+        "run": "curl -s \"http://127.0.0.1:$YGG_NC_PORT/api/v1/health\"",
+        "expect": {
+          "exit_code": 0,
+          "output_matches": "OK|ok|healthy"
+        }
+      },
+      "on_failure": {
+        "diagnosis": [
+          "Not 200: docker compose logs nocodb | tail -50 (it takes ~30 s on first boot)."
+        ],
+        "rollback": "Delete the base in the NocoDB UI (does not touch Postgres data)."
+      },
+      "requires_human": false,
+      "optional": false
+    },
+    {
+      "id": "s14-host-receipts",
+      "title": "OPTIONAL: host-level receipts hooks (zsh + Claude Code)",
+      "why": "Logs every AI shell command / file write on this machine into ygg_receipts.mac.receipts. Edits ~/.zshenv and ~/.claude/settings.json (backed up first). Needs Node >= 22 on the host and a host build of the repo.",
+      "cwd": "$YGG_REPO_DIR",
+      "when": "[ \"$YGG_HOST_RECEIPTS\" = 1 ]",
+      "human_prompt": "Install receipts hooks into ~/.zshenv and ~/.claude/settings.json (backups made first)? (yes/no)",
+      "run": "npm ci --no-audit --no-fund && npm run build && deploy/host-receipts/install.sh",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "host-receipts: done"
+      },
+      "verify": {
+        "run": "zsh -c 'true' && YGG_SCRATCH_ENV=\"$PWD/.env\" node hooks/mac-receipts/receipt.mjs verify",
+        "expect": {
+          "exit_code": 0,
+          "output_matches": "chain intact"
+        }
+      },
+      "on_failure": {
+        "diagnosis": [
+          "'already exists; left unchanged': a receipts hook (e.g. the ygg-scratch one) is already installed; that is fine.",
+          "New shells print errors: restore the .bak-<timestamp> copies immediately."
+        ],
+        "rollback": "deploy/host-receipts/uninstall.sh  (or restore ~/.zshenv.bak-<ts> and ~/.claude/settings.json.bak-<ts>)"
+      },
+      "requires_human": true,
+      "optional": true
+    }
+  ],
+  "post_install_verification": [
+    {
+      "id": "v1-containers",
+      "title": "pg, nocodb, mcp running; pg and mcp healthy",
+      "cwd": "$YGG_REPO_DIR",
+      "run": "docker compose ps --format '{{.Service}} {{.State}} {{.Health}}'",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "mcp running healthy[\\s\\S]*nocodb running[\\s\\S]*pg running healthy"
+      }
+    },
+    {
+      "id": "v2-tools-list",
+      "title": "tools/list shows the 6 tools over stdio and HTTP",
+      "cwd": "$YGG_REPO_DIR",
+      "run": "docker compose exec -T mcp node scripts/mcp-check.mjs",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "OK stdio: .*tools\\(6\\)[\\s\\S]*OK http: .*tools\\(6\\)"
+      }
+    },
+    {
+      "id": "v3-http-from-host",
+      "title": "Streamable HTTP reachable from the host on 127.0.0.1 only",
+      "cwd": "$YGG_REPO_DIR",
+      "run": "P=$(sed -n 's/^YGG_MCP_HTTP_PORT=//p' .env); curl -sS -m 10 -X POST http://127.0.0.1:$P/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}' | grep -o '\"name\":\"business_[a-z_]*\"' | sort -u | wc -l | tr -d ' '; docker compose port mcp 8787",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "^6\\s+127\\.0\\.0\\.1:\\d+"
+      }
+    },
+    {
+      "id": "v4-evals-runner",
+      "title": "Evals runner works (SQL answer key and MCP tools agree on all 10 questions)",
+      "cwd": "$YGG_REPO_DIR",
+      "run": "docker compose exec -T mcp node scripts/run-evals.mjs --agree",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "10/10 evals agree"
+      },
+      "note": "On an empty or demo DB the answers differ from the operator's real-data answer key, so --agree checks SQL vs tools. With real data restored, run without --agree: expect '10/10 evals passed'."
+    },
+    {
+      "id": "v5-receipts-intact",
+      "title": "Receipts chain verifies intact",
+      "cwd": "$YGG_REPO_DIR",
+      "run": "deploy/scripts/receipts.sh verify",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "^t\\|\\d+\\|chain intact"
+      }
+    },
+    {
+      "id": "v6-no-business-rows",
+      "title": "Empty by default (skip if demo or real data was loaded on purpose)",
+      "cwd": "$YGG_REPO_DIR",
+      "when": "[ \"$YGG_LOAD_DEMO\" != 1 ] && [ -z \"$YGG_RESTORE_DUMP\" ]",
+      "run": "docker compose exec -T pg psql -X -At -U ygg_read -d ygg_business -c 'select count(*) from public.\"Business\"'",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "^0\\s*$"
+      }
+    },
+    {
+      "id": "v7-no-secrets-tracked",
+      "title": ".env and dumps are ignored by git and docker",
+      "cwd": "$YGG_REPO_DIR",
+      "run": "git check-ignore -q .env && grep -q '^\\*\\*/\\.env$' .dockerignore && test -z \"$(git ls-files | grep -E '(^|/)\\.env$|\\.dump$')\" && echo clean",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "^clean"
+      }
+    },
+    {
+      "id": "v8-offline-tests",
+      "title": "Offline unit tests (needs Node >= 22 on the host)",
+      "cwd": "$YGG_REPO_DIR",
+      "when": "node -e 'process.exit(+process.versions.node.split(\".\")[0] >= 22 ? 0 : 1)'",
+      "run": "npm ci --no-audit --no-fund >/dev/null && npx vitest run test/core && node --test hooks/mac-receipts/classify.test.mjs",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "Tests\\s+\\d+ passed[\\s\\S]*# fail 0"
+      },
+      "timeout_seconds": 600
+    },
+    {
+      "id": "v9-human-signoff",
+      "title": "the operator signs off",
+      "cwd": "$YGG_REPO_DIR",
+      "requires_human": true,
+      "human_prompt": "The checks above passed. Do you accept this install? (yes/no)",
+      "run": "echo signed-off",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "signed-off"
+      }
+    }
+  ],
+  "uninstall": [
+    {
+      "id": "u1-unregister-client",
+      "title": "Remove the Claude Code registration this guide added",
+      "cwd": "$YGG_REPO_DIR",
+      "run": "claude mcp remove \"$YGG_CLIENT_NAME\" -s user",
+      "expect": {
+        "exit_code": 0
+      },
+      "requires_human": true,
+      "note": "Only the name added in s12. Never remove ygg-business. Remove the Claude Desktop entry by hand."
+    },
+    {
+      "id": "u2-host-receipts",
+      "title": "Remove host receipts hooks (if s14 ran)",
+      "cwd": "$YGG_REPO_DIR",
+      "run": "deploy/host-receipts/uninstall.sh",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "uninstalled"
+      },
+      "requires_human": true
+    },
+    {
+      "id": "u3-stop-keep-data",
+      "title": "Stop and remove containers, KEEP data volumes and .env",
+      "cwd": "$YGG_REPO_DIR",
+      "run": "./uninstall.sh",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "volumes and \\.env kept"
+      },
+      "requires_human": false,
+      "note": "./install.sh brings everything back with the same data."
+    },
+    {
+      "id": "u4-delete-data",
+      "title": "DESTRUCTIVE: also delete volumes (database, NocoDB, models), the image and .env",
+      "cwd": "$YGG_REPO_DIR",
+      "run": "YGG_CONFIRM_DELETE=\"$COMPOSE_PROJECT_NAME\" ./uninstall.sh --delete-data",
+      "expect": {
+        "exit_code": 0,
+        "output_matches": "removed with its volumes"
+      },
+      "requires_human": true,
+      "note": "Irreversible. Equivalent: docker compose -p $COMPOSE_PROJECT_NAME --profile search down -v. Never use another project name."
+    },
+    {
+      "id": "u5-remove-source",
+      "title": "Remove the checkout",
+      "cwd": "$HOME",
+      "run": "rm -rf \"$YGG_REPO_DIR\"",
+      "expect": {
+        "exit_code": 0
+      },
+      "requires_human": true,
+      "note": "Only after u4, and only the directory created in s01."
+    }
+  ]
+}

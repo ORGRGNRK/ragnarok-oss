@@ -1,0 +1,372 @@
+#!/usr/bin/env python3
+"""ragnarok-plan: the "chat" half of an agent run. The owner says what they want; a read-only planner says it back
+(what it understood, what it will and won't do) and writes the checklist the work will be judged by. The owner revises
+it in plain words until it's right, then approves. Only then does an agent start, with that checklist frozen:
+the agent just does the work, and Ragnarok runs the checks (bin/ragnarok-agent start --checklist FILE).
+
+Why it's split: the agent that does the work should not write its own exam (the conveyor's spec step).
+
+  ragnarok-plan new --cwd DIR [--model M] [--name N] "what the owner wants"   ask the planner; saves the plan; JSON
+  ragnarok-plan revise ID [--model M] "change"                    same plan, same planner conversation; saves; JSON
+  ragnarok-plan create --cwd DIR --name N --checklist FILE "task" write a plan by hand (no planner); JSON
+  ragnarok-plan edit ID [--checklist FILE] [--task-file FILE] [--name N]   change a saved plan by hand; JSON
+  ragnarok-plan list [--json]                                     saved plans, newest first
+  ragnarok-plan show ID                                           one plan (JSON)
+  ragnarok-plan start ID [--model M]                              start an agent on it (checklist frozen); prints run id
+  ragnarok-plan precheck --cwd DIR FILE                           run a checklist now (before any work), JSON
+  ragnarok-plan selfcheck                                         fake planner only; no model call
+
+Saved plans: ~/.ragnarok/plans/<id>/ (RAGNAROK_PLANS_DIR overrides)
+  PLAN.md       the whole plan in plain words: point any agent at this file
+  checklist.md  just the checklist (what `start` freezes)       plan.json  everything, for the Agents tab
+
+Plan JSON: {ok, id, name, cwd, asks, task, runs, session, understood, will, wont, checklist (text), steps: [{claim, cmd, human, ok, out}], error}
+Each step is also run once at plan time, read-only: a check that ALREADY passes before any work proves nothing
+about the work, so the tab flags it ("already true").
+"""
+import importlib.machinery
+import importlib.util
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+
+
+def agent_mod():
+    """bin/ragnarok-agent holds the one checklist grammar and the sandboxed check runner; reuse them, don't copy."""
+    path = str(HERE / "ragnarok-agent")
+    loader = importlib.machinery.SourceFileLoader("ragnarok_agent", path)
+    mod = importlib.util.module_from_spec(importlib.util.spec_from_loader("ragnarok_agent", loader))
+    loader.exec_module(mod)
+    return mod
+
+
+PLANNER_GUIDE = """You are the planner in Ragnarok, talking with the owner before any work starts. You do NOT do the task.
+Look around read-only first if it helps (read files, list folders, git log, curl, web search); change nothing.
+Then answer in exactly this shape, plain English, short:
+
+UNDERSTOOD: <one or two sentences: what the owner wants, in your words>
+WILL: <what the agent will do>
+WONT: <what it will not do, or what's out of scope>
+## Checklist
+- [ ] <what must be true when it's done> :: verify: <shell command that exits 0 only when it is true>
+
+Checklist rules:
+- 2 to 8 lines. Each command must FAIL now (before the work) and pass only when the work is really done.
+  Make it strict enough that empty or fake work fails: check contents, counts, exact values, not just that a file exists.
+- Optional  :: expect: <regex>  when the output must match something.
+- Commands run in the task folder, read-only, no ssh/scp/rsync, 120 s each. Prove things on this Mac
+  (files, git, test, grep, jq, curl to a URL).
+- Use  :: verify: HUMAN  only for what only the owner can judge (taste, "is this the right one", something on another
+  device like their laptop or phone). Keep those few.
+- Anything that spends money, deletes things, sends messages outside, or changes accounts: say so under WONT unless
+  the owner clearly asked for it, and give it a HUMAN line.
+If the owner asks for a change, give the whole answer again in the same shape."""
+PLANNER_TOOLS = "Read,Grep,Glob,Bash,WebSearch,WebFetch"
+
+
+def parse_plan(text):
+    def field(name):
+        m = re.search(rf"^\s*{name}:\s*(.+?)(?=^\s*(?:UNDERSTOOD|WILL|WONT|WON'T):|^\s*## Checklist|\Z)",
+                      text, re.M | re.S)
+        return " ".join(m.group(1).split()) if m else ""
+    ck = ""
+    m = re.search(r"^\s*## Checklist\s*$(.*)", text, re.M | re.S)
+    if m:
+        ck = "\n".join(l.strip() for l in m.group(1).splitlines() if l.strip().startswith("- ["))
+    return {"understood": field("UNDERSTOOD"), "will": field("WILL"), "wont": field("WONT") or field("WON'T"),
+            "checklist": ck}
+
+
+def precheck(cwd, checklist_text):
+    a = agent_mod()
+    steps = a.parse_checklist(checklist_text)
+    with tempfile.TemporaryDirectory(prefix="ragnarok-plan-") as d:
+        a.run_checks(Path(d), cwd, steps)
+    return steps
+
+
+def ask(cwd, prompt, model=None, session=None):
+    a = agent_mod()
+    claude = os.environ.get("RAGNAROK_AGENT_CLAUDE") or shutil.which("claude") or "claude"
+    cmd = [claude, "-p", prompt, "--output-format", "stream-json", "--verbose", "--permission-mode", "auto",
+           "--append-system-prompt", PLANNER_GUIDE, "--tools", PLANNER_TOOLS]
+    if model:
+        cmd += ["--model", model]
+    if session:
+        cmd += ["--resume", session]
+    env = dict(os.environ, NO_COLOR="1", TERM="dumb")
+    env.pop("CLAUDECODE", None)
+    try:
+        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, env=env, timeout=600,
+                           stdin=subprocess.DEVNULL)
+    except Exception as e:
+        return {"ok": False, "error": f"could not run the planner: {e}"}
+    # Every reply, not just the last: the owner's stop hooks can send the planner back, and its final reply to the hook may
+    # be just "✓" (11-02: a $1.89 plan was lost that way). The plan is the last reply that has a checklist in it.
+    texts, out = [], {}
+    for line in r.stdout.splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if e.get("type") == "assistant":
+            texts += [c.get("text") or "" for c in (e.get("message") or {}).get("content") or [] if c.get("type") == "text"]
+        elif e.get("type") == "result":
+            out = e
+            texts.append(e.get("result") or "")
+    if not out and not texts:
+        return {"ok": False, "error": a.feedback_text(r.stderr, r.stdout, r.returncode) or f"planner exited {r.returncode}"}
+    text = next((t for t in reversed(texts) if re.search(r"^\s*## Checklist", t, re.M)), texts[-1] if texts else "")
+    plan = parse_plan(text)
+    plan.update(session=out.get("session_id") or session, cost_usd=out.get("total_cost_usd"), raw=text)
+    steps = precheck(cwd, plan["checklist"]) if plan["checklist"] else []
+    plan["steps"] = steps
+    if not any(not s["human"] for s in steps):
+        plan.update(ok=False, error="the planner wrote no checklist line with a command; ask it again or revise")
+    else:
+        plan["ok"] = True
+    return plan
+
+
+# ------------------------------------------------------------------ saved plans
+def plans_dir():
+    return Path(os.environ.get("RAGNAROK_PLANS_DIR", Path.home() / ".ragnarok" / "plans"))
+
+
+def stamp():
+    import time
+    return time.strftime("%Y-%m-%dT%H:%M:%S%z")
+
+
+def new_id(name):
+    import time
+    import uuid
+    slug = re.sub(r"[^a-z0-9]+", "-", (name or "plan").lower()).strip("-")[:40] or "plan"
+    return time.strftime("%Y%m%d-%H%M%S-") + slug + "-" + uuid.uuid4().hex[:4]
+
+
+def load_plan(pid):
+    try:
+        return json.loads((plans_dir() / pid / "plan.json").read_text())
+    except Exception:
+        return None
+
+
+def task_text(rec):
+    asks = rec.get("asks") or []
+    if not asks:
+        return rec.get("task") or ""
+    return asks[0] + ("\n\nThe owner then added:\n" + "\n".join("- " + x for x in asks[1:]) if len(asks) > 1 else "")
+
+
+def plan_md(rec):
+    """The file an agent can be pointed at: everything it needs, in plain words."""
+    steps = rec.get("steps") or []
+    lines = [f"# Plan: {rec.get('name')}", "",
+             f"Folder: {rec.get('cwd')}  ·  saved {rec.get('updated')}  ·  plan id {rec.get('id')}"
+             + (f"  ·  runs: {', '.join(rec['runs'])}" if rec.get("runs") else ""), "",
+             "## What the owner wants", "", task_text(rec), ""]
+    for k, h in (("understood", "Understood"), ("will", "Will"), ("wont", "Won't")):
+        if rec.get(k):
+            lines += [f"## {h}", "", rec[k], ""]
+    lines += ["## Checklist", "", "Done means every command line exits 0. HUMAN lines are for the owner.", "",
+              (rec.get("checklist") or "").strip(), ""]
+    already = [x["claim"] for x in steps if x.get("ok") is True]
+    if already:
+        lines += ["Already true when the plan was saved (these prove nothing about the work): " + "; ".join(already), ""]
+    lines += ["## How to run it", "",
+              f"In Ragnarok: Agents → Plans → this plan → Start. From a shell: `ragnarok-plan start {rec.get('id')}`.",
+              "Any other agent: do the work in the folder above, then run every checklist command and fix whatever fails.", ""]
+    return "\n".join(lines)
+
+
+def save_plan(rec):
+    rec["updated"] = stamp()
+    d = plans_dir() / rec["id"]
+    d.mkdir(parents=True, exist_ok=True)
+    os.chmod(plans_dir(), 0o700)
+    clean = {k: v for k, v in rec.items() if k != "raw"}
+    (d / "plan.json").write_text(json.dumps(clean, indent=1))
+    (d / "checklist.md").write_text((rec.get("checklist") or "").strip() + "\n")
+    (d / "PLAN.md").write_text(plan_md(rec))
+    if rec.get("raw"):
+        with open(d / "planner.log", "a") as f:     # every planner answer, verbatim, newest last
+            f.write(f"\n===== {rec['updated']}\n{rec['raw']}\n")
+    return clean
+
+
+def all_plans():
+    root = plans_dir()
+    out = [load_plan(d.name) for d in sorted(root.glob("*/"), reverse=True)] if root.exists() else []
+    return [p for p in out if p]
+
+
+def start_plan(pid, model=None):
+    rec = load_plan(pid)
+    if not rec:
+        return None, f"no plan {pid}"
+    if not agent_mod().parse_checklist(rec.get("checklist") or ""):
+        return None, "this plan has no checklist line with a command yet"
+    cmd = [str(HERE / "ragnarok-agent"), "start", "--cwd", rec["cwd"], "--name", rec.get("name") or pid,
+           "--checklist", str(plans_dir() / pid / "checklist.md")]
+    if model or rec.get("model"):
+        cmd += ["--model", model or rec["model"]]
+    r = subprocess.run(cmd + ["-"], input=task_text(rec) + f"\n\n(Plan: {plans_dir() / pid / 'PLAN.md'})",
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return None, (r.stderr or r.stdout).strip()
+    rid = r.stdout.strip().splitlines()[-1]
+    rec.setdefault("runs", []).append(rid)
+    save_plan(rec)
+    return rid, None
+
+
+def selfcheck():
+    ok = True
+
+    def check(name, cond):
+        nonlocal ok
+        print(("ok  " if cond else "FAIL") + " " + name)
+        ok = ok and cond
+
+    sample = """UNDERSTOOD: Make primes.txt.
+WILL: write the file.
+WONT: nothing else.
+## Checklist
+- [ ] primes.txt has the first 5 primes :: verify: test "$(paste -sd, primes.txt)" = "2,3,5,7,11"
+- [ ] already true :: verify: true
+- [ ] Owner likes it :: verify: HUMAN
+"""
+    p = parse_plan(sample)
+    check("parse", p["understood"] == "Make primes.txt." and p["wont"] == "nothing else."
+          and p["checklist"].count("- [ ]") == 3)
+    with tempfile.TemporaryDirectory() as cwd:
+        bin_dir = Path(tempfile.mkdtemp(prefix="ragnarok-plan-bin-"))
+        fake = bin_dir / "claude"
+        (bin_dir / "reply.json").write_text(
+            json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": sample}]}}) + "\n"
+            + json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "✓"}]}}) + "\n"
+            + json.dumps({"type": "result", "result": "✓", "session_id": "plan-s", "total_cost_usd": 0.02}) + "\n")
+        fake.write_text(f"#!/bin/bash\ncat '{bin_dir / 'reply.json'}'\n")
+        fake.chmod(0o755)
+        os.environ["RAGNAROK_AGENT_CLAUDE"] = str(fake)
+        plan = ask(cwd, "make primes")
+        st = {s["claim"]: s for s in plan.get("steps", [])}
+        check("plan", plan.get("ok") and plan["session"] == "plan-s" and len(st) == 3)
+        check("precheck", st["primes.txt has the first 5 primes"]["ok"] is False
+              and st["already true"]["ok"] is True and st["Owner likes it"]["ok"] is None)
+        os.environ["RAGNAROK_PLANS_DIR"] = str(Path(cwd) / "plans")
+        rec = save_plan(dict(plan, id=new_id("Make primes!"), name="Make primes!", cwd=cwd, asks=["make primes", "start at 2"]))
+        md = (Path(cwd) / "plans" / rec["id"] / "PLAN.md").read_text()
+        check("save", rec["id"].endswith(rec["id"][-4:]) and "-make-primes-" in rec["id"]
+              and "The owner then added:\n- start at 2" in md and "verify: HUMAN" in md and "already true" in md
+              and (Path(cwd) / "plans" / rec["id"] / "checklist.md").read_text().count("- [ ]") == 3
+              and all_plans()[0]["id"] == rec["id"] and "raw" not in load_plan(rec["id"]))
+    return 0 if ok else 1
+
+
+def main():
+    a = sys.argv[1:]
+    if not a or a[0] in ("-h", "--help", "help"):
+        print(__doc__)
+        return 0
+    if a[0] == "selfcheck":
+        return selfcheck()
+    verb, rest = a[0], a[1:]
+    cwd, model, session, name, ck, task_file, as_json, words = os.getcwd(), None, None, None, None, None, False, []
+    it = iter(rest)
+    for x in it:
+        if x == "--cwd":
+            cwd = os.path.abspath(os.path.expanduser(next(it)))
+        elif x == "--model":
+            model = next(it)
+        elif x == "--session":
+            session = next(it)
+        elif x == "--name":
+            name = next(it)
+        elif x == "--checklist":
+            ck = Path(os.path.expanduser(next(it))).read_text()
+        elif x == "--task-file":
+            task_file = Path(os.path.expanduser(next(it))).read_text().strip()
+        elif x == "--json":
+            as_json = True
+        elif x == "-":
+            words.append(sys.stdin.read())
+        else:
+            words.append(x)
+    text = " ".join(words).strip()
+    out = lambda o: print(json.dumps(o))
+    if verb == "precheck":
+        out({"steps": precheck(cwd, Path(text).read_text())})
+    elif verb == "list":
+        ps = all_plans()
+        if as_json:
+            out(ps)
+        for p in ([] if as_json else ps):
+            print(f"{p['id']}  {len(p.get('runs') or []):2} runs  {p.get('cwd', '').replace(str(Path.home()), '~')}  {p.get('name')}")
+    elif verb == "show" and text:
+        out(load_plan(text))
+    elif verb == "start" and text:
+        rid, err = start_plan(text, model)
+        if err:
+            print(err, file=sys.stderr)
+            return 1
+        print(rid)
+    elif verb == "new" and text:
+        plan = ask(cwd, f"Task folder: {cwd}\n\nWhat the owner wants:\n{text}", model)
+        if plan.get("ok") or plan.get("raw"):
+            nm = name or agent_mod().one(text, 60)
+            plan = dict(save_plan(dict(plan, id=new_id(nm), name=nm, cwd=cwd, model=model, asks=[text],
+                                       source="planner", created=stamp(), runs=[])), ok=plan.get("ok"))
+        out(plan)
+    elif verb == "revise" and len(words) >= 2 or (verb == "revise" and session):
+        pid, change = (words[0], " ".join(words[1:]).strip()) if not session else (None, text)
+        rec = load_plan(pid) if pid else {}
+        if pid and not rec:
+            out({"ok": False, "error": f"no plan {pid}"})
+            return 2
+        sess = session or rec.get("session")
+        if not sess:
+            out({"ok": False, "error": "this plan has no planner conversation to continue (written by hand?)"})
+            return 2
+        plan = ask(rec.get("cwd") or cwd, f"The owner wants this changed in the plan:\n{change}", model or rec.get("model"), sess)
+        if rec:
+            rec["asks"] = (rec.get("asks") or []) + [change]
+            rec["cost_usd"] = (rec.get("cost_usd") or 0) + (plan.get("cost_usd") or 0)
+            if plan.get("ok"):
+                rec.update({k: plan[k] for k in ("understood", "will", "wont", "checklist", "steps", "session") if plan.get(k) is not None})
+            rec["raw"] = plan.get("raw")
+            plan = dict(save_plan(rec), ok=plan.get("ok"), error=plan.get("error"))
+        out(plan)
+    elif verb == "create" and text and ck:
+        nm = name or agent_mod().one(text, 60)
+        rec = {"id": new_id(nm), "name": nm, "cwd": cwd, "model": model, "asks": [text], "checklist": ck.strip(),
+               "steps": precheck(cwd, ck), "source": "hand", "created": stamp(), "runs": []}
+        out(dict(save_plan(rec), ok=bool(agent_mod().parse_checklist(ck))))
+    elif verb == "edit" and text:
+        rec = load_plan(text)
+        if not rec:
+            out({"ok": False, "error": f"no plan {text}"})
+            return 2
+        if name:
+            rec["name"] = name
+        if task_file is not None:
+            rec["asks"] = [task_file]
+        if ck is not None:
+            rec.update(checklist=ck.strip(), steps=precheck(rec["cwd"], ck))
+        out(dict(save_plan(rec), ok=True))
+    else:
+        print(__doc__)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

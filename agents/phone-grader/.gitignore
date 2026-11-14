@@ -1,0 +1,14 @@
+.build/
+build/
+dist/
+.swiftpm/
+.DS_Store
+*.profraw
+exports/
+
+# iOS app build output (xcodebuild -derivedDataPath iOS/build)
+iOS/build/
+xcuserdata/
+
+# Python tooling
+__pycache__/

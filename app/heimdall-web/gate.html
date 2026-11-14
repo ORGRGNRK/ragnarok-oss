@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Heimdall — locked</title>
+<link rel="stylesheet" href="style.css">
+<script src="gate.js"></script>
+</head>
+<body>
+<script src="/splash.js"></script>
+<header>
+  <span class="mark">CLR — Rgnrk. <small>heimdall</small></span>
+  <span class="status"><span class="dot" id="dot"></span><span id="status">Locked</span></span>
+</header>
+<div class="empty">
+  <p id="say">Heimdall is locked. Touch your YubiKey to open it in this browser.</p>
+  <button id="open">Open with YubiKey</button>
+  <p class="note" id="note" style="margin-top:16px"></p>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+// Only ever go back to a page on this site.
+const next = (() => { const n = new URLSearchParams(location.search).get("next") || "/"; return /^\/[A-Za-z0-9\/_-]*$/.test(n) && !n.startsWith("//") ? n : "/"; })();
+function fail(text) { $("note").textContent = text; $("dot").className = "dot err"; $("open").disabled = false; }
+
+async function unlock() {
+  $("open").disabled = true; $("note").textContent = "Waiting for the touch…"; $("dot").className = "dot busy";
+  try {
+    const gate = await touch("session");
+    const r = await fetch("api/gate/session", { method: "POST", body: JSON.stringify({ gate }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    $("status").textContent = "Open"; $("dot").className = "dot on";
+    location.replace(next);
+  } catch (e) { fail(e.name === "NotAllowedError" ? "No touch was received. Try again." : e.message); }
+}
+
+async function start() {
+  if (!window.isSecureContext) {
+    const url = "https://__HEIMDALL_WEB_HOST__" + next;
+    $("say").textContent = "The YubiKey only works on the HTTPS address. Open:"; $("open").hidden = true;
+    const a = document.createElement("a"); a.href = url; a.textContent = url; a.style.color = "var(--gold)"; $("note").append(a); return;
+  }
+  try {
+    const d = await (await fetch("api/gate")).json();
+    if (!d.keys && d.canRegister) {
+      $("say").textContent = "No YubiKey is registered yet. Registration is open for one key.";
+      $("open").textContent = "Register your YubiKey";
+      $("open").onclick = async () => { try { await register("YubiKey"); location.reload(); } catch (e) { fail(e.message); } };
+      return;
+    }
+    if (!d.keys) { $("say").textContent = "No YubiKey is registered, and registration is closed. Open it on Alexus: touch ~/.ragnarok/heimdall-web/allow-register"; $("open").hidden = true; return; }
+  } catch (e) { fail("Heimdall Web did not answer."); }
+  $("open").onclick = unlock;
+}
+start();
+</script>
+</body>
+</html>

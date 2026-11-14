@@ -1,0 +1,57 @@
+{
+  "project_slug": "packet-storage-test-7ea7254a7a",
+  "checks": [
+    {
+      "name": "initial atomic save",
+      "pass": true
+    },
+    {
+      "name": "injected duplicate packet failure refused",
+      "pass": true
+    },
+    {
+      "name": "failed transaction preserves active target",
+      "pass": true
+    },
+    {
+      "name": "failed transaction rolls back new history",
+      "pass": true
+    },
+    {
+      "name": "one concurrent writer wins; stale writer refused",
+      "pass": true
+    },
+    {
+      "name": "exactly one active packet after concurrency",
+      "pass": true
+    },
+    {
+      "name": "database rejects original-requirement changes",
+      "pass": true
+    },
+    {
+      "name": "database rejects archive edits",
+      "pass": true
+    },
+    {
+      "name": "archive preserves leading and trailing whitespace",
+      "pass": true
+    },
+    {
+      "name": "archived bytes match stored SHA256",
+      "pass": true
+    },
+    {
+      "name": "oversized summary rejected without silent truncation",
+      "pass": true
+    },
+    {
+      "name": "resume rejects changed evidence bytes",
+      "pass": true
+    },
+    {
+      "name": "receipt chains remain intact",
+      "pass": true
+    }
+  ]
+}

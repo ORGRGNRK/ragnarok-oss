@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+backups/
+.test/
+.DS_Store
+*.log
+
+# local AI session transcripts; never commit
+transcripts/

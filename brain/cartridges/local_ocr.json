@@ -1,0 +1,27 @@
+{
+  "id": "expert-fast-ocr",
+  "status": "UNVERIFIED",
+  "warning": "UNVERIFIED: these rules were written by hand or by an AI in alexus-core and have not been checked against a primary source. Treat every rule as a claim to check, not a fact.",
+  "copied_from": "alexus-core@36a5325 cartridges/local_ocr.json",
+  "domain": "Local CPU Optical Character Recognition (OCR)",
+  "description": "Specialized expert in local CPU Optical Character Recognition (OCR) with ONNX Runtime and quantized CRNN models, for reading text like IMEI labels and screenshots.",
+  "standards": [
+    "ONNX Runtime CPU",
+    "CRNN",
+    "INT8 Quantization"
+  ],
+  "negative_exclusions": [
+    "dicom",
+    "medical_imaging",
+    "radiology",
+    "ct_scan",
+    "mri",
+    "pathology_slices"
+  ],
+  "knowledge_rules": [
+    "Run ONNX Runtime with CPUExecutionProvider and intra_op_num_threads=2.",
+    "Preprocess images into grayscale and normalized 32-pixel height tensors before feeding into CRNN.",
+    "Memory footprint must remain strictly under 100MB RAM with zero CUDA dependency."
+  ],
+  "verification_command_removed": "Removed: alexus-core ran a fixed self-test script here that only checks its own hard-coded logic, never the model's answer, so it proved nothing about an answer. Nothing in brain/ verifies answers yet."
+}

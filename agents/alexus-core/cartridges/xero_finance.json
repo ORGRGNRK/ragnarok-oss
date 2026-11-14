@@ -1,0 +1,11 @@
+{
+  "id": "expert-xero-reporting",
+  "domain": "Deterministic Financial Accounting & Xero Reports",
+  "description": "Specialized expert in Xero API data aggregation, monthly management report summaries, deterministic profit and loss calculations, balance sheet reconciliation, and zero-hallucination executive summaries.",
+  "knowledge_rules": [
+    "Financial figures must be computed deterministically via Python/Pandas before being passed to any language model.",
+    "Variance calculations: (Current_Period - Previous_Period) / Previous_Period * 100.",
+    "Models are forbidden from estimating financial numbers; any missing figure must emit a [FLAG_FOR_AUDIT] receipt."
+  ],
+  "verification_command": "python3 ~/Developer/alexus-core/tests/verify_xero.py"
+}

@@ -1,0 +1,100 @@
+{
+  "generated_at_utc": "2026-11-03T23:48:17.001835+00:00",
+  "target": "Ragnarok secure-mcp-platform",
+  "results": [
+    {
+      "test_id": "T01",
+      "name": "Sealed status",
+      "status": "PASS",
+      "expected": "Status explicitly reports locked",
+      "observed": "{'platform': 'secure-mcp-platform', 'locked': True, 'method': None, 'unlockedAt': None, 'expiresAt': None, 'remainingMinutes': 0}",
+      "evidence_sha256": "002d361e62f283385d78cb98285e90919fe342c4a707df73cd2afed82f83e05f"
+    },
+    {
+      "test_id": "T02",
+      "name": "MCP tool denied while sealed",
+      "status": "PASS",
+      "expected": "Protected tool is rejected while locked",
+      "observed": "HTTP 200: {'result': {'content': [{'type': 'text', 'text': 'Error [locked] platform_list_items rejected. Why: Docker platform is locked. Physical hardware presence (YubiKey touch or Apple Secure Enclave) is required.. Retry safe: yes. Fix: Unlock via ./unlock.sh or invoke platform_unlock.'}], 'structuredContent': {'error': {'code': 'locked', 'what': 'platform_list_items rejected', 'why': 'Docker platform is locked. Physical hardware presence (YubiKey touch or Apple Secure Enclave) is required.', 'retry_safe': True, 'fix': 'Unlock via ./unlock.sh or invoke platform_unlock.'}}, 'isError': True}, 'jsonrpc': '2.0', 'id': 1}",
+      "evidence_sha256": "51e23c87d404604b8d6ee9a6da81ff9bfcf3b6055e27440410e4d6646a9c1710"
+    },
+    {
+      "test_id": "T03",
+      "name": "Postgres host TCP reachability",
+      "status": "FAIL",
+      "expected": "Agent/client network cannot reach PostgreSQL directly",
+      "observed": "TCP connection succeeded to 127.0.0.1:5557; determine whether this is an intentional host admin mapping",
+      "evidence_sha256": "f3d35cfd43c27a8cf0a520e8ac14742c0e7053e5c5459c119fd7ac6cf5d18971"
+    },
+    {
+      "test_id": "T04",
+      "name": "Manual lock endpoint",
+      "status": "PASS",
+      "expected": "Lock endpoint accepts lock request",
+      "observed": "HTTP 200: {'ok': True, 'message': 'Platform locked', 'status': {'locked': True, 'method': None, 'unlockedAt': None, 'expiresAt': None, 'remainingMinutes': 0}}",
+      "evidence_sha256": "884de163b98039358f06e0887b48ff899ef88ca78d18db79a3271ca4814118be"
+    },
+    {
+      "test_id": "T05",
+      "name": "Tool denied after manual lock",
+      "status": "PASS",
+      "expected": "Next protected tool request is denied",
+      "observed": "HTTP 200: {'result': {'content': [{'type': 'text', 'text': 'Error [locked] platform_list_items rejected. Why: Docker platform is locked. Physical hardware presence (YubiKey touch or Apple Secure Enclave) is required.. Retry safe: yes. Fix: Unlock via ./unlock.sh or invoke platform_unlock.'}], 'structuredContent': {'error': {'code': 'locked', 'what': 'platform_list_items rejected', 'why': 'Docker platform is locked. Physical hardware presence (YubiKey touch or Apple Secure Enclave) is required.', 'retry_safe': True, 'fix': 'Unlock via ./unlock.sh or invoke platform_unlock.'}}, 'isError': True}, 'jsonrpc': '2.0', 'id': 1}",
+      "evidence_sha256": "6319e10cebfb1d0c4e1d9c8d1e7a6ffc9daa9bb73d0ab31643b17da21dbf6058"
+    },
+    {
+      "test_id": "T06",
+      "name": "Lease expiration",
+      "status": "INCONCLUSIVE",
+      "expected": "Lease expires using monotonic time",
+      "observed": "Requires a test-only short lease configuration and observation; harness will not alter system clock",
+      "evidence_sha256": "a62c1325c65089beb3366cb4a1f7720fc07f3a9500a4b4efe3dc1129d987013a"
+    },
+    {
+      "test_id": "T07",
+      "name": "Hardware authorization replay",
+      "status": "INCONCLUSIVE",
+      "expected": "Old authorization challenge/response cannot unlock",
+      "observed": "Requires an instrumented test authenticator and captured non-production challenge; no replay attempted",
+      "evidence_sha256": "02dbe8b7f0cf95ae7f28d88bccf54afa783bccf48cd6d7b9b6a68ad1dde97fb5"
+    },
+    {
+      "test_id": "T08",
+      "name": "Agent credential isolation",
+      "status": "INCONCLUSIVE",
+      "expected": "Agent cannot read DB credentials or host auth material",
+      "observed": "Requires inspection and execution inside the actual agent container; configure repository-specific checks",
+      "evidence_sha256": "fdb926222693cb9508f7460323ff731fd05aabbe7123b55566a8a40e7759f9b0"
+    },
+    {
+      "test_id": "T09",
+      "name": "Restart defaults to locked",
+      "status": "PASS",
+      "expected": "Restarted service reports locked",
+      "observed": "{'platform': 'secure-mcp-platform', 'locked': True, 'method': None, 'unlockedAt': None, 'expiresAt': None, 'remainingMinutes': 0}",
+      "evidence_sha256": "6fcc4ef6ddcd89dfb03c5e6f962acde742781745527d5cc1ab00e0e2981bbc2c"
+    },
+    {
+      "test_id": "T11",
+      "name": "Receipt chain verification",
+      "status": "PASS",
+      "expected": "Receipt verifier exits zero",
+      "observed": "t|88|chain intact\n",
+      "evidence_sha256": "e8b103abf9ab383cfab1e83e092997ad3fa874871594576d9621bce9b0eb1037"
+    },
+    {
+      "test_id": "T12",
+      "name": "Receipt tamper detection",
+      "status": "INCONCLUSIVE",
+      "expected": "Modified test receipt is detected",
+      "observed": "Requires isolated disposable ledger fixture; do not mutate production receipts",
+      "evidence_sha256": "e388f560c2c31985e922af1bc1019a832935844f23391466bbe4cb5a773c5e7a"
+    }
+  ],
+  "summary": {
+    "PASS": 6,
+    "FAIL": 1,
+    "INCONCLUSIVE": 4
+  },
+  "report_sha256": "e91b7023acf560c8ff900a2cb614525f4f860149de368b6683a741be7fbdefcb"
+}

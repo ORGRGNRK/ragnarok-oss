@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+"""Conservative commit synchronization and sanitized catalog refresh. Never commits files."""
+import argparse, contextlib, fcntl, hashlib, json, os, platform, plistlib, re, shutil
+import signal, subprocess, sys, tempfile, time, urllib.request, urllib.error
+from pathlib import Path
+from datetime import datetime, timezone
+
+ROOT=Path(__file__).resolve().parent.parent
+STATE=Path(os.environ.get('RAGNAROK_SYNC_HOME',Path.home()/'.ragnarok/sync'))
+LABEL='co.rgnrk.ragnarok.sync'
+
+def stamp():return datetime.now(timezone.utc).isoformat(timespec='seconds')
+def private_json(path,data):
+    path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+    fd,name=tempfile.mkstemp(dir=path.parent,prefix='.'+path.name)
+    try:
+        with os.fdopen(fd,'w') as f:json.dump(data,f,indent=2);f.write('\n')
+        os.chmod(name,0o600);os.replace(name,path)
+    finally:
+        if os.path.exists(name):os.unlink(name)
+
+def run(args,cwd=None,timeout=90):
+    env={k:v for k,v in os.environ.items() if not k.startswith('GIT_')}
+    env.update(GIT_TERMINAL_PROMPT='0',GIT_OPTIONAL_LOCKS='0',GCM_INTERACTIVE='never',
+               GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=10',LC_ALL='C')
+    p=subprocess.Popen(args,cwd=cwd,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
+    try:
+        out,_=p.communicate(timeout=timeout)
+        return p.returncode,out.decode(errors='replace')
+    except subprocess.TimeoutExpired:
+        os.killpg(p.pid,signal.SIGKILL);p.communicate();return 124,''
+    except BaseException:
+        if p.poll() is None:os.killpg(p.pid,signal.SIGKILL);p.communicate()
+        raise
+
+def git(path,*args):
+    return run(['git','-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false',
+                '-c','protocol.ext.allow=never','-c','protocol.file.allow=never',
+                '-c','fetch.recurseSubmodules=false','-c','submodule.recurse=false',*args],path)
+
+def output(path,*args):
+    code,text=git(path,*args)
+    if code:raise ValueError('git check failed')
+    return text.strip()
+
+def discover(base):
+    found=set()
+    for d,dirs,files in os.walk(base,followlinks=False):
+        p=Path(d);dirs[:]=[n for n in dirs if not n.startswith('.') and n not in {'node_modules','build','dist','vendor','venv','backups','data','logs','archive'} and not (p/n).is_symlink()]
+        if '.git' in files or (p/'.git').is_dir():
+            found.add(str(p.resolve()));dirs[:]=[]
+        if len(p.relative_to(base).parts)>=5:dirs[:]=[]
+    return sorted(found)
+
+def sync_repo(entry):
+    path=Path(entry['path']);record={'id':entry['id'],'status':'held','reason':'check-failed'}
+    try:
+        if not path.is_dir():record['reason']='missing';return record
+        if output(path,'rev-parse','--show-toplevel')!=str(path.resolve()):record['reason']='root-changed';return record
+        if output(path,'status','--porcelain','--untracked-files=all','--ignore-submodules=none'):
+            record['reason']='dirty';return record
+        # Ignore-skip flags could hide tracked edits. Hold instead of trusting the status output.
+        flags=output(path,'ls-files','-v').splitlines()
+        if any(s and (s[0].islower() or s.startswith('S ')) for s in flags):record['reason']='hidden-index-flags';return record
+        for n in ['MERGE_HEAD','CHERRY_PICK_HEAD','REVERT_HEAD','rebase-merge','rebase-apply']:
+            if Path(output(path,'rev-parse','--git-path',n)).is_absolute():p=Path(output(path,'rev-parse','--git-path',n))
+            else:p=path/output(path,'rev-parse','--git-path',n)
+            if p.exists():record['reason']='operation-in-progress';return record
+        if not entry.get('remote') or not entry.get('ref'):
+            record['reason']='no-upstream';return record
+        branch=output(path,'symbolic-ref','--quiet','--short','HEAD')
+        remote=output(path,'config','--get','branch.'+branch+'.remote')
+        ref=output(path,'config','--get','branch.'+branch+'.merge')
+        if remote!=entry.get('remote') or ref!=entry.get('ref') or branch!=entry.get('branch'):
+            record['reason']='tracking-changed';return record
+        if not remote or remote=='.' or remote.startswith('-') or not ref.startswith('refs/heads/'):
+            record['reason']='no-upstream';return record
+        # Pin both fetch and push destinations at explicit enrollment. Never silently follow URL changes.
+        urls=output(path,'remote','get-url','--all',remote)+'\n'+output(path,'remote','get-url','--push','--all',remote)
+        if hashlib.sha256(urls.encode()).hexdigest()!=entry.get('destination_sha256'):
+            record['reason']='destination-changed';return record
+        code,_=git(path,'fetch','--no-tags','--no-recurse-submodules',remote)
+        if code:record['reason']='fetch-failed';return record
+        # Check again after network activity; no repository edits are stashed or discarded.
+        if output(path,'status','--porcelain','--untracked-files=all','--ignore-submodules=none'):
+            record['reason']='dirty';return record
+        upstream=output(path,'rev-parse','--symbolic-full-name','@{upstream}')
+        ahead,behind=map(int,output(path,'rev-list','--left-right','--count','HEAD...'+upstream).split())
+        if ahead and behind:record['reason']='diverged';return record
+        if behind:
+            # Changed submodules or custom content filters require manual handling.
+            changed=output(path,'diff','--no-ext-diff','--name-only','HEAD',upstream).splitlines()
+            attrs=output(path,'check-attr','filter','--',*changed) if changed else ''
+            if (path/'.gitmodules').exists() or any(Path(n).name in {'.gitattributes','.gitmodules'} for n in changed) or any(not s.endswith(': unspecified') and not s.endswith(': unset') for s in attrs.splitlines()):
+                record['reason']='custom-checkout';return record
+            code,_=git(path,'merge','--ff-only','--no-edit',upstream)
+            if code:record['reason']='fast-forward-failed';return record
+        if ahead:
+            # Explicit destination ref, normal non-force push. No tags or other branches.
+            code,_=git(path,'push','--no-verify','--recurse-submodules=no',remote,'HEAD:'+ref)
+            if code:record['reason']='push-failed';return record
+        record.update(status='current',reason='fast-forwarded' if behind else 'pushed' if ahead else 'unchanged')
+    except (ValueError,OSError,KeyError):pass
+    return record
+
+def enroll(path):
+    entry={'id':path.name,'path':str(path),'remote':None,'ref':None,'branch':None,'destination_sha256':None}
+    try:
+        branch=output(path,'symbolic-ref','--quiet','--short','HEAD')
+        remote=output(path,'config','--get','branch.'+branch+'.remote');ref=output(path,'config','--get','branch.'+branch+'.merge')
+        urls=output(path,'remote','get-url','--all',remote)+'\n'+output(path,'remote','get-url','--push','--all',remote)
+        entry.update(branch=branch,remote=remote,ref=ref,destination_sha256=hashlib.sha256(urls.encode()).hexdigest())
+    except (ValueError,OSError):pass
+    return entry
+
+def publish_base():
+    """SYNC_PUBLISH_URL from ~/.ragnarok/local.conf (https only, e.g. https://example.com/api/sync), or ''."""
+    try:
+        for line in (Path.home()/'.ragnarok'/'local.conf').read_text().splitlines():
+            k,sep,v=line.strip().partition('=')
+            if sep and k.strip()=='SYNC_PUBLISH_URL':
+                v=v.strip().strip('"\'').rstrip('/')
+                if re.fullmatch(r'https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~/-]*)?',v):return v
+    except OSError:pass
+    return ''
+
+def init(role):
+    if (STATE/'config.json').exists():raise ValueError('config already exists; inspect it before changing enrollment')
+    base=Path.home()/'Developer'
+    repos=[enroll(Path(p)) for p in discover(base)]
+    cfg={'schema':1,'role':role,'repositories':repos,'catalog':str(ROOT/'demos/work-atlas/catalog.py') if role=='mac' else None,
+         'publish_url':(publish_base()+'/'+role) if publish_base() else '','publish_secret_file':str(STATE/'publish.secret')}
+    if cfg['catalog']:cfg['catalog_sha256']=hashlib.sha256(Path(cfg['catalog']).read_bytes()).hexdigest()
+    private_json(STATE/'config.json',cfg)
+    print(json.dumps({'role':role,'enrolled':len(repos),'config':str(STATE/'config.json')}))
+
+def publish(cfg,summary,catalog=None):
+    secret=Path(cfg['publish_secret_file'])
+    if not secret.is_file():return 'Unverified: no publisher credential'
+    if secret.stat().st_mode&0o077:return 'held: publisher credential permissions'
+    payload={'schema':'ragnarok-sync:v1','observed_at':summary['observed_at'],'role':cfg['role'],
+             'counts':summary['counts'],'runtime':'Unverified'}
+    if catalog is not None:payload['catalog']=catalog
+    raw=json.dumps(payload,separators=(',',':')).encode()
+    if len(raw)>2_000_000:return 'held: catalog too large'
+    # HTTPS only, origin fixed by local.conf (not by the editable config.json); redirects are forbidden to protect the publisher token.
+    url=cfg['publish_url']
+    if not publish_base():return 'Unverified: no SYNC_PUBLISH_URL in ~/.ragnarok/local.conf'
+    if url!=publish_base()+'/'+cfg['role']:return 'held: publisher destination changed'
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self,*a,**kw):return None
+    req=urllib.request.Request(url,data=raw,method='POST',headers={'User-Agent':'ragnarok-sync/1.0','Content-Type':'application/json','Authorization':'Bearer '+secret.read_text().strip()})
+    try:
+        with urllib.request.build_opener(NoRedirect).open(req,timeout=25) as r:
+            return 'published' if r.status==200 else 'held: publisher response'
+    except urllib.error.HTTPError as e:return 'Unverified: publisher HTTP '+str(e.code)
+    except Exception:return 'Unverified: publisher unavailable'
+
+def once():
+    STATE.mkdir(parents=True,exist_ok=True,mode=0o700)
+    with (STATE/'run.lock').open('a') as lock:
+        try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:print('another sync is running');return
+        cfg=json.loads((STATE/'config.json').read_text())
+        results=[sync_repo(e) for e in cfg['repositories']]
+        summary={'schema':'ragnarok-sync:v1','role':cfg['role'],'observed_at':stamp(),'repositories':results,
+                 'counts':{'current':sum(x['status']=='current' for x in results),'held':sum(x['status']=='held' for x in results),'total':len(results)}}
+        catalog=None;script=cfg.get('catalog')
+        if script:
+            destination=STATE/'catalog.json'
+            code=1
+            if hashlib.sha256(Path(script).read_bytes()).hexdigest()==cfg.get('catalog_sha256'):
+                code,_=run([sys.executable,'-I',script,'--output',str(destination)],timeout=180)
+            if code==0:
+                catalog=json.loads(destination.read_text());summary['catalog']='refreshed'
+            else:summary['catalog']='Unverified: refresh failed'
+        summary['publication']=publish(cfg,summary,catalog)
+        private_json(STATE/'status.json',summary)
+        # Bounded receipts contain enum outcomes and enrolled repo labels, never git output or remote URLs.
+        log=STATE/'receipts.jsonl'
+        if log.exists() and log.stat().st_size>1_000_000:os.replace(log,STATE/'receipts.previous.jsonl')
+        fd=os.open(log,os.O_APPEND|os.O_CREAT|os.O_WRONLY,0o600)
+        with os.fdopen(fd,'w') as f:f.write(json.dumps(summary,separators=(',',':'))+'\n')
+        print(json.dumps({'role':cfg['role'],'counts':summary['counts'],'publication':summary['publication']}))
+
+def install():
+    # Run from the repo checkout itself: one home, no side copy that drifts (changed 2026-11-13).
+    installed=Path(__file__).resolve()
+    if platform.system()=='Darwin':
+        unit=Path.home()/'Library/LaunchAgents'/f'{LABEL}.plist'
+        unit.parent.mkdir(parents=True,exist_ok=True)
+        data={'Label':LABEL,'ProgramArguments':[sys.executable,str(installed),'once'],'RunAtLoad':True,'StartInterval':300,
+              'EnvironmentVariables':{'RAGNAROK_SYNC_HOME':str(STATE),'PATH':'/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin'},
+              'StandardOutPath':str(STATE/'service.log'),'StandardErrorPath':str(STATE/'service-error.log')}
+        unit.write_bytes(plistlib.dumps(data));unit.chmod(0o600)
+        for n in ['service.log','service-error.log']:
+            fd=os.open(STATE/n,os.O_CREAT|os.O_APPEND|os.O_WRONLY,0o600);os.close(fd)
+        subprocess.run(['launchctl','bootout',f'gui/{os.getuid()}',str(unit)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        subprocess.run(['launchctl','bootstrap',f'gui/{os.getuid()}',str(unit)],check=True)
+    else:
+        folder=Path.home()/'.config/systemd/user';folder.mkdir(parents=True,exist_ok=True)
+        (folder/'ragnarok-sync.service').write_text('[Unit]\nDescription=Ragnarok clean commit and catalog sync\n[Service]\nType=oneshot\nUMask=0077\nExecStart='+sys.executable+' '+str(installed)+' once\nEnvironment=RAGNAROK_SYNC_HOME='+str(STATE)+'\n')
+        (folder/'ragnarok-sync.timer').write_text('[Unit]\nDescription=Ragnarok sync every five minutes\n[Timer]\nOnBootSec=60\nOnUnitActiveSec=300\nPersistent=true\n[Install]\nWantedBy=timers.target\n')
+        subprocess.run(['systemctl','--user','daemon-reload'],check=True)
+        subprocess.run(['systemctl','--user','enable','--now','ragnarok-sync.timer'],check=True)
+    print('Installed five-minute sync service.')
+
+def main():
+    os.umask(0o077)
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('command',choices=['init','once','status','install']);p.add_argument('--role',choices=['mac','alexus'],default='mac');a=p.parse_args()
+    try:
+        if a.command=='init':init(a.role)
+        elif a.command=='once':once()
+        elif a.command=='install':install()
+        else:print((STATE/'status.json').read_text() if (STATE/'status.json').exists() else 'Unverified: no completed run')
+    except (ValueError,OSError,json.JSONDecodeError):print('Sync could not complete; inspect enrollment/configuration locally.',file=sys.stderr);return 1
+    return 0
+if __name__=='__main__':sys.exit(main())

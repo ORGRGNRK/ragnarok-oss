@@ -1,0 +1,16 @@
+{
+  "target_name": "Ragnarok secure-mcp-platform (disposable test instance)",
+  "project_dir": ".",
+  "mcp_url": "http://127.0.0.1:3000/mcp",
+  "status_url": "http://127.0.0.1:3000/status",
+  "lock_url": "http://127.0.0.1:3000/lock",
+  "status_tool": "platform_status",
+  "probe_tool": "platform_list_items",
+  "timeout_seconds": 8,
+  "postgres_host": "127.0.0.1",
+  "postgres_port": 5557,
+  "postgres_probe_from_host": true,
+  "compose_service": "mcp",
+  "restart_wait_seconds": 8,
+  "receipt_verify_command": ""
+}

@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "algorithm": "sha256",
+  "files": {
+    "schemas/command.schema.json": "34636286eb0a57070493f481fafef79354c561ff873ba4deab9dd15879ae701e",
+    "schemas/receipt.schema.json": "c257261cd15b8f04458d481639b75268a6e40b67b96d9529ad8ac883a5114dfa"
+  }
+}

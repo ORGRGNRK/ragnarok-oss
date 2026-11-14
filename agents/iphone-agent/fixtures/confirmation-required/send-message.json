@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "0.1",
+  "id": "com.yggdrasil.iphone.send-message",
+  "name": "Send a message",
+  "inputs": {
+    "message": {
+      "type": "string",
+      "description": "Message text supplied at run time."
+    }
+  },
+  "safety": { "risk": "external" },
+  "steps": [
+    {
+      "id": "enter-message",
+      "action": "typeText",
+      "text": "${input.message}",
+      "target": { "role": "textField", "within": "message composer" },
+      "safety": { "risk": "reversible" }
+    },
+    {
+      "id": "send-message",
+      "action": "tap",
+      "target": { "role": "button", "label": "Send", "within": "message composer" },
+      "safety": { "risk": "external", "requiresConfirmation": true },
+      "expect": { "screenText": "Delivered" }
+    }
+  ],
+  "postconditions": [{ "screenText": "Delivered" }]
+}

@@ -1,0 +1,475 @@
+[
+  {
+    "name": "CLITools",
+    "archive_path": "consolidation-2026-10-30/mac/CLITools.tar.gz",
+    "bytes": 1853440,
+    "headers_inspected": 150,
+    "source_members_observed": 14,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "CLITools/README.md",
+        "bytes": 4602
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "Developer-alexus",
+    "archive_path": "consolidation-2026-10-30/mac/Developer-alexus.tar.gz",
+    "bytes": 143360,
+    "headers_inspected": 112,
+    "source_members_observed": 23,
+    "header_scan_capped": false,
+    "readme_metadata": [],
+    "contents_extracted": false
+  },
+  {
+    "name": "LifeRPG",
+    "archive_path": "consolidation-2026-10-30/mac/LifeRPG.tar.gz",
+    "bytes": 3758080,
+    "headers_inspected": 182,
+    "source_members_observed": 27,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "LifeRPG/README.md",
+        "bytes": 15113
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "Ragnarok-Timeline",
+    "archive_path": "consolidation-2026-10-30/mac/Ragnarok-Timeline.tar.gz",
+    "bytes": 31037440,
+    "headers_inspected": 1152,
+    "source_members_observed": 0,
+    "header_scan_capped": false,
+    "readme_metadata": [],
+    "contents_extracted": false
+  },
+  {
+    "name": "alexus-core",
+    "archive_path": "consolidation-2026-10-30/mac/alexus-core.tar.gz",
+    "bytes": 286720,
+    "headers_inspected": 324,
+    "source_members_observed": 25,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "alexus-core/README.md",
+        "bytes": 4565
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "alexus-rebuild",
+    "archive_path": "consolidation-2026-10-30/mac/alexus-rebuild.tar.gz",
+    "bytes": 51200,
+    "headers_inspected": 96,
+    "source_members_observed": 0,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "alexus-rebuild/README.md",
+        "bytes": 402
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "alexus-swift",
+    "archive_path": "consolidation-2026-10-30/mac/alexus-swift.tar.gz",
+    "bytes": 2478080,
+    "headers_inspected": 244,
+    "source_members_observed": 14,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "alexus-swift/README.md",
+        "bytes": 3155
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "conveyor-app",
+    "archive_path": "consolidation-2026-10-30/mac/conveyor-app.tar.gz",
+    "bytes": 624640,
+    "headers_inspected": 245,
+    "source_members_observed": 8,
+    "header_scan_capped": false,
+    "readme_metadata": [],
+    "contents_extracted": false
+  },
+  {
+    "name": "conveyor-json",
+    "archive_path": "consolidation-2026-10-30/mac/conveyor-json.tar.gz",
+    "bytes": 153600,
+    "headers_inspected": 79,
+    "source_members_observed": 13,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "conveyor-json/README.md",
+        "bytes": 7834
+      },
+      {
+        "path": "conveyor-json/task-schema/README.md",
+        "bytes": 5297
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "conveyor",
+    "archive_path": "consolidation-2026-10-30/mac/conveyor.tar.gz",
+    "bytes": 1720320,
+    "headers_inspected": 278,
+    "source_members_observed": 9,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "conveyor/README.md",
+        "bytes": 7337
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "crew",
+    "archive_path": "consolidation-2026-10-30/mac/crew.tar.gz",
+    "bytes": 337920,
+    "headers_inspected": 104,
+    "source_members_observed": 2,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "crew/README.md",
+        "bytes": 6349
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "fix-memory",
+    "archive_path": "consolidation-2026-10-30/mac/fix-memory.tar.gz",
+    "bytes": 276480,
+    "headers_inspected": 163,
+    "source_members_observed": 17,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "fix-memory/README.md",
+        "bytes": 9268
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "grok-swift",
+    "archive_path": "consolidation-2026-10-30/mac/grok-swift.tar.gz",
+    "bytes": 61440,
+    "headers_inspected": 117,
+    "source_members_observed": 8,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "grok-swift/README.md",
+        "bytes": 2737
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "iphone-agent",
+    "archive_path": "consolidation-2026-10-30/mac/iphone-agent.tar.gz",
+    "bytes": 450560,
+    "headers_inspected": 493,
+    "source_members_observed": 50,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "iphone-agent/README.md",
+        "bytes": 7594
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "local-ai-app",
+    "archive_path": "consolidation-2026-10-30/mac/local-ai-app.tar.gz",
+    "bytes": 13332480,
+    "headers_inspected": 207,
+    "source_members_observed": 28,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "local-ai-app/README.md",
+        "bytes": 11323
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "muse-mcp-bridge",
+    "archive_path": "consolidation-2026-10-30/mac/muse-mcp-bridge.tar.gz",
+    "bytes": 71680,
+    "headers_inspected": 73,
+    "source_members_observed": 3,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "muse-mcp-bridge/README.md",
+        "bytes": 2193
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "panes",
+    "archive_path": "consolidation-2026-10-30/mac/panes.tar.gz",
+    "bytes": 256000,
+    "headers_inspected": 193,
+    "source_members_observed": 4,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "panes/README.md",
+        "bytes": 5405
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "phoenix-audio",
+    "archive_path": "consolidation-2026-10-30/mac/phoenix-audio.tar.gz",
+    "bytes": 153600,
+    "headers_inspected": 148,
+    "source_members_observed": 14,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "phoenix-audio/README.md",
+        "bytes": 10902
+      },
+      {
+        "path": "phoenix-audio/client/README.md",
+        "bytes": 857
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "phone-grader-app",
+    "archive_path": "consolidation-2026-10-30/mac/phone-grader-app.tar.gz",
+    "bytes": 75694080,
+    "headers_inspected": 754,
+    "source_members_observed": 81,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "phone-grader-app/README.md",
+        "bytes": 8055
+      },
+      {
+        "path": "phone-grader-app/mcp/README.md",
+        "bytes": 2462
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "phone-grader-portfolio",
+    "archive_path": "consolidation-2026-10-30/mac/phone-grader-portfolio.tar.gz",
+    "bytes": 1064960,
+    "headers_inspected": 416,
+    "source_members_observed": 75,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "phone-grader-portfolio/README.md",
+        "bytes": 5102
+      },
+      {
+        "path": "phone-grader-portfolio/mcp/README.md",
+        "bytes": 2313
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "phone-grader-scrub",
+    "archive_path": "consolidation-2026-10-30/mac/phone-grader-scrub.tar.gz",
+    "bytes": 10240,
+    "headers_inspected": 7,
+    "source_members_observed": 5,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "phone-grader-scrub/README.md",
+        "bytes": 5102
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "ragnarok-client-kit",
+    "archive_path": "consolidation-2026-10-30/mac/ragnarok-client-kit.tar.gz",
+    "bytes": 153600,
+    "headers_inspected": 149,
+    "source_members_observed": 14,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "ragnarok-client-kit/README.md",
+        "bytes": 10902
+      },
+      {
+        "path": "ragnarok-client-kit/client/README.md",
+        "bytes": 857
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "ragnarok-hq-fixes",
+    "archive_path": "consolidation-2026-10-30/mac/ragnarok-hq-fixes.tar.gz",
+    "bytes": 215040,
+    "headers_inspected": 206,
+    "source_members_observed": 18,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "ragnarok-hq-fixes/README.md",
+        "bytes": 14519
+      },
+      {
+        "path": "ragnarok-hq-fixes/client/README.md",
+        "bytes": 857
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "ragnarok-pipe",
+    "archive_path": "consolidation-2026-10-30/mac/ragnarok-pipe.tar.gz",
+    "bytes": 61440,
+    "headers_inspected": 97,
+    "source_members_observed": 8,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "ragnarok-pipe/README.md",
+        "bytes": 4672
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "ragnarok-repair-shop",
+    "archive_path": "consolidation-2026-10-30/mac/ragnarok-repair-shop.tar.gz",
+    "bytes": 215040,
+    "headers_inspected": 262,
+    "source_members_observed": 33,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "ragnarok-repair-shop/README.md",
+        "bytes": 16476
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "script-catalog",
+    "archive_path": "consolidation-2026-10-30/mac/script-catalog.tar.gz",
+    "bytes": 2365440,
+    "headers_inspected": 139,
+    "source_members_observed": 14,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "script-catalog/README.md",
+        "bytes": 4154
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "sigcut",
+    "archive_path": "consolidation-2026-10-30/mac/sigcut.tar.gz",
+    "bytes": 192901120,
+    "headers_inspected": 24,
+    "source_members_observed": 3,
+    "header_scan_capped": false,
+    "readme_metadata": [],
+    "contents_extracted": false
+  },
+  {
+    "name": "upwork-alert",
+    "archive_path": "consolidation-2026-10-30/mac/upwork-alert.tar.gz",
+    "bytes": 30720,
+    "headers_inspected": 59,
+    "source_members_observed": 1,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "upwork-alert/README.md",
+        "bytes": 1199
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "verde-coffee",
+    "archive_path": "consolidation-2026-10-30/mac/verde-coffee.tar.gz",
+    "bytes": 153600,
+    "headers_inspected": 148,
+    "source_members_observed": 14,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "verde-coffee/README.md",
+        "bytes": 10902
+      },
+      {
+        "path": "verde-coffee/client/README.md",
+        "bytes": 857
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "ygg-mcp-business",
+    "archive_path": "consolidation-2026-10-30/mac/ygg-mcp-business.tar.gz",
+    "bytes": 409600,
+    "headers_inspected": 417,
+    "source_members_observed": 48,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "ygg-mcp-business/README.md",
+        "bytes": 10734
+      }
+    ],
+    "contents_extracted": false
+  },
+  {
+    "name": "ygg-scratch",
+    "archive_path": "consolidation-2026-10-30/mac/ygg-scratch.tar.gz",
+    "bytes": 2293760,
+    "headers_inspected": 34,
+    "source_members_observed": 13,
+    "header_scan_capped": false,
+    "readme_metadata": [
+      {
+        "path": "ygg-scratch/README.md",
+        "bytes": 2342
+      }
+    ],
+    "contents_extracted": false
+  }
+]

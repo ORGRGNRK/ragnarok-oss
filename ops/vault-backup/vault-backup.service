@@ -1,0 +1,6 @@
+[Unit]
+Description=Back up Vaultwarden + Pocket ID to the Seagate and Google Drive (encrypted)
+OnFailure=vault-backup-failed.service
+[Service]
+Type=oneshot
+ExecStart=%h/Developer/ragnarok/ops/vault-backup/vault-backup.sh

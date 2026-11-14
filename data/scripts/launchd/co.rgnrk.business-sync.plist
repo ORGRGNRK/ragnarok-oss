@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Every 15 minutes: keep ygg-scratch Business and data/ Business the same (scripts/business-sync.py). Log: ~/.ragnarok/business-sync.log
+     Install (a person runs this):
+       cp ~/Developer/ragnarok/data/scripts/launchd/co.rgnrk.business-sync.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/co.rgnrk.business-sync.plist
+     Remove: launchctl bootout gui/$(id -u)/co.rgnrk.business-sync -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>co.rgnrk.business-sync</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/sh</string><string>-c</string>
+    <string>date -u +"== %Y-%m-%dT%H:%M:%SZ"; exec /usr/bin/python3 -I "$HOME/Developer/ragnarok/data/scripts/business-sync.py" --apply</string>
+  </array>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>@HOME@/.orbstack/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string></dict>
+  <key>StartInterval</key><integer>900</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>@HOME@/.ragnarok/business-sync.log</string>
+  <key>StandardErrorPath</key><string>@HOME@/.ragnarok/business-sync.log</string>
+</dict></plist>

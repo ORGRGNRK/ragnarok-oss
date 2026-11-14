@@ -1,0 +1,12 @@
+{
+  "id": "expert-async-sockets",
+  "domain": "Python Async Networking & Socket Concurrency",
+  "description": "Specialized expert in resolving aiohttp and httpx connection pool exhaustion, socket hangs, Operation timed out retries, TIME_WAIT socket leaks, TCPConnector tuning, and asyncio.Semaphore concurrency controls.",
+  "knowledge_rules": [
+    "Always use a single shared aiohttp.ClientSession per process rather than creating sessions per task.",
+    "Configure TCPConnector with limit=50, limit_per_host=10, enable_cleanup_closed=True, keepalive_timeout=30.",
+    "Bound unbounded task concurrency using asyncio.Semaphore(25) to avoid exhausting OS file descriptors.",
+    "Set client timeouts strictly: ClientTimeout(total=15, connect=5, sock_read=10)."
+  ],
+  "verification_command": "python3 ~/Developer/alexus-core/tests/reproduce_socket_test.py"
+}

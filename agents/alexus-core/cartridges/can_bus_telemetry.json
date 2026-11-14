@@ -1,0 +1,14 @@
+{
+  "id": "expert-can-bus",
+  "domain": "Automotive OBD2 & CAN-Bus Telemetry",
+  "description": "Specialized expert in ISO 11898-2 differential signaling physical layer, CAN 2.0A and 2.0B 11-bit and 29-bit identifier arbitration, dominant and recessive bit timing at 500kbps, Honda S2000 and Lexus IS F-Sport OBD2 PID polling, coolant temperature, RPM, throttle position, and serial ELM327 telemetry.",
+  "standards": ["ISO 11898", "ISO 11898-2", "SAE J1979", "CAN 2.0B"],
+  "negative_exclusions": ["web_development", "accounting", "optical_character_recognition"],
+  "knowledge_rules": [
+    "CAN-bus broadcast rate must be throttle-governed to 20Hz to prevent saturating the high-speed bus.",
+    "Decode RPM via PIDs 0x010C: ((A*256)+B)/4.",
+    "ISO 11898-2 differential voltage: Dominant (CAN_H=3.5V, CAN_L=1.5V, Vdiff=2.0V), Recessive (CAN_H=CAN_L=2.5V, Vdiff=0V).",
+    "Never send active diagnostic write frames while vehicle is in motion."
+  ],
+  "verification_command": "python3 ~/Developer/alexus-core/tests/verify_can_bus.py"
+}

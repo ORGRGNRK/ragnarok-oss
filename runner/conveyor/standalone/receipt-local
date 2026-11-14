@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Standalone YGG. Replaces conveyor-ygg-receipt (which writes two rows to
+# the operator's live the author's database base) with an append-only local JSONL receipt.
+#
+# Same contract: called ONLY on a dead end, with (task, reason, verdict, path).
+# A receipt that cannot be written is still a failure -- exit nonzero so the
+# belt breaks loudly rather than losing the record.
+set -uo pipefail
+ROOT="${CONVEYOR_ROOT:-$(dirname "$(dirname "$(readlink -f "$0")")")}"
+OUT="$ROOT/logs/dead-ends.jsonl"
+mkdir -p "$(dirname "$OUT")" || exit 1
+printf '{"ts":"%s","task":"%s","reason":"%s","verdict":"%s","path":"%s"}\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${1:-}" "${2:-}" "${3:-}" "${4:-}" >> "$OUT" || exit 1

@@ -1,0 +1,17 @@
+# Only the belt's code goes into the image: never trays, logs, outputs, settings or work.
+.belt
+.work
+**/conveyor.env
+**/*.env
+conveyor/plan/*
+conveyor/queue/*
+conveyor/running/*
+conveyor/verify/*
+conveyor/human/*
+conveyor/done/*
+conveyor/failed/*
+conveyor/logs/*
+conveyor/attachments/*
+conveyor/outputs/*
+**/.DS_Store
+**/__pycache__

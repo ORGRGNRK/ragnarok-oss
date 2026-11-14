@@ -1,0 +1,2 @@
+a{color:var(--link);text-decoration:none;transition:color var(--ease-ui), text-shadow var(--ease-ui)}
+a:hover{color:var(--link-hover);text-shadow:var(--glow-hover)}

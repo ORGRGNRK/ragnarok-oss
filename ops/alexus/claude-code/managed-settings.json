@@ -1,0 +1,85 @@
+{
+  "allowManagedHooksOnly": true,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I @OWNER_HOME@/Developer/ragnarok/ops/mac-scripts/delete-gate.py",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I @OWNER_HOME@/Developer/ragnarok/ops/mac-scripts/evidence-rules.py",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 -I @OWNER_HOME@/Developer/ragnarok/ops/mac-scripts/drift-check.py",
+            "timeout": 60,
+            "statusMessage": "Checking for drift..."
+          },
+          {
+            "type": "command",
+            "command": "RAGNAROK_DB_SSH= python3 -I @OWNER_HOME@/Developer/ragnarok/data/scripts/memory.py arm",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 -I @OWNER_HOME@/Developer/ragnarok/ops/mac-scripts/premise-check.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "YGG_SCRATCH_ENV=@OWNER_HOME@/Developer/ygg-scratch/.env node @OWNER_HOME@/Developer/ragnarok/connector/ygg-business/hooks/mac-receipts/receipt.mjs claude-hook",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "YGG_SCRATCH_ENV=@OWNER_HOME@/Developer/ygg-scratch/.env node @OWNER_HOME@/Developer/ragnarok/connector/ygg-business/hooks/mac-receipts/receipt.mjs claude-hook",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I @OWNER_HOME@/Developer/ragnarok/ops/mac-scripts/evidence-audit.py",
+            "timeout": 120,
+            "statusMessage": "Auditing answer against evidence..."
+          },
+          {
+            "type": "command",
+            "command": "python3 -I @OWNER_HOME@/Developer/ragnarok/ops/mac-scripts/premise-check.py --answer",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

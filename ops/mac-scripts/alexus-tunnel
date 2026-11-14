@@ -1,0 +1,14 @@
+#!/bin/bash
+# alexus-tunnel: Alexus is the server. This keeps the Mac's old database/UI ports pointing at Alexus over ssh,
+# so every client on the Mac (receipt hooks, ygg-business MCP, memory hook, connector, NocoDB in the browser)
+# keeps using 127.0.0.1:<same port> while the data lives on Alexus. Nothing is opened to the network: the ports
+# listen on the Mac's loopback only and travel inside ssh (Tailscale address, works at home and away).
+# Run by ~/Library/LaunchAgents/co.rgnrk.alexus-tunnel.plist (KeepAlive). Add a port: add it to PORTS, then
+#   launchctl kickstart -k gui/$(id -u)/co.rgnrk.alexus-tunnel
+# Moved 2026-11-02: 5547 ygg-scratch Postgres (business, receipts, personal, core, social), 8091 its NocoDB.
+PORTS="5547 8091 5491 8891 5472 8820 8120"
+HOST="${ALEXUS_TUNNEL_HOST:-alexus}"
+args=()
+for p in $PORTS; do args+=(-L "127.0.0.1:$p:127.0.0.1:$p"); done
+exec /usr/bin/ssh -N -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+  -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new "${args[@]}" "$HOST"

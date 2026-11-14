@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# conveyor-add — drop a task into the conveyor queue.
+#   conveyor-add "short title" < body.md      (body on stdin)
+#   conveyor-add "short title" -m "body text"
+#   conveyor-add "short title" -r recXXXXXXXXXXXXXX ...   link a reminder row:
+#       when the task files to done/, conveyor-close marks that row Done.
+#   conveyor-add "short title" --plan -m "body"
+#       PLAN IT FIRST (SPEC-planning.md): the task goes to plan/, not queue/.
+#       A planner seat writes a checked step list, a critic seat reviews it,
+#       and only an approved plan reaches queue/. Off unless asked for.
+#       --plan-format json|markdown (json-tasks branch; default json, or
+#       CONVEYOR_PLAN_FORMAT): json = the planner writes ONE task as JSON
+#       (task-schema/task.schema.json), code validates it, the critic answers
+#       with a JSON verdict, and a pass goes straight to queue/ with no human
+#       approval. markdown = the planner writes a checklist, as before.
+#   conveyor-add "short title" --attach FILE [--attach FILE ...] -m "body"
+#       (-a for short) attach input files of any kind (pdf, csv, xlsx, zip,
+#       images, code...). Each is COPIED to attachments/<task-id>/ and listed
+#       under "## Attachments" by full path; the seats read them and are told
+#       never to change them. Folders are refused (zip them first). Each file
+#       may be at most CONVEYOR_ATTACH_MAX_MB megabytes (default 100).
+# Every task also gets an empty output folder, outputs/<task-id>/, named on an
+# "outputs:" line under "## Outputs". The executor saves deliverables there;
+# checklist commands see it as $CONVEYOR_OUTPUTS (set by conveyor-check).
+# <task-id> is the task file's name without .md.
+# Anyone can call this: the operator, an AI session, another script. That is the point.
+set -eu
+ROOT="${CONVEYOR_ROOT:-$(dirname "$0")}"
+ROOT="$(cd "$ROOT" && pwd)"
+QUEUE="$ROOT/queue"
+MAX_MB="${CONVEYOR_ATTACH_MAX_MB:-100}"
+mkdir -p "$QUEUE"
+
+usage='usage: conveyor-add "title" [--plan [--plan-format json|markdown]] [-r recID] [--attach FILE]... [-m "body"] (or body on stdin)'
+title="${1:?$usage}"
+shift
+body=""; reminder=""; have_body=0; attach=(); plan=0
+plan_format="${CONVEYOR_PLAN_FORMAT:-json}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --plan) plan=1; shift ;;
+    --plan-format) plan_format="${2:?--plan-format needs json or markdown}"; shift 2 ;;
+    --plan-format=*) plan_format="${1#--plan-format=}"; shift ;;
+    -r) reminder="${2:?-r needs a Reminders rec id}"; shift 2 ;;
+    -m) body="${2?-m needs a body}"; have_body=1; shift 2 ;;
+    -a|--attach) attach+=("${2:?--attach needs a file}"); shift 2 ;;
+    --attach=*) attach+=("${1#--attach=}"); shift ;;
+    *) echo "conveyor-add: unexpected argument: $1" >&2; echo "$usage" >&2; exit 2 ;;
+  esac
+done
+case "$plan_format" in json|markdown) ;; *) echo "conveyor-add: --plan-format wants json or markdown" >&2; exit 2 ;; esac
+case "$reminder" in ""|rec[A-Za-z0-9]??????????????) ;; *) echo "conveyor-add: -r wants a recXXXXXXXXXXXXXX id" >&2; exit 2 ;; esac
+[ "$have_body" = 1 ] || body="$(cat)"
+
+# Check every attachment BEFORE anything is written, so a bad one leaves no half-made task.
+max_bytes=$((MAX_MB * 1024 * 1024))
+for f in ${attach[@]+"${attach[@]}"}; do
+  if [ -d "$f" ]; then echo "conveyor-add: $f is a folder; attach files (zip a folder first)" >&2; exit 2; fi
+  if [ ! -f "$f" ] || [ ! -r "$f" ]; then echo "conveyor-add: cannot read attachment: $f" >&2; exit 2; fi
+  size=$(wc -c < "$f" | tr -d ' ')
+  if [ "$size" -gt "$max_bytes" ]; then
+    echo "conveyor-add: $(basename "$f") is about $(( (size + 1048575) / 1048576 )) MB; the limit is $MAX_MB MB per file (set CONVEYOR_ATTACH_MAX_MB to change it)" >&2
+    exit 2
+  fi
+done
+
+slug=$(printf '%s' "$title" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//' | cut -c1-40)
+id="$(date +%Y%m%d-%H%M%S)-$slug"
+# Two adds of the same title in the same second must not share a file or folder.
+taken() { [ -e "$QUEUE/$1.md" ] || [ -e "$ROOT/plan/$1.md" ] || [ -e "$ROOT/attachments/$1" ] || [ -e "$ROOT/outputs/$1" ]; }
+if taken "$id"; then
+  n=2; while taken "$id-$n"; do n=$((n + 1)); done
+  id="$id-$n"
+fi
+dest="$QUEUE"
+if [ "$plan" = 1 ]; then dest="$ROOT/plan"; mkdir -p "$dest"; fi
+file="$dest/$id.md"
+outdir="$ROOT/outputs/$id"
+mkdir -p "$outdir"
+
+# Copy attachments, keeping their names; a second "report.pdf" becomes "report (2).pdf".
+listed=()
+if [ ${#attach[@]} -gt 0 ]; then
+  adir="$ROOT/attachments/$id"
+  mkdir -p "$adir"
+  for f in "${attach[@]}"; do
+    name="$(basename "$f")"
+    dst="$adir/$name"
+    if [ -e "$dst" ]; then
+      case "$name" in
+        ?*.*) stem="${name%.*}"; ext=".${name##*.}" ;;
+        *) stem="$name"; ext="" ;;
+      esac
+      n=2; while [ -e "$adir/$stem ($n)$ext" ]; do n=$((n + 1)); done
+      dst="$adir/$stem ($n)$ext"
+    fi
+    cp -p "$f" "$dst"
+    chmod a-w "$dst" 2>/dev/null || true
+    listed+=("$dst")
+  done
+fi
+
+sections="$(
+  if [ ${#listed[@]} -gt 0 ]; then
+    printf '## Attachments\n\n'
+    printf 'Input files for this task (copies; the originals are untouched). Read them as needed. Do not modify, move or delete them.\n\n'
+    for p in "${listed[@]}"; do printf -- '- `%s`\n' "$p"; done
+    printf '\n'
+  fi
+  printf '## Outputs\n\n'
+  printf 'outputs: %s\n\n' "$outdir"
+  printf 'Save every file this task produces in that folder (it already exists). Checklist commands can refer to it as "$CONVEYOR_OUTPUTS".\n'
+)"
+
+# The sections go after the request and BEFORE the body's first "## " heading
+# (usually "## Checklist"), so the checklist stays the last thing a seat reads.
+{
+  printf '# %s\n\nqueued: %s\nby: %s\n' "$title" "$(date -Is)" "${CONVEYOR_BY:-$(whoami)}"
+  [ -n "$reminder" ] && printf 'reminder: %s\n' "$reminder"
+  [ "$plan" = 1 ] && [ "$plan_format" = json ] && printf 'plan-format: json\n'
+  printf '\n'
+  SECTIONS="$sections" awk '
+    !done && /^## / { print ENVIRON["SECTIONS"]; print ""; done = 1 }
+    { print }
+    END { if (!done) { print ""; print ENVIRON["SECTIONS"] } }
+  ' <<<"$body"
+} > "$dest/.$id.md.tmp"
+# Into place in one step, so a run never picks up half a task.
+mv "$dest/.$id.md.tmp" "$file"
+if [ "$plan" = 1 ]; then echo "queued for planning ($plan_format): $file"; else echo "queued: $file"; fi

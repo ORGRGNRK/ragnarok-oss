@@ -1,0 +1,20 @@
+# Heimdall Web as a systemd user service on Alexus, tailnet address only, locked behind the YubiKey (see server.py).
+# Install (as your own login on the server):
+#   systemctl --user link ~/Developer/ragnarok/app/heimdall-web/heimdall-web.service
+#   systemctl --user enable --now heimdall-web
+#   sudo loginctl enable-linger "$USER"      # keeps it running with nobody logged in, and after reboots
+[Unit]
+Description=Heimdall Web (Chat tab as a web page), tailnet only
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/Developer/ragnarok/app/heimdall-web
+Environment=ALEXUS_SSH=local
+Environment=OLLAMA_HOST=http://127.0.0.1:11434
+# The YubiKey https name: HEIMDALL_WEB_HOST in ~/.ragnarok/local.conf (e.g. server.your-tailnet.ts.net).
+ExecStart=/usr/bin/python3 -u server.py --host 127.0.0.1 --port 8750
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

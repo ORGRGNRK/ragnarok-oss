@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""ragnarok-hub: every project folder on this machine and (where Docker is here) every container, as JSON.
+
+    ragnarok-hub [--root DIR]...        default root: ~/Developer
+
+The Hub's inspection, as one script that runs on the Mac and on Alexus, so no screen has to carry it:
+per folder — what kind of project it is, its first README line, branch, last commit, uncommitted files, and
+whether it is on a remote (no git at all / no remote / commits not pushed). Containers: name, status, compose
+project, healthy or not. Read-only: it never fetches, so "unpushed" is against the last fetch.
+Standard library only.
+"""
+import json, os, socket, subprocess, sys, time
+
+HOME = os.path.expanduser("~")
+
+
+def run(argv, cwd=None, timeout=8):
+    try:
+        r = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+        return r.returncode, r.stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return 1, ""
+
+
+def git(d, *args):
+    code, out = run(["git", "-C", d] + list(args))
+    return out if code == 0 and out else None
+
+
+def about(d):
+    for doc in ("README.md", "AGENTS.md", "CLAUDE.md"):
+        try:
+            with open(os.path.join(d, doc), encoding="utf-8", errors="replace") as f:
+                lines = [l.strip() for l in f.read(20000).splitlines()]
+        except OSError:
+            continue
+        for l in lines:
+            if l and not l.startswith(("#", "<!--", "```")):
+                return l[:220]
+        return next((l.strip("# ") for l in lines if l), "")
+    return ""
+
+
+def inspect(d):
+    try:
+        names = os.listdir(d)
+    except OSError:
+        names = []
+    has = lambda f: f in names
+    kinds = []
+    if has("Package.swift"): kinds.append("swift")
+    if any(n.endswith(".xcodeproj") for n in names) or has("project.yml"): kinds.append("xcode")
+    if has("docker-compose.yml") or has("compose.yaml") or has("docker-compose.yaml"): kinds.append("docker")
+    if has("package.json"): kinds.append("node")
+    if has("pyproject.toml") or has("requirements.txt") or any(n.endswith(".py") for n in names): kinds.append("python")
+    if not kinds and any(n.endswith(".md") for n in names): kinds.append("notes")
+    p = {"path": d.replace(HOME, "~", 1), "name": os.path.basename(d), "kinds": kinds, "about": about(d),
+         "link": os.path.realpath(d).replace(HOME, "~", 1) if os.path.islink(d) else None,
+         "git": False, "branch": None, "lastCommit": "", "dirty": 0, "remote": None, "unpushed": None,
+         "files": sum(1 for n in names if not n.startswith("."))}
+    inside = has(".git") or git(d, "rev-parse", "--is-inside-work-tree") == "true"
+    if inside:
+        p["git"] = True
+        p["own"] = has(".git")                      # its own repo, or a folder inside a bigger one
+        p["branch"] = git(d, "branch", "--show-current")
+        p["lastCommit"] = (git(d, "log", "-1", "--format=%cs · %s", "--", ".") or "")[:120]
+        p["dirty"] = len((git(d, "status", "--porcelain", "--", ".") or "").splitlines())
+        url = git(d, "remote", "get-url", "origin") or (git(d, "remote") and git(d, "remote", "get-url", git(d, "remote").splitlines()[0]))
+        if url:
+            p["remote"] = url.split("@")[-1].replace("https://", "").replace("github.com:", "github.com/").removesuffix(".git")
+            ahead = git(d, "rev-list", "--count", "@{u}..HEAD")
+            p["unpushed"] = int(ahead) if ahead is not None and ahead.isdigit() else (None if git(d, "rev-parse", "HEAD") is None else -1)
+        else:
+            commits = git(d, "rev-list", "--count", "HEAD")
+            p["commits"] = int(commits) if commits and commits.isdigit() else 0
+    try:
+        p["modified"] = int(os.path.getmtime(os.path.join(d, ".git", "index") if has(".git") and os.path.isdir(os.path.join(d, ".git")) else d))
+    except OSError:
+        p["modified"] = 0
+    # one plain word for the worst thing true about its backup state
+    if not p["git"]:
+        p["backup"] = "empty" if p["files"] == 0 else "no git"
+    elif not p["remote"]:
+        p["backup"] = "no remote"
+    elif p["unpushed"] == -1:
+        p["backup"] = "branch not pushed"
+    elif p["unpushed"]:
+        p["backup"] = "unpushed commits"
+    elif p["dirty"]:
+        p["backup"] = "uncommitted"
+    else:
+        p["backup"] = "pushed"
+    return p
+
+
+def projects(roots):
+    seen, out = set(), []
+    for r in roots:
+        try:
+            names = sorted(n for n in os.listdir(r) if not n.startswith("."))
+        except OSError:
+            continue
+        for n in names:
+            d = os.path.join(r, n)
+            if not os.path.isdir(d) or d.endswith(".app"):
+                continue
+            canon = os.path.realpath(d).lower()
+            link = os.path.islink(d)
+            if canon in seen and not link:
+                continue
+            seen.add(canon)
+            out.append(inspect(d))
+    return sorted(out, key=lambda p: -p["modified"])
+
+
+def containers():
+    code, out = run(["docker", "ps", "-a", "--format", '{{.Names}}\t{{.Status}}\t{{.Label "com.docker.compose.project"}}'], timeout=15)
+    if code != 0:
+        return None
+    cs = []
+    for l in out.splitlines():
+        f = l.split("\t")
+        if len(f) >= 2:
+            cs.append({"name": f[0], "status": f[1], "project": f[2] if len(f) > 2 else "",
+                       "healthy": f[1].startswith("Up") and "unhealthy" not in f[1]})
+    return cs
+
+
+def main():
+    args, roots = sys.argv[1:], []
+    while "--root" in args:
+        i = args.index("--root"); roots.append(os.path.expanduser(args[i + 1])); del args[i:i + 2]
+    if args:
+        sys.exit(__doc__)
+    json.dump({"host": socket.gethostname().split(".")[0], "at": int(time.time()),
+               "projects": projects(roots or [os.path.join(HOME, "Developer")]), "containers": containers()}, sys.stdout)
+
+
+if __name__ == "__main__":
+    main()

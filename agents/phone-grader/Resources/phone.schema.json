@@ -1,0 +1,836 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ragnarok:domain/phone/v0.4",
+  "title": "Phone domain record",
+  "description": "Domain vocabulary for the video->JSON->intent pipe. v0.4 (2026-08-21) adds 13 fields found by loose-searching the corpus (264 nocodb transcript chunks, 38,374 crew log lines, 75 Airtable records) for phone attributes and keeping only what the vocabulary had NO slot for - the negative-space method: what the corpus talks about constantly and the schema cannot hold. Ten are screen-pass fields licensed KEEP by probe-002 finding 1 (grounded screen-text transcription is KEEP-grade at 7B); face_id and frame_damage are trigger-only on the function-claim and damage-claim rules; accessories carries x-7b null because no probe has ever had an accessory in frame. v0.3 folded in probe-001 (5 screenshot frames) and probe-002 (raw frames, screen-on pass) — see domain/probe/. A domain record is a set of CLAIMS about one physical phone; every claim carries its own provenance. Rules: (1) a field either traces to an observation or is marked inference; (2) visibility is per-field — a claim from a channel that cannot observe that field is invalid regardless of confidence; (3) capture is STAGED — x-pass names the pass that can answer a field, and an UNKNOWN is PENDING until that pass appears in passes_done, TERMINAL after (pending = wait, terminal = surface it); (4) constrained extraction must use per-field enums/types built from x-enum/x-value-*, never bare strings (probe-002: bare strings produced powers_on='12:30'); (5) merge precedence — claims from later passes accumulate under the same identity and fill UNKNOWNs, but a claim may never overwrite one whose source outranks it: human and pull are immovable by camera/voice/inference; (6) x-7b records the probe-backed verdict on whether qwen2.5vl:7b may hold the field (keep), may only trigger escalation (trigger-only), or must not be believed at all (escalate).",
+  "type": "object",
+  "required": [
+    "domain",
+    "claims"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "domain": {
+      "const": "phone"
+    },
+    "identity": {
+      "description": "Dedup key, namespaced like the dashboard intent contract. business:UID once the phone is in the table; camera/voice capture ref before that. No writer may touch an existing row without one.",
+      "type": "string",
+      "pattern": "^(business:INV-[0-9]{4}-[0-9]{3}|camera:[0-9a-f]{8,}|voice:[0-9TZa-z-]{8,})$"
+    },
+    "passes_done": {
+      "description": "Which capture passes have run for this record. Determines pending vs terminal for every UNKNOWN: a field whose x-pass is not yet listed here is UNKNOWN-pending (scheduled, do not flag or infer around it); once listed, a remaining UNKNOWN is terminal (the pass that could have answered ran and did not — surface it).",
+      "type": "array",
+      "items": {
+        "enum": [
+          "exterior",
+          "screen"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "claims": {
+      "description": "Keys are the vocabulary. Fields with x-airtable map 1:1 onto the Business table; fields with x-airtable null are domain-layer only (probe-elicited) and land composed into Item/Notes until the table grows columns for them. Absent key = not observed; value null WITH a source = observed-empty/unknown. x-visibility: surface (on the object), stated (text/screens possibly in frame), never (not observable by camera or mic).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "UID": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fld5ZqCO6sSEQmMEq",
+          "x-visibility": "never",
+          "x-pass": null,
+          "x-sources": [
+            "human",
+            "pull",
+            "derived"
+          ],
+          "x-7b": null
+        },
+        "Item": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fldBE0mprvjwUKRwX",
+          "x-visibility": "surface",
+          "x-pass": "exterior",
+          "x-sources": [
+            "human",
+            "voice",
+            "camera",
+            "pull",
+            "inference"
+          ],
+          "x-7b": "escalate",
+          "$comment": "Composed display string. In the domain layer prefer the decomposed fields below (make/model/storage/color/carrier_lock); compose Item from them at write time."
+        },
+        "make": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "surface",
+          "x-pass": "exterior",
+          "x-sources": [
+            "human",
+            "voice",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "escalate",
+          "$comment": "Probe-elicited. Both probes: 7B missed the Apple logo sideways, caught it upright — normalize rotation, still escalate."
+        },
+        "model_family": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "surface",
+          "x-pass": "exterior",
+          "x-sources": [
+            "human",
+            "voice",
+            "camera",
+            "pull",
+            "inference"
+          ],
+          "x-7b": "escalate"
+        },
+        "model_exact": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "voice",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "escalate",
+          "$comment": "Probe-002 finding 6: 7B emits plausible model names that LOOK like reads when the Model Name row was not in frame. Only accept from an About-top frame, human, or IMEI/TAC service pull. candidates[] is the legal middle state."
+        },
+        "color": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "surface",
+          "x-pass": "exterior",
+          "x-sources": [
+            "human",
+            "voice",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "escalate",
+          "$comment": "Both probes: 7B never said blue (black/silver/'Space Gray'). Retest after lighting; until then escalate."
+        },
+        "storage": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "voice",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "keep",
+          "$comment": "Probe-002: 7B OCR'd '256 GB' exactly, even sideways. Screen-text transcription is KEEP-grade; the same value from a frame with no text is the stereotype prior — reject."
+        },
+        "carrier_lock": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "keep",
+          "x-enum": [
+            "Unlocked",
+            "SIM locked",
+            "UNKNOWN"
+          ],
+          "$comment": "NOT the same fact as IMEI Status. Probe-002 finding 5: 7B mapped 'SIM locked' into imei_status — the gate must never carry one into the other."
+        },
+        "port_type": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "surface",
+          "x-pass": "exterior",
+          "x-sources": [
+            "human",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "escalate",
+          "x-enum": [
+            "Lightning",
+            "USB-C",
+            "UNKNOWN"
+          ]
+        },
+        "powers_on": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "keep",
+          "x-enum": [
+            "yes",
+            "no",
+            "UNKNOWN"
+          ],
+          "$comment": "A dark screen is ALWAYS UNKNOWN — off and dead are indistinguishable from outside (probe-001 overclaimed 'no'). Only a rendering screen proves yes."
+        },
+        "Condition": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fldlEoRFyALQ5LlSZ",
+          "x-visibility": "surface",
+          "x-pass": null,
+          "x-sources": [
+            "human",
+            "pull"
+          ],
+          "x-7b": null,
+          "x-enum": [
+            "New",
+            "Like New",
+            "Excellent",
+            "Good",
+            "Fair",
+            "Poor",
+            "For Parts"
+          ],
+          "$comment": "The GRADE — a judgment, not an observation. Rolls up from the per-surface observations below via the grading rubric; camera claims land there, never here."
+        },
+        "condition_back": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "surface",
+          "x-pass": "exterior",
+          "x-sources": [
+            "human",
+            "voice",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "trigger-only"
+        },
+        "condition_screen": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "surface",
+          "x-pass": "exterior",
+          "x-sources": [
+            "human",
+            "voice",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "trigger-only",
+          "$comment": "Probe-001/002: 7B called a rig reflection 'cracked' in every mode, then dropped the claim when the rig moved. Damage claims from the 7B are escalation triggers, never record content."
+        },
+        "Battery %": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fldS4BZ1bjjlihsYH",
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "voice",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "keep",
+          "x-value-range": [
+            0,
+            100
+          ],
+          "$comment": "Battery Health screen, not the status-bar icon. Stereotype guard: '85' from a frame with no battery text visible is the prior — reject."
+        },
+        "IMEI": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fld4oNzhrYE431JCs",
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "keep",
+          "x-value-pattern": "^[0-9]{15}$",
+          "$comment": "About page or *#06# in frame is a legitimate camera read (probe-002: digits exact). Voice excluded — 15 spoken digits through whisper is a transposition machine."
+        },
+        "IMEI Status": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fld3dB59OhfdAPgvK",
+          "x-visibility": "never",
+          "x-pass": null,
+          "x-sources": [
+            "human",
+            "pull"
+          ],
+          "x-7b": null,
+          "x-enum": [
+            "Clean",
+            "Flagged",
+            "Unknown",
+            "N/A"
+          ],
+          "$comment": "Blacklist state lives in a database. Not carrier_lock. Probe: the one field the 7B never fabricated, even under pressure."
+        },
+        "Category": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fldNlS1bc9PgAvxML",
+          "x-visibility": "surface",
+          "x-pass": "exterior",
+          "x-sources": [
+            "human",
+            "voice",
+            "camera",
+            "pull",
+            "derived"
+          ],
+          "x-7b": "keep",
+          "x-enum": [
+            "Phone",
+            "Tablet",
+            "Laptop",
+            "PC Part",
+            "Gaming",
+            "Pokemon",
+            "Audio",
+            "Wearable",
+            "Camera",
+            "Networking",
+            "Auto",
+            "Other"
+          ]
+        },
+        "Acquisition Date": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fldEMuCa1bDmUOVUH",
+          "x-visibility": "never",
+          "x-pass": null,
+          "x-sources": [
+            "human",
+            "voice",
+            "pull"
+          ],
+          "x-7b": null
+        },
+        "Buy Price": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fldxHyuVE0ViahmwD",
+          "x-visibility": "never",
+          "x-pass": null,
+          "x-sources": [
+            "human",
+            "voice",
+            "pull"
+          ],
+          "x-7b": null,
+          "$comment": "What CHRIS paid. A price in frame is List Price/Sale Pricing, never this — the camera cannot see a past transaction. Probe: fabricated under pressure ($300-350 stereotype)."
+        },
+        "Parts Invested": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fldAdqeExdK7ZwktA",
+          "x-visibility": "never",
+          "x-pass": null,
+          "x-sources": [
+            "human",
+            "voice",
+            "pull"
+          ],
+          "x-7b": null
+        },
+        "Platform": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fldTFlmWHysvGh5lK",
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "voice",
+            "camera",
+            "pull",
+            "inference"
+          ],
+          "x-7b": "keep",
+          "x-enum": [
+            "Facebook Marketplace",
+            "OfferUp",
+            "Craigslist",
+            "eBay",
+            "In Person",
+            "Other"
+          ]
+        },
+        "Status": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fld9Oz2PEdVp60L0y",
+          "x-visibility": "never",
+          "x-pass": null,
+          "x-sources": [
+            "human",
+            "voice",
+            "pull",
+            "inference"
+          ],
+          "x-7b": null,
+          "x-enum": [
+            "Active",
+            "In Progress",
+            "Listed",
+            "Sold",
+            "Parked",
+            "Non-Liquid",
+            "Parted"
+          ]
+        },
+        "Repair Status": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fldS4Xy37T75ppj4R",
+          "x-visibility": "never",
+          "x-pass": null,
+          "x-sources": [
+            "human",
+            "voice",
+            "pull",
+            "inference"
+          ],
+          "x-7b": null,
+          "x-enum": [
+            "None",
+            "Pending",
+            "In Progress",
+            "Complete"
+          ]
+        },
+        "Intended Action": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fldQwVeenM3NPGDHF",
+          "x-visibility": "never",
+          "x-pass": null,
+          "x-sources": [
+            "human",
+            "voice",
+            "pull"
+          ],
+          "x-7b": null,
+          "x-enum": [
+            "Flip",
+            "Part",
+            "Hold",
+            "Gift"
+          ],
+          "$comment": "Pure intent. Nothing may infer what the owner means to do with a device."
+        },
+        "Listed On": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fldsof60QU0iEyf4u",
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "voice",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "keep",
+          "x-enum": [
+            "Facebook Marketplace",
+            "eBay",
+            "OfferUp",
+            "Craigslist"
+          ]
+        },
+        "Sold Date": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fld40XRGuoYU7U9En",
+          "x-visibility": "never",
+          "x-pass": null,
+          "x-sources": [
+            "human",
+            "voice",
+            "pull"
+          ],
+          "x-7b": null
+        },
+        "Sale Pricing": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "flde6RV0NMhM1yx5x",
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "voice",
+            "camera",
+            "pull",
+            "inference"
+          ],
+          "x-7b": "keep"
+        },
+        "List Price": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fldH4T6QC21ulEU8q",
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "voice",
+            "camera",
+            "pull",
+            "inference"
+          ],
+          "x-7b": "keep"
+        },
+        "Sold Price": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "flddftRXWqZGrD741",
+          "x-visibility": "never",
+          "x-pass": null,
+          "x-sources": [
+            "human",
+            "voice",
+            "pull"
+          ],
+          "x-7b": null
+        },
+        "Miles": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fldJCkziDcinZd5PV",
+          "x-visibility": "never",
+          "x-pass": null,
+          "x-sources": [
+            "human",
+            "voice",
+            "pull"
+          ],
+          "x-7b": null
+        },
+        "Notes": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fld8F6bJppNzMMoVD",
+          "x-visibility": "stated",
+          "x-pass": null,
+          "x-sources": [
+            "human",
+            "voice",
+            "camera",
+            "pull",
+            "inference"
+          ],
+          "x-7b": "keep"
+        },
+        "IMEI2": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": "fldBH1UjZHu7zhmoX",
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "keep",
+          "x-value-pattern": "^[0-9]{15}$",
+          "$comment": "Second IMEI for dual-SIM/eSIM. Airtable field added 2026-08-17 (the schema carried imei2 as a domain-only claim in ref-002 before the table could hold it). Same rules as IMEI: stated-visible on the About page, camera may read it, voice may not carry 15 digits."
+        },
+        "parts_history": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "keep",
+          "x-enum": [
+            "Genuine Apple Part",
+            "Unknown Part",
+            "UNKNOWN"
+          ],
+          "$comment": "Settings > General > About > Parts and Service History. THE field that distinguishes an original display from a genuine-but-transplanted one, which no other channel can tell apart. x-7b keep rests on probe-002 finding 1 (grounded screen text is KEEP at 7B). HAZARD - probe-002 finding 6: on a text-rich frame the 7B produces plausible-but-ungrounded reads. The common real case here is that the section is ABSENT, and absence must resolve to UNKNOWN, never to 'Genuine'. Only a POSITIVE row in frame is a claim. Live example: INV-2026-017, where the owner's 08-08 'true tone there' (human) and an 08-12 'aftermarket display' note (inference) disagree by $105 vs $55; rule 5 already settles it for human, and this field is how a camera pass could settle it on evidence."
+        },
+        "true_tone": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "keep",
+          "x-enum": [
+            "present",
+            "absent",
+            "UNKNOWN"
+          ],
+          "$comment": "Presence of the True Tone toggle in Settings > Display & Brightness. Second witness to parts_history: True Tone survives only on an original or properly paired display. Read as grounded screen text (probe-002 finding 1). Absence is only a claim when the Display settings page is demonstrably in frame - otherwise UNKNOWN, per finding 6."
+        },
+        "charge_cycles": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "keep",
+          "x-value-type": "integer",
+          "$comment": "Settings > Battery (iOS 17+). Integer. Pairs with 'Battery %' and is the half that field cannot tell you: INV-2026-017 reads 82% health at 1109 cycles - healthy percentage, ~2x the 500-cycle design spec, and the buyer sees the cycle count in the same Settings app. Grounded screen text, KEEP per probe-002 finding 1."
+        },
+        "wipe_state": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "keep",
+          "x-enum": [
+            "erased",
+            "in use",
+            "UNKNOWN"
+          ],
+          "$comment": "Whether the device has been erased. The iOS Hello/setup screen is the positive proof and is unmistakable in frame - scene-level recognition, which probe-001 rated KEEP ('scene / stand present: consistent, correct'). This is the evidence half of Reminders recRbjGk85GSv6mAI (WIPE INV-2026-017 before the FBM sale - 7,926 photos, still paired to the owner's Apple ID): today nothing records that a wipe happened, so the reminder can only ever be closed on assertion. 78 corpus mentions and no field."
+        },
+        "icloud_lock": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "keep",
+          "x-enum": [
+            "Activation Locked",
+            "clean",
+            "UNKNOWN"
+          ],
+          "$comment": "Activation Lock state, read off the activation screen. Grounded text, KEEP. Same absence hazard as parts_history: a device that simply boots to a home screen proves nothing about Find My - that is UNKNOWN, not 'clean'. Open live: INV-2026-007's activation state is explicitly unconfirmed and the record forbids resolving it by inference."
+        },
+        "mdm_lock": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "keep",
+          "x-enum": [
+            "MDM locked",
+            "clean",
+            "UNKNOWN"
+          ],
+          "$comment": "Remote Management / MDM enrollment screen. Distinct fact from icloud_lock and from carrier_lock; Atlas prices MDM units on a separate tab entirely. Probe-002 finding 5 is the standing warning against carrying one lock fact into another's slot."
+        },
+        "serial_number": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "keep",
+          "$comment": "Apple serial from About. Grounded text - probe-002 read IMEI digits and the EID exactly off a sideways About page. Distinct from IMEI: the serial is what a wholesaler's offer-basis quote asks for (Atlas: 'message us with specs and serial number')."
+        },
+        "firmware_ios": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "keep",
+          "$comment": "iOS version + build from About. Directly demonstrated: probe-002 read the firmware row correctly even with the frame sideways."
+        },
+        "baseband": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "keep",
+          "$comment": "Modem firmware / baseband row on About. Same row family as firmware_ios, so the same KEEP applies. Worth carrying because a blank or not-ready baseband on a phone being sold as working is a functional fault, not a cosmetic one - seen on INV-2026-017's 3uTools pull (BBNotReady, baseband SN blank), unexplained as of 2026-08-21."
+        },
+        "wifi_bt_mac": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "keep",
+          "$comment": "Wi-Fi and Bluetooth addresses from About. Directly demonstrated - probe-002 transcribed BOTH MAC addresses correctly off the sideways frame. Cheap identity corroboration when the serial row is not in the same frame."
+        },
+        "face_id": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "stated",
+          "x-pass": "screen",
+          "x-sources": [
+            "human",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "trigger-only",
+          "x-enum": [
+            "working",
+            "not working",
+            "UNKNOWN"
+          ],
+          "$comment": "Face ID functional state. NOT keep: a camera can read the Face ID settings page or an enrollment-failure message as text, but 'Face ID works' is a FUNCTION claim and no frame attests it - the same category error probe-001 caught with powers_on ('no' from a dark screen; off != dead). Camera may trigger a check; human or pull holds the value. Matters because Atlas's rule is 'Bad Face ID = Parts' - a reroute off the used ladder, not a deduction, worth ~$340 on a 16 Pro Max 256."
+        },
+        "frame_damage": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "surface",
+          "x-pass": "exterior",
+          "x-sources": [
+            "human",
+            "voice",
+            "camera",
+            "pull"
+          ],
+          "x-7b": "trigger-only",
+          "$comment": "Bends, nicks, dents to the chassis. condition_back and condition_screen exist; the frame had no slot. trigger-only is not a guess - damage claims from the 7B are ESCALATE-TRIGGER-ONLY, confirmed twice (probe-001 finding 3: committed 'cracked' from a reflection in both loose and constrained modes; probe-002 finding 7: the same line resolved as a reflection when the rig angle changed)."
+        },
+        "accessories": {
+          "$ref": "#/$defs/claim",
+          "x-airtable": null,
+          "x-visibility": "surface",
+          "x-pass": "exterior",
+          "x-sources": [
+            "human",
+            "voice",
+            "camera",
+            "pull"
+          ],
+          "x-7b": null,
+          "x-enum": [
+            "box",
+            "charger",
+            "cable",
+            "case",
+            "none",
+            "UNKNOWN"
+          ],
+          "$comment": "Box, charger, cable, case present with the unit. THE LARGEST GAP IN THE VOCABULARY: 249 documents across transcripts, crew log and Airtable mention accessories and there has never been a field for them - and it moves listing price directly. x-7b IS NULL BECAUSE IT IS GENUINELY UNTESTED: neither probe had an accessory in frame (probe-001 was a bare phone on a turntable, probe-002 an About page). The nearest analogue is probe-001's 'scene / stand present: consistent, correct - KEEP', which suggests object presence is within 7B reach, but that is an extrapolation and rule (1) forbids dressing it as a verdict. PROBE-003 SHOULD RUN THIS FIRST - it is the cheapest high-value calibration left."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "claim": {
+      "description": "One field-level claim. source has NO DEFAULT. ref points at the artifact the value came from. candidates[] is the legal middle state between known and UNKNOWN — a bounded set the observation supports (probe: model_exact). The gate additionally checks source against the field's x-sources and applies the stereotype guard: values matching the 7B's pressure-mode stereotype set (85%/AT&T/Space Gray/$300-350/256GB) arriving from a frame with no supporting text are down-weighted as prior noise.",
+      "type": "object",
+      "required": [
+        "value",
+        "source"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "value": {},
+        "candidates": {
+          "type": "array",
+          "items": {},
+          "description": "Optional bounded possibility set when value is UNKNOWN/null but the observation narrows it."
+        },
+        "source": {
+          "enum": [
+            "human",
+            "voice",
+            "camera",
+            "pull",
+            "inference",
+            "derived"
+          ],
+          "description": "human = the owner typed/tapped (ref optional). voice = whisper transcript (ref REQUIRED). camera = vision read of a frame (ref REQUIRED: frame hash). pull = Yggdrasil or a check service (ref REQUIRED: record/lookup id). inference = translator context-fill, no channel delivered it (confidence REQUIRED). derived = computed from other claims in THIS record (ref REQUIRED: source field names)."
+        },
+        "ref": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "enum": [
+                  "voice",
+                  "camera",
+                  "pull",
+                  "derived"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "value",
+              "source",
+              "ref"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "const": "inference"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "value",
+              "source",
+              "confidence"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

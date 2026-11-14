@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# This client's ./kit: runs the one shared kit (ragnarok/clients/kit) with this folder's .env and client/.
+# Same commands as the kit itself: ./kit up | check | seed | status | test | backup | approve CODE | ...
+HERE="$(cd "$(dirname "$0")" && pwd -P)"
+KIT="${CLIENT_KIT:-$(cd "$HERE/../kit" 2>/dev/null && pwd -P)/kit}"
+[ -x "$KIT" ] || { echo "can't find the shared kit at $HERE/../kit (set CLIENT_KIT=/path/to/kit)" >&2; exit 1; }
+KIT_ENV_FILE="$HERE/.env" KIT_CLIENT_DIR="$HERE/client" exec "$KIT" "$@"

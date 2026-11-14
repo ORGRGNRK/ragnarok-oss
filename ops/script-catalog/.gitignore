@@ -1,0 +1,13 @@
+# extracted data / secrets never committed
+*.db
+*.db-*
+*.sqlite
+.env
+data/
+out/
+*.sql.gz
+pilot_results.json
+__pycache__/
+*.env
+web.env
+.venv/

@@ -1,0 +1,61 @@
+{
+ "probe": "pass-2 completion (About top, Battery Health, raking-light close-up)",
+ "extractor": "claude-fable-5",
+ "date": "2026-08-14",
+ "frames": "About page top (Model Name row in frame), Battery Health screen, close-up of top-left screen corner under raking light",
+ "domain": "phone",
+ "identity": "business:INV-2026-017",
+ "identity_basis": "camera claims corroborate the row on 5 independent fields: 12 Pro Max, 256GB, blue/Pacific Blue, SIM locked = AT&T lock, battery 82% exact. Bound by pull (recMKB9Ktr0EBgMze), not by camera alone.",
+ "passes_done": [
+  "exterior",
+  "screen"
+ ],
+ "claims": {
+  "model_exact": {
+   "value": "iPhone 12 Pro Max",
+   "source": "camera",
+   "ref": "About top, Model Name row",
+   "confidence": 0.97,
+   "note": "Settles ref-002's candidate set. qwen's earlier 'iPhone 12 Pro Max' was ungrounded at the time it was made - right for the wrong reason."
+  },
+  "model_number": {
+   "value": "MG953LL/A",
+   "source": "camera",
+   "ref": "About top",
+   "confidence": 0.95
+  },
+  "serial": {
+   "value": "REDACTED00000",
+   "source": "camera",
+   "ref": "About top",
+   "confidence": 0.9
+  },
+  "os_version": {
+   "value": "iOS 26.6",
+   "source": "camera",
+   "ref": "About top",
+   "confidence": 0.95
+  },
+  "battery_health_pct": {
+   "value": 82,
+   "source": "camera",
+   "ref": "Battery Health, Maximum Capacity",
+   "confidence": 0.97,
+   "note": "Matches the Business row exactly. qwen's pressure-mode stereotype said 85 - close enough to be believed, wrong, and that is the whole argument for provenance."
+  },
+  "condition_screen": {
+   "value": "hairline surface scratches, top-left corner near earpiece, visible only under raking light; no cracks",
+   "source": "camera",
+   "ref": "raking-light close-up",
+   "confidence": 0.85,
+   "note": "Completes the probe-001 arc: reflection-line 'crack' was fake, but the glass is not flawless either. Raking light is the honest test for glass."
+  },
+  "not_wiped": {
+   "value": true,
+   "source": "derived",
+   "ref": "About: 7926 photos, 640 videos; Battery screen: 'Sam's AirPods Pro Connected'",
+   "note": "Personal data present and device still paired to the owner's AirPods. Wipe + iCloud sign-out before the FBM sale. Flagged as intent #20."
+  }
+ },
+ "actions": "Intent #20 (proposed, dashboard queue): fill 017's empty IMEI field from ref-002's camera read + wipe reminder. Camera proposes; the owner approves; executor writes with receipt."
+}

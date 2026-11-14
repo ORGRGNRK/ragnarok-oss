@@ -1,0 +1,51 @@
+:root{
+/* ── Base — the void ── */
+--bg-void:#000000; /* portal background */
+--bg-app:#0d0d0d; /* dashboard background */
+--surface-1:#111111; /* row / card */
+--surface-2:#151515; /* row hover */
+--surface-3:#1a1a1a; /* grid gutter / raised */
+--border-1:#1f1f1f;
+--border-2:#222222;
+--border-3:#333333; /* hover border */
+/* ── Ink ── */
+--ink-1:#e8e8e8; /* primary text */
+--ink-2:#d4d4d4; /* row titles */
+--ink-3:#9ca3af; /* hover-muted */
+--ink-muted:#666666; /* section headings */
+--ink-faint:#4b5563; /* urls, meta */
+--ink-ghost:#444444; /* labels, timestamps */
+--ink-trace:#2a2a2a; /* countdowns, idle dots */
+/* ── Gold — the signal ── */
+--gold:#c9a84c;
+--gold-bright:#ffe680;
+--gold-dim:rgba(201,168,76,.55);
+--gold-faint:rgba(201,168,76,.35);
+--gold-glow:rgba(201,168,76,.6);
+--gold-haze:rgba(201,168,76,.2);
+/* ── Status ── */
+--status-up:#22c55e;
+--status-down:#ef4444;
+--status-checking:#f59e0b;
+--status-local:#4b5563;
+--badge-local-bg:#1f2937;
+--badge-local-ink:#6b7280;
+/* ── System states (RAGNAROK) ── */
+--state-green:#22c55e; /* execution */
+--state-yellow:#f59e0b; /* building / auditing */
+--state-red:#ef4444; /* stabilize, protect the base */
+--state-limbo:#6b7280; /* thinking out loud */
+--state-living:#c9a84c; /* conscious presence — sits underneath */
+/* ── Semantic aliases ── */
+--text-body:var(--ink-1);
+--text-title:var(--ink-2);
+--text-muted:var(--ink-faint);
+--text-label:var(--ink-ghost);
+--accent:var(--gold);
+--accent-hover:var(--gold-bright);
+--surface-card:var(--surface-1);
+--surface-card-hover:var(--surface-2);
+--border-card:var(--border-1);
+--link:var(--gold-dim);
+--link-hover:var(--gold-bright);
+}

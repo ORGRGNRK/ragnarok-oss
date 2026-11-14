@@ -1,0 +1,18 @@
+# Podman quadlet (rootless, user grok). Installed to ~/.config/containers/systemd/
+[Unit]
+Description=Ragnarok pipe Postgres (separate DB, localhost only)
+
+[Container]
+ContainerName=ragnarok-pipe-db
+Image=docker.io/library/postgres:16-alpine
+EnvironmentFile=/opt/ragnarok-pipe/db.env
+Volume=ragnarok-pipe-pgdata:/var/lib/postgresql/data
+Volume=/opt/ragnarok-pipe/db/init:/docker-entrypoint-initdb.d:ro,Z
+PublishPort=127.0.0.1:5544:5432
+HealthCmd=pg_isready -U pipe_admin -d pipe
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

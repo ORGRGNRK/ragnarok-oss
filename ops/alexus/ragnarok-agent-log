@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""ragnarok-agent-log: the append-only ledger of what agent runs did. Installed root-owned on Alexus at
+/usr/local/libexec/ragnarok-agent-log by ops/alexus/setup-append-only-logs.sh.
+
+    <agent runner> | sudo -n -u receipts ragnarok-agent-log RUN_ID STREAM     one ledger record per input line
+    ragnarok-agent-log --verify                                               walk the whole chain
+    ragnarok-agent-log --check RUN_ID STREAM FILE                             is FILE still what was logged?
+
+An AI login can only ask for lines to be ADDED, through one sudo rule that runs this as the no-login `receipts`
+account. It cannot name the file, the time or the author: the author is the login sudo saw. The ledger file is
+owned by `receipts` and marked append-only (chattr +a), and every record carries the hash of the one before it,
+so a changed, removed or reordered record breaks the chain from that point on.
+
+A record: {"seq", "ts", "actor", "run", "stream", "len", "sha256", "text", "cut", "prev_hash", "hash"}.
+"sha256" and "len" are of the whole input line; "text" is the line itself, cut at CAP characters ("cut": true).
+There are no options that choose a path: anything this can write to is fixed below. Standard library only.
+"""
+import datetime, fcntl, hashlib, json, os, pwd, re, socket, sys
+
+LEDGER = "/var/log/ragnarok/agent_events.jsonl"
+LOCK = "/var/log/ragnarok/.agent-events.lock"
+CAP = 32 * 1024
+ZERO = "0" * 64
+RUN = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{4,12}$")
+STREAM = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+
+def digest(rec):
+    body = {k: v for k, v in rec.items() if k != "hash"}
+    return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8", "surrogatepass")).hexdigest()
+
+
+def last(path):
+    """(seq, hash) of the newest record, or (0, ZERO) for an empty ledger. Raises ValueError if the tail is not a record."""
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return 0, ZERO
+    if size == 0:
+        return 0, ZERO
+    with open(path, "rb") as f:
+        f.seek(max(0, size - 2 * 1024 * 1024))
+        lines = [l for l in f.read().split(b"\n") if l]
+    try:
+        rec = json.loads(lines[-1])
+        return int(rec["seq"]), str(rec["hash"])
+    except (ValueError, KeyError, IndexError, TypeError):
+        raise ValueError("the ledger's last line is not a record")
+
+
+def append(path, lock, actor, run, stream, raw):
+    """Add one record for one input line (bytes, no newline). Returns its seq."""
+    text = raw.decode("utf-8", "replace")
+    with open(lock, "a") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        seq, prev = last(path)
+        rec = {"seq": seq + 1, "ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+               "actor": actor, "run": run, "stream": stream, "len": len(raw), "sha256": hashlib.sha256(raw).hexdigest(),
+               "text": text[:CAP], "cut": len(text) > CAP, "prev_hash": prev}
+        rec["hash"] = digest(rec)
+        data = (json.dumps(rec, ensure_ascii=False) + "\n").encode("utf-8", "surrogatepass")
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o640)
+        try:
+            os.write(fd, data)
+        finally:
+            os.close(fd)
+    return rec["seq"]
+
+
+def verify(path):
+    """Walk the chain. Returns (ok, records, problem)."""
+    prev, seq, n = ZERO, 0, 0
+    try:
+        f = open(path, "rb")
+    except OSError as e:
+        return False, 0, f"can't read the ledger: {e.strerror}"
+    with f:
+        for raw in f:
+            n += 1
+            try:
+                rec = json.loads(raw)
+                if rec["seq"] != seq + 1:
+                    return False, n, f"record {n}: seq is {rec['seq']}, expected {seq + 1}"
+                if rec["prev_hash"] != prev:
+                    return False, n, f"record {n} (seq {rec['seq']}): does not follow the record before it"
+                if rec["hash"] != digest(rec):
+                    return False, n, f"record {n} (seq {rec['seq']}): its contents were changed"
+            except (ValueError, KeyError, TypeError):
+                return False, n, f"record {n}: not a ledger record"
+            prev, seq = rec["hash"], rec["seq"]
+    return True, n, ""
+
+
+def check(path, run, stream, file):
+    """Compare a run's own log file with what the ledger holds for it, line by line. Returns (ok, lines, problem)."""
+    want = []
+    with open(path, "rb") as f:
+        for raw in f:
+            try:
+                rec = json.loads(raw)
+            except ValueError:
+                continue
+            if rec.get("run") == run and rec.get("stream") == stream and not rec.get("text", "").startswith('{"_runner"'):
+                want.append(rec["sha256"])
+    with open(file, "rb") as f:
+        have = [hashlib.sha256(l.rstrip(b"\n")).hexdigest() for l in f if l.strip()]
+    if not want:
+        return False, len(have), "the ledger has nothing for that run and stream"
+    for i, (a, b) in enumerate(zip(want, have), 1):
+        if a != b:
+            return False, len(have), f"line {i} of the file is not what was logged"
+    if len(have) != len(want):
+        return False, len(have), f"the file has {len(have)} lines, the ledger logged {len(want)}"
+    return True, len(have), ""
+
+
+def main():
+    args = sys.argv[1:]
+    if args == ["--verify"]:
+        ok, n, why = verify(LEDGER)
+        print(f"chain intact: {n} records" if ok else f"CHAIN BROKEN: {why}")
+        sys.exit(0 if ok else 1)
+    if len(args) == 4 and args[0] == "--check":
+        if os.environ.get("SUDO_USER"):
+            sys.exit("--check reads a file you name, so it only runs as yourself, never through sudo")
+        ok, n, why = check(LEDGER, args[1], args[2], args[3])
+        print(f"matches the ledger: {n} lines" if ok else f"DOES NOT MATCH: {why}")
+        sys.exit(0 if ok else 1)
+    if len(args) != 2 or not RUN.match(args[0]) or not STREAM.match(args[1]):
+        sys.exit("usage: ragnarok-agent-log RUN_ID STREAM < lines   |   --verify   |   --check RUN_ID STREAM FILE")
+    who = os.environ.get("SUDO_USER") or pwd.getpwuid(os.getuid()).pw_name
+    actor = f"{who}@{socket.gethostname().split('.')[0]}"
+    for raw in sys.stdin.buffer:
+        raw = raw.rstrip(b"\n")
+        if raw:
+            append(LEDGER, LOCK, actor, args[0], args[1], raw)
+
+
+if __name__ == "__main__":
+    main()

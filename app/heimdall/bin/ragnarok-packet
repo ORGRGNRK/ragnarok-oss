@@ -1,0 +1,222 @@
+#!/usr/bin/env -S python3 -I
+"""ragnarok-packet — one switch/resume packet per project, kept in Ragnarok HQ (Switch_Packets).
+
+  ragnarok-packet get <slug>                       active packet as JSON ({} if none)
+  ragnarok-packet save <slug> <actor> < packet.json  supersede the old one, write the new one (receipted)
+        packet.json = {"summary_state": "...", "next_steps": "..."}
+  ragnarok-packet history <history-id>             archived source context with verified SHA-256
+  ragnarok-packet seed <folder>                    write a first packet from git, only if the project has none
+  ragnarok-packet slug <folder>                    the slug used for a folder
+
+Talks to the HQ MCP server (the same one Claude Code uses: ~/scripts/ragnarok-hq-mcp.sh, stdio over ssh), so every
+write is read back and gets a receipt, and the packet carries the receipt chain's head hash. Prints JSON; errors are
+one line on stderr, exit 1.
+"""
+import datetime, hashlib, json, os, re, subprocess, sys, uuid
+
+HOME = os.path.expanduser("~")
+MCP = os.environ.get("RAGNAROK_HQ_MCP", f"{HOME}/scripts/ragnarok-hq-mcp.sh")
+SESSION = "ragnarok-app"
+
+
+def fail(msg):
+    print(f"ragnarok-packet: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+class HQ:
+    def __init__(self, actor):
+        self.actor, self.n = actor[:80], 0
+        if not os.path.exists(MCP):
+            fail(f"can't find the HQ connection script {MCP}")
+        self.p = subprocess.Popen(["/bin/bash", MCP], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL, text=True, bufsize=1)
+        self.rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                                "clientInfo": {"name": "ragnarok-packet", "version": "1"}})
+        self.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+    def send(self, msg):
+        try:
+            self.p.stdin.write(json.dumps(msg) + "\n"); self.p.stdin.flush()
+        except (BrokenPipeError, OSError):
+            fail("lost the connection to Ragnarok HQ (is Alexus reachable?)")
+
+    def rpc(self, method, params):
+        self.n += 1
+        self.send({"jsonrpc": "2.0", "id": self.n, "method": method, "params": params})
+        while True:
+            line = self.p.stdout.readline()
+            if not line:
+                fail("Ragnarok HQ didn't answer (Alexus unreachable, or the ssh key isn't loaded)")
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                continue
+            if msg.get("id") == self.n:
+                if "error" in msg:
+                    fail(f"HQ error: {msg['error'].get('message', msg['error'])}")
+                return msg.get("result", {})
+
+    def tool(self, name, **args):
+        args.setdefault("actor", self.actor); args.setdefault("session", SESSION)
+        res = self.rpc("tools/call", {"name": name, "arguments": args})
+        text = "".join(c.get("text", "") for c in res.get("content", []) if isinstance(c, dict))
+        if res.get("isError"):
+            fail(f"HQ {name} failed: {text[:300]}")
+        if isinstance(res.get("structuredContent"), dict):
+            return res["structuredContent"]
+        fail(f"HQ {name} returned something unexpected: {text[:200]}")
+
+    def close(self):
+        try:
+            self.p.stdin.close(); self.p.wait(timeout=5)
+        except Exception:
+            self.p.kill()
+
+
+def slug_of(folder):
+    return re.sub(r"[^a-z0-9-]+", "-", os.path.basename(os.path.abspath(folder)).lower()).strip("-") or "project"
+
+
+def active(hq, slug):
+    got = hq.tool("list_records", table="Switch_Packets", filter={"Project_Slug": slug, "Resume_Target": True},
+                  sort="-Id", limit=20)
+    return got.get("records", [])
+
+
+def get(slug):
+    hq = HQ("Ragnarok app")
+    recs = active(hq, slug)
+    hq.close()
+    print(json.dumps(recs[0] if recs else {}))
+
+
+def scrub_context(text):
+    values_file = os.path.join(HOME, ".ragnarok", "scrub-values")
+    try:
+        with open(values_file) as h:
+            values = [v.strip() for v in h if v.strip() and not v.lstrip().startswith("#")]
+        for value in sorted(values, key=len, reverse=True):
+            text = text.replace(value, "[REDACTED]")
+    except FileNotFoundError:
+        pass
+    text = re.sub(r"(?i)(Bearer\s+)[A-Za-z0-9._~+/-]+", r"\1[REDACTED]", text)
+    text = re.sub(r"\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}", "[REDACTED]", text)
+    text = re.sub(r"(postgres(?:ql)?://[^:\s/]+):[^@\s]+@", r"\1:[REDACTED]@", text)
+    return text
+
+
+def history(history_id):
+    hq = HQ("Ragnarok app")
+    recs = hq.tool("list_records", table="Packet_Chat_History", filter={"History_ID": history_id}, limit=2).get("records", [])
+    hq.close()
+    if len(recs) != 1:
+        fail("history id is missing or ambiguous")
+    rec = recs[0]
+    if hashlib.sha256(rec["Chat_Text"].encode()).hexdigest() != rec["Chat_SHA256"]:
+        fail("archived context failed its SHA-256 check")
+    print(json.dumps(rec, ensure_ascii=False))
+
+
+def save(slug, actor, packet):
+    state = str(packet.get("summary_state") or "").strip()
+    nxt = str(packet.get("next_steps") or "").strip()
+    if not state or not nxt:
+        fail("a packet needs summary_state and next_steps")
+    if len(state) > 20000 or len(nxt) > 8000:
+        fail("packet exceeds summary/next-step limits; refusing silent truncation")
+    hq = HQ(actor)
+    old = active(hq, slug)
+    if len(old) > 1:
+        fail("multiple active packets; repair the active target before saving")
+    previous = old[0] if old else {}
+    requirements = previous.get("Original_Requirements") or packet.get("original_requirements")
+    if not requirements:
+        requirements = {"provenance": "legacy snapshot; original user request not captured",
+                        "objective": previous.get("Summary_State") or state,
+                        "constraints": [], "initial_next_steps": previous.get("Next_Steps") or nxt}
+    if not isinstance(requirements, str):
+        requirements = json.dumps(requirements, ensure_ascii=False, sort_keys=True)
+    json.loads(requirements)
+    evidence = packet.get("evidence", {})
+    history = packet.get("history") or {"source_type": "supplied-packet-only", "previous_packet": previous,
+                                        "incoming_packet": packet}
+    history_text = history if isinstance(history, str) else json.dumps(history, ensure_ascii=False)
+    pid = f"SW-{datetime.datetime.now(datetime.timezone.utc):%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:10]}-{slug}"
+    expected = packet.get("expected_packet_id", previous.get("Packet_ID"))
+    res = hq.tool("replace_switch_packet", project_slug=slug, expected_packet_id=expected, packet_id=pid,
+                  summary_state=state, next_steps=nxt, original_requirements=requirements,
+                  evidence_json=json.dumps(evidence, ensure_ascii=False), base_commit=packet.get("base_commit", ""),
+                  history_text=scrub_context(history_text), source_type=packet.get("source_type", "handoff-source"))
+    hq.close()
+    print(json.dumps(res))
+    if res.get("status") != "CONFIRMED":
+        sys.exit(1)
+
+
+def git(folder, *args):
+    r = subprocess.run(["git", "-C", folder, *args], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def seed(folder):
+    folder = os.path.abspath(folder)
+    slug = slug_of(folder)
+    hq = HQ("Ragnarok app (seed)")
+    if active(hq, slug):
+        hq.close(); print(json.dumps({"slug": slug, "skipped": "already has a packet"})); return
+    proj = hq.tool("list_records", table="My_Projects", filter={"Docker_Slug": slug}, limit=1).get("records", [])
+    hq.close()
+    about = ""
+    for f in ("AGENTS.md", "CLAUDE.md", "README.md"):
+        try:
+            with open(os.path.join(folder, f), errors="replace") as h:
+                about = next((l.strip("# \n") for l in h if l.strip("# \n")), ""); break
+        except OSError:
+            pass
+    log = git(folder, "log", "-8", "--format=%h %ad %s", "--date=short")
+    dirty = len([l for l in git(folder, "status", "--porcelain").splitlines() if l.strip()])
+    state = "\n".join(x for x in [
+        "(Seeded automatically from git by the Ragnarok app; not reviewed by an AI yet.)",
+        f"- Folder: {folder.replace(HOME, '~')}" + (f" · branch {git(folder, 'branch', '--show-current')}" if log else " · not a git repo"),
+        f"- About: {about[:200]}" if about else "",
+        f"- Uncommitted files: {dirty}" if log else "",
+        "- Recent commits:\n" + "\n".join("  " + l for l in log.splitlines()) if log else "",
+        f"- HQ My_Projects: {proj[0].get('Status', '')}" if proj else ""] if x)
+    nxt = "\n".join(x for x in [
+        "1. Read AGENTS.md/README and the recent commits, then replace this seeded packet with a real one.",
+        f"2. {proj[0].get('Next_Action')}" if proj and proj[0].get("Next_Action") else ""] if x)
+    packet = {"summary_state": state, "next_steps": nxt}
+    requirements_file = os.path.join(folder, ".ragnarok-requirements.json")
+    if os.path.isfile(requirements_file):
+        with open(requirements_file) as h:
+            packet["original_requirements"] = json.load(h)
+    save(slug, "Ragnarok app (seed)", packet)
+
+
+def main(a):
+    if len(a) < 2 or a[1] in ("-h", "--help"):
+        print(__doc__.strip()); return
+    cmd = a[1]
+    if cmd == "slug" and len(a) == 3:
+        print(slug_of(a[2]))
+    elif cmd == "get" and len(a) == 3:
+        get(a[2])
+    elif cmd == "history" and len(a) == 3:
+        history(a[2])
+    elif cmd == "save" and len(a) == 4:
+        try:
+            packet = json.load(sys.stdin)
+        except ValueError:
+            fail("save reads {\"summary_state\": ..., \"next_steps\": ...} as JSON on stdin")
+        if not isinstance(packet, dict):
+            fail("the packet must be a JSON object")
+        save(a[2], a[3], packet)
+    elif cmd == "seed" and len(a) == 3:
+        seed(a[2])
+    else:
+        fail("usage: get <slug> | save <slug> <actor> | seed <folder> | slug <folder>")
+
+
+if __name__ == "__main__":
+    main(sys.argv)

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "0.1",
+  "version": "1.0.0",
+  "id": "com.yggdrasil.iphone.open-settings",
+  "name": "Open Settings",
+  "description": "Open Settings on your mirrored iPhone and verify that it appeared.",
+  "safety": { "risk": "reversible" },
+  "steps": [
+    {
+      "id": "open-settings",
+      "action": "openApp",
+      "app": { "name": "Settings", "bundleId": "com.apple.Preferences" },
+      "expect": { "app": { "name": "Settings" } }
+    }
+  ],
+  "postconditions": [{ "app": { "name": "Settings" } }]
+}

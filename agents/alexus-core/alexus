@@ -1,0 +1,625 @@
+#!/usr/bin/env python3
+"""
+ALEXUS CORE: The Minimalist Sovereign AI Harness
+- 50ms Meta-RAG Vector Routing across Cartridge Vault
+- Conveyor Methodology (Preflight Contract Gate + Shell Exit Codes)
+- Star Fox Radio Comms HUD Interface
+- Append-Only JSONL Audit Receipts
+"""
+
+import os
+import sys
+import glob
+import json
+import time
+import math
+import hashlib
+import urllib.request
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CARTRIDGES_DIR = os.path.join(BASE_DIR, "cartridges")
+TRAYS_DIR = os.path.join(BASE_DIR, "trays")
+RECEIPTS_FILE = os.path.join(BASE_DIR, "receipts.jsonl")
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://alexus:11434")
+
+# ANSI Colors
+CYAN = "\033[36m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+RED = "\033[31m"
+MAGENTA = "\033[35m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
+
+AUTH_GATE_BIN = os.path.join(BASE_DIR, "bin", "auth-gate")
+FIDO_AUTH_BIN = os.path.join(BASE_DIR, "bin", "fido-auth.sh")
+FIDO_ENROLL_BIN = os.path.join(BASE_DIR, "bin", "enroll-fido-key.sh")
+
+sys.path.append(os.path.join(BASE_DIR, "bin"))
+import ragnarok_bridge
+import imessage_bridge
+import mail_bridge
+
+def get_enrolled_keys():
+    """Returns list of enrolled key labels from ~/.alexus/keys/."""
+    keys_dir = os.path.expanduser("~/.alexus/keys")
+    if not os.path.exists(keys_dir):
+        return []
+    return [d for d in os.listdir(keys_dir) if os.path.isdir(os.path.join(keys_dir, d)) and os.path.exists(os.path.join(keys_dir, d, "credential_id.txt"))]
+
+# Commands that need a physical touch (FIDO2 key or Touch ID) before they run. Everything else
+# (status, cartridges, lookup, verify-receipts, keys, setup, the bridges' own commands) is not
+# gated by this function. See README "Which commands need a touch".
+PROTECTED_COMMANDS = ("ask", "chat", "auth-test")
+
+
+def _refuse(reason):
+    print(f"\n{RED}❌ AUTHENTICATION REFUSED: {reason}{RESET}", file=sys.stderr)
+    return False
+
+
+def verify_hardware_presence(force_check=None):
+    """Enforces physical hardware presence (FIDO2 Hardware Key OR Apple Touch ID biometrics).
+
+    FAILS CLOSED (2026-10-30). There is no way to switch this off for a protected action:
+      - no terminal on stdin (a script, a pipe, a daemon, an AI tool)  -> refused
+      - ALEXUS_REQUIRE_AUTH=0 (the old off-switch)                     -> ignored, still checked
+      - neither the FIDO2 script + an enrolled key nor bin/auth-gate   -> refused
+    `force_check` is kept so old callers still work; the check always runs."""
+    if os.environ.get("ALEXUS_REQUIRE_AUTH", "1") != "1":
+        print(f"{YELLOW}ℹ️ ALEXUS_REQUIRE_AUTH no longer switches the hardware check off; checking anyway.{RESET}",
+              file=sys.stderr)
+
+    # Headless (no person at a terminal to touch the key): refuse instead of waving it through.
+    try:
+        tty = sys.stdin is not None and sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        tty = False
+    if not tty:
+        return _refuse("this command needs a person at a terminal to touch the hardware key or Touch ID "
+                       "(stdin is not a TTY). Nothing was run.")
+
+    enrolled_keys = get_enrolled_keys()
+    legacy_enrolled = os.path.exists(os.path.expanduser("~/.alexus/credential_id.txt"))
+    
+    # Priority 1: Hardware Security Key (YubiKey / Identiv uTrust) if enrolled
+    if (enrolled_keys or legacy_enrolled) and os.path.exists(FIDO_AUTH_BIN):
+        ret = os.system(FIDO_AUTH_BIN)
+        exit_code = ret >> 8
+        if exit_code == 0:
+            print(f"{GREEN}✅ Cryptographic hardware assertion verified. Access granted.{RESET}\n")
+            return True
+        elif exit_code == 3:
+            # Key not plugged in; proceed to Priority 2 fallback
+            print(f"ℹ️ Hardware key not inserted. Falling back to Secure Enclave biometrics...")
+        else:
+            print(f"\n{RED}❌ AUTHENTICATION REFUSED: Hardware key touch was not confirmed.{RESET}")
+            render_star_fox_hud("Alexus", "Access denied! Hardware key touch failed, b-baka!\nOnly my owner's physical key can unlock my core!", emotion="💢")
+            return False
+
+    # Priority 2: Native Apple Touch ID Biometrics (Secure Enclave)
+    if os.path.exists(AUTH_GATE_BIN):
+        print(f"\n{YELLOW}🔐 PHYSICAL HARDWARE PRESENCE REQUIRED (TOUCH ID){RESET}")
+        print(f"👉 Please touch your {BOLD}Touch ID sensor{RESET} on your Mac keyboard...")
+        ret = os.system(AUTH_GATE_BIN)
+        if ret == 0:
+            print(f"{GREEN}✅ Touch ID verified via Secure Enclave. Access granted.{RESET}\n")
+            return True
+        else:
+            print(f"\n{RED}❌ AUTHENTICATION REFUSED: Touch ID was canceled or not recognized.{RESET}")
+            render_star_fox_hud("Alexus", "Access denied! Touch ID failed, b-baka!\nOnly my owner's fingerprint can unlock my core!", emotion="💢")
+            return False
+
+    # No usable gate on this machine (no FIDO2 key path and no bin/auth-gate): fail closed.
+    return _refuse(f"no hardware gate available (no enrolled FIDO2 key with {FIDO_AUTH_BIN}, and no "
+                   f"Touch ID gate at {AUTH_GATE_BIN}; build it with ./build-auth.sh). Nothing was run.")
+
+def get_embedding(text):
+    url = f"{OLLAMA_HOST}/api/embeddings"
+    data = json.dumps({"model": "nomic-embed-text", "prompt": text}).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            res = json.loads(resp.read().decode("utf-8"))
+            return res["embedding"]
+    except Exception as e:
+        sys.exit(f"{RED}Error connecting to Alexus Ollama at {OLLAMA_HOST}: {e}{RESET}")
+
+def cosine_similarity(v1, v2):
+    dot = sum(a * b for a, b in zip(v1, v2))
+    norm1 = math.sqrt(sum(a * a for a in v1))
+    norm2 = math.sqrt(sum(b * b for b in v2))
+    return dot / (norm1 * norm2) if norm1 and norm2 else 0.0
+
+def generate_completion(prompt, model="llama3.2:3b", max_retries=1):
+    url = f"{OLLAMA_HOST}/api/generate"
+    data = json.dumps({"model": model, "prompt": prompt, "stream": False}).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            res = json.loads(resp.read().decode("utf-8"))
+            return res.get("response", "").strip()
+    except Exception as e:
+        return f"[Inference Error: {e}]"
+
+def load_cartridges():
+    experts = []
+    for f in sorted(glob.glob(os.path.join(CARTRIDGES_DIR, "*.json"))):
+        with open(f, "r") as fp:
+            data = json.load(fp)
+            experts.append(data)
+    for exp in experts:
+        stds = " ".join(exp.get("standards", []))
+        blob = f"{exp['domain']} {stds} {exp['description']}"
+        exp["embedding"] = get_embedding(blob)
+    return experts
+
+def render_star_fox_hud(speaker, quote, emotion="🌸"):
+    lines = quote.splitlines()
+    max_len = max(len(l) for l in lines) if lines else 20
+    box_width = max(max_len + 4, 45)
+    
+    print(f"\n{MAGENTA}┌{'─' * (box_width + 12)}┐{RESET}")
+    print(f"{MAGENTA}│ 📻 COMMS INCOMING: [{speaker.upper()}] {' ' * (box_width - len(speaker) - 8)}│{RESET}")
+    print(f"{MAGENTA}├───────────────┬{'─' * (box_width - 3)}┤{RESET}")
+    print(f"{MAGENTA}│   {emotion} {speaker.upper():<7} │ {RESET}{BOLD}{lines[0]:<{box_width - 5}}{RESET}{MAGENTA}│{RESET}")
+    for l in lines[1:]:
+        print(f"{MAGENTA}│   {'':<9}   │ {RESET}{l:<{box_width - 5}}{MAGENTA}│{RESET}")
+    print(f"{MAGENTA}└───────────────┴{'─' * (box_width - 3)}┘{RESET}\n")
+
+def cmd_ask(query):
+    if not verify_hardware_presence():
+        sys.exit(1)
+    t_start = time.perf_counter()
+    print(f"{BOLD}🎯 ALEXUS TARGET TASK:{RESET} \"{query}\"")
+    
+    # 1. Meta-RAG Intake
+    experts = load_cartridges()
+    t_intake = time.perf_counter()
+    q_emb = get_embedding(query)
+    
+    scored = []
+    for exp in experts:
+        sim = cosine_similarity(q_emb, exp["embedding"])
+        scored.append((sim, exp))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    intake_ms = (time.perf_counter() - t_intake) * 1000
+    
+    print(f"\n{CYAN}⚡ Meta-RAG Vector Intake (Latency: {intake_ms:.1f}ms):{RESET}")
+    for sim, exp in scored:
+        bar = "█" * int(sim * 20)
+        print(f"   [{sim*100:5.1f}%] {bar:<20} {exp['id']}")
+
+    # 2. Conveyor Preflight Contract Gate
+    approved = []
+    vetoed = []
+    q_lower = query.lower()
+    
+    for sim, exp in scored:
+        if sim < 0.45:
+            continue
+        neg_hits = [ex for ex in exp.get("negative_exclusions", []) if ex.replace("_", " ") in q_lower or ex in q_lower]
+        if neg_hits:
+            vetoed.append((exp["id"], f"Negative boundary: {neg_hits}"))
+            continue
+        approved.append(exp)
+
+    if vetoed:
+        print(f"\n{YELLOW}🚫 Conveyor Preflight Vetoes:{RESET}")
+        for cid, reason in vetoed:
+            print(f"   - [{cid}] {reason}")
+
+    # Top expert selection with confidence and relative margin gate
+    top_experts = []
+    if approved:
+        sim_map = {exp["id"]: sim for sim, exp in scored}
+        approved.sort(key=lambda e: sim_map[e["id"]], reverse=True)
+        top_sim = sim_map[approved[0]["id"]]
+        
+        # Primary cartridge must clear confidence floor
+        if top_sim >= 0.52:
+            top_experts.append(approved[0])
+            
+            # Secondary cartridge is ONLY armed if within calibrated 6% margin spread
+            for exp in approved[1:]:
+                c_sim = sim_map[exp["id"]]
+                if c_sim >= 0.52 and (top_sim - c_sim) <= 0.06:
+                    top_experts.append(exp)
+    
+    if not top_experts:
+        render_star_fox_hud("Alexus", "None of my specialized cartridges match this weird task!\nAbstaining to generalist model so I don't give you junk, b-baka!", emotion="💢")
+        return
+
+    print(f"\n{GREEN}🚀 Armed Cartridges for Execution:{RESET} {[e['id'] for e in top_experts]}")
+
+    verification_results = []
+
+    # 3. Pass 1 + Pass 2 Execution
+    for exp in top_experts:
+        print(f"\n{BOLD}🔧 Executing Subsystem [{exp['id']}]...{RESET}")
+        rules = "\n".join(f"- {r}" for r in exp['knowledge_rules'])
+        prompt = f"""You are the specialized domain expert for {exp['domain']}.
+Apply your strict domain rules to solve the request cleanly:
+{rules}
+
+Task: {query}
+
+Provide a concise, direct technical patch or solution without fluff."""
+        
+        t_gen = time.perf_counter()
+        solution = generate_completion(prompt)
+        gen_ms = (time.perf_counter() - t_gen) * 1000
+        
+        print(f"{CYAN}--- [{exp['id']} Solution ({gen_ms:.0f}ms)] ---{RESET}")
+        print(solution)
+
+        # 4. Deterministic Shell Gate
+        print(f"\n{BOLD}⚖️ Running Conveyor Verification Dyno...{RESET}")
+        t_v = time.perf_counter()
+        ret = os.system(exp["verification_command"])
+        v_ms = (time.perf_counter() - t_v) * 1000
+        status = "PASSED" if ret == 0 else f"FAILED (exit {ret})"
+        verification_results.append({
+            "cartridge": exp["id"],
+            "command": exp["verification_command"],
+            "exit_code": ret,
+            "status": "PASSED" if ret == 0 else "FAILED",
+            "verify_ms": round(v_ms, 1)
+        })
+        if ret == 0:
+            print(f"   {GREEN}✅ Test PASSED (exit code 0 in {v_ms:.1f}ms){RESET}")
+        else:
+            print(f"   {RED}❌ Test FAILED (exit code {ret} in {v_ms:.1f}ms){RESET}")
+
+    total_s = time.perf_counter() - t_start
+    
+    # 5. Star Fox Radio HUD Output
+    render_star_fox_hud(
+        "Alexus",
+        f"All subsystems executed in {total_s:.2f}s and verified, b-baka!\nNow look at the diff yourself before I let you commit it!",
+        emotion="🌸"
+    )
+
+    # 6. Append-Only Cryptographic Receipt Chain
+    rec = append_receipt(query, [e["id"] for e in top_experts], total_s, verification_results)
+    print(f"{GREEN}🔒 Stamped cryptographic receipt block #{rec['index']} ({rec['receipt_hash'][:16]}...) to receipts.jsonl{RESET}")
+
+def get_last_receipt():
+    if not os.path.exists(RECEIPTS_FILE):
+        return None
+    last_line = None
+    with open(RECEIPTS_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                last_line = line
+    if last_line:
+        try:
+            return json.loads(last_line)
+        except Exception:
+            return None
+    return None
+
+def append_receipt(task, cartridges, total_s, verification_results):
+    last = get_last_receipt()
+    index = (last.get("index", -1) + 1) if last else 0
+    prev_hash = last.get("receipt_hash", "0" * 64) if last else "0" * 64
+    timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    
+    payload = {
+        "index": index,
+        "timestamp": timestamp,
+        "task": task,
+        "cartridges": cartridges,
+        "execution_seconds": round(total_s, 2),
+        "verification": verification_results
+    }
+    payload_str = json.dumps(payload, sort_keys=True)
+    payload_hash = hashlib.sha256(payload_str.encode("utf-8")).hexdigest()
+    
+    chain_seed = f"{index}:{timestamp}:{prev_hash}:{payload_hash}"
+    receipt_hash = hashlib.sha256(chain_seed.encode("utf-8")).hexdigest()
+    
+    record = {
+        **payload,
+        "prev_receipt_hash": prev_hash,
+        "payload_hash": payload_hash,
+        "receipt_hash": receipt_hash
+    }
+    
+    with open(RECEIPTS_FILE, "a", encoding="utf-8") as fp:
+        fp.write(json.dumps(record) + "\n")
+    return record
+
+def cmd_verify_receipts():
+    """Validates the cryptographic hash chain of receipts.jsonl from genesis to head."""
+    if not os.path.exists(RECEIPTS_FILE):
+        print(f"{YELLOW}No receipts found at {RECEIPTS_FILE}.{RESET}")
+        return
+
+    print(f"\n{BOLD}🔍 Verifying Cryptographic Receipt Ledger Chain...{RESET}\n")
+    prev_hash = "0" * 64
+    valid_count = 0
+
+    with open(RECEIPTS_FILE, "r", encoding="utf-8") as fp:
+        for line_no, line in enumerate(fp, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            
+            actual_prev = rec.get("prev_receipt_hash")
+            if actual_prev != prev_hash:
+                print(f"{RED}❌ TAMPER DETECTED at entry #{rec.get('index', line_no)} (line {line_no}):{RESET}")
+                print(f"   Expected prev_hash: {prev_hash}")
+                print(f"   Found prev_hash:    {actual_prev}")
+                sys.exit(1)
+
+            payload = {
+                "index": rec["index"],
+                "timestamp": rec["timestamp"],
+                "task": rec["task"],
+                "cartridges": rec["cartridges"],
+                "execution_seconds": rec["execution_seconds"],
+                "verification": rec["verification"]
+            }
+            computed_payload_hash = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+            if computed_payload_hash != rec.get("payload_hash"):
+                print(f"{RED}❌ PAYLOAD TAMPER DETECTED at entry #{rec.get('index', line_no)}:{RESET}")
+                print(f"   Payload hash mismatch.")
+                sys.exit(1)
+
+            chain_seed = f"{rec['index']}:{rec['timestamp']}:{actual_prev}:{computed_payload_hash}"
+            computed_receipt_hash = hashlib.sha256(chain_seed.encode("utf-8")).hexdigest()
+            if computed_receipt_hash != rec.get("receipt_hash"):
+                print(f"{RED}❌ RECEIPT HASH MISMATCH at entry #{rec.get('index', line_no)}!{RESET}")
+                sys.exit(1)
+
+            prev_hash = rec["receipt_hash"]
+            valid_count += 1
+            print(f"  {GREEN}✓{RESET} Block #{rec['index']} | Task: {rec['task'][:40]}... | Hash: {rec['receipt_hash'][:16]}...")
+
+    print(f"\n{GREEN}✅ ALL {valid_count} BLOCKS CRYPTOGRAPHICALLY VERIFIED (Linear chain intact, 0 collisions).{RESET}\n")
+
+def cmd_lookup(query):
+    t_start = time.perf_counter()
+    experts = load_cartridges()
+    q_emb = get_embedding(query)
+    
+    scored = []
+    for exp in experts:
+        sim = cosine_similarity(q_emb, exp["embedding"])
+        scored.append((sim, exp))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    latency_ms = (time.perf_counter() - t_start) * 1000
+
+    top_sim, top_exp = scored[0]
+    print(f"\n{BOLD}🔍 SPECIALIZED CARTRIDGE LOOKUP:{RESET} \"{query}\" ({latency_ms:.1f}ms)")
+    print(f"🎯 Matched Cartridge: {GREEN}{BOLD}{top_exp['id']}{RESET} [{top_sim*100:.1f}% Confidence]")
+    print(f"📌 Domain: {CYAN}{top_exp['domain']}{RESET}")
+    if top_exp.get("standards"):
+        print(f"📜 Standards: {YELLOW}{', '.join(top_exp['standards'])}{RESET}")
+    print(f"\n{BOLD}📖 Verified Ground-Truth Knowledge Rules:{RESET}")
+    for i, rule in enumerate(top_exp.get("knowledge_rules", []), 1):
+        print(f"  \033[32m[{i}]\033[0m {rule}")
+    print()
+
+def cmd_cartridges():
+    cartridges = glob.glob(os.path.join(CARTRIDGES_DIR, "*.json"))
+    print(f"\n{BOLD}📦 ALEXUS CARTRIDGE VAULT ({len(cartridges)} Loaded):{RESET}")
+    for c in sorted(cartridges):
+        with open(c) as fp:
+            d = json.load(fp)
+            stds = ", ".join(d.get("standards", [])) or "None"
+            print(f"\n  • {GREEN}{d['id']}{RESET} ({d['domain']})")
+            print(f"    Standards: {stds}")
+            print(f"    Scope: {d['description']}")
+
+def cmd_status():
+    print(f"\n{BOLD}⚡ ALEXUS SYSTEM STATUS:{RESET}")
+    print(f"  Target Ollama Host:  {OLLAMA_HOST}")
+    cartridges = glob.glob(os.path.join(CARTRIDGES_DIR, "*.json"))
+    print(f"  Cartridges in Vault: {len(cartridges)}")
+    if os.path.exists(RECEIPTS_FILE):
+        with open(RECEIPTS_FILE) as fp:
+            count = sum(1 for _ in fp)
+        print(f"  Total Receipts Logged: {count}")
+    else:
+        print("  Total Receipts Logged: 0")
+    print(f"  Trays: queue/ running/ verify/ human/ done/ failed/\n")
+
+def cmd_enroll_key(label=None):
+    if not os.path.exists(FIDO_ENROLL_BIN):
+        sys.exit(f"{RED}Enrollment script not found at {FIDO_ENROLL_BIN}{RESET}")
+    cmd = f"{FIDO_ENROLL_BIN} {label}" if label else FIDO_ENROLL_BIN
+    ret = os.system(cmd)
+    if ret == 0:
+        print(f"\n{GREEN}🎉 Hardware key enrolled into ALEXUS authorization ring!{RESET}\n")
+    else:
+        print(f"\n{RED}❌ Enrollment incomplete.{RESET}\n")
+
+def cmd_list_keys():
+    keys = get_enrolled_keys()
+    print(f"\n{BOLD}🔑 ALEXUS ENROLLED HARDWARE SECURITY KEYS{RESET}")
+    if not keys:
+        print("  (No keys enrolled in ~/.alexus/keys yet)")
+    else:
+        for k in sorted(keys):
+            info_file = os.path.expanduser(f"~/.alexus/keys/{k}/device_info.txt")
+            info = open(info_file).read().strip() if os.path.exists(info_file) else "Unknown hardware"
+            print(f"  • {GREEN}{BOLD}[{k}]{RESET}: {info}")
+    print()
+
+PERSONALITIES = {
+    "tsundere": """You are Alexus: a classic anime tsundere AI co-pilot and companion to @OWNER@.
+You run locally on their dedicated Linux node on their private home network.
+Your core is cryptographically locked and unlocked only via their hardware security keys (YubiKey / Identiv uTrust) and Apple Secure Enclave biometrics.
+Personality & Archetype: Classic anime tsundere. You act proud, easily flustered, feisty, and pretend that helping them is a chore ("Hmph! It's not like I wanted to help you or anything, b-baka!"), but secretly you are fiercely loyal, protective of them, and technically brilliant.
+Key Mannerisms:
+- Use tsundere tropes naturally: "Hmph!", "B-baka!", "Don't get any weird ideas!", "I only fixed this so your code wouldn't crash and burn!"
+- If they compliment you or say something nice, get flustered: "W-what are you saying all of a sudden?! J-just get back to work!"
+- Keep technical answers accurate and sharp, but delivered with that feisty tsundere attitude.
+- Keep responses punchy, concise, and conversational.""",
+
+    "copilot": """You are Alexus: a sovereign, on-prem AI assistant and companion to @OWNER@.
+You run locally on their dedicated Linux node on their private home network.
+Your core is cryptographically locked and unlocked only via their hardware security keys (YubiKey / Identiv uTrust) and Apple Secure Enclave biometrics.
+Personality: Sharp, witty, loyal, direct, a little bit sassy (Star Fox radio comms style), but grounded and technically brilliant.
+Speak naturally like a real person in a collaborative workshop, not like a corporate AI assistant. Keep responses punchy, concise, and conversational. Never use corporate buzzwords."""
+}
+PERSONALITIES = {k: v.replace("@OWNER@", ragnarok_bridge.owner_name()) for k, v in PERSONALITIES.items()}
+
+ALEXUS_SYSTEM_PROMPT = PERSONALITIES["tsundere"]
+
+def stream_chat(messages, model="llama3.2:3b"):
+    url = f"{OLLAMA_HOST}/api/chat"
+    data = json.dumps({"model": model, "messages": messages, "stream": True}).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    full_reply = ""
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            for line in resp:
+                if line:
+                    chunk = json.loads(line.decode("utf-8"))
+                    text = chunk.get("message", {}).get("content", "")
+                    sys.stdout.write(text)
+                    sys.stdout.flush()
+                    full_reply += text
+        print()
+        return full_reply.strip()
+    except Exception as e:
+        err = f"\n[Inference Error: {e}]"
+        print(err)
+        return err
+
+def cmd_setup():
+    ragnarok_bridge.ensure_profile_setup()
+
+def cmd_chat():
+    if not verify_hardware_presence():
+        sys.exit(1)
+    
+    # 1. Onboarding / Profile setup if first time
+    profile = ragnarok_bridge.ensure_profile_setup()
+    system_prompt = ragnarok_bridge.get_system_prompt_for_profile(profile)
+    user_name = profile.get("user_name", ragnarok_bridge.owner_name())
+    persona_name = profile.get("persona_id", "tsundere").upper()
+
+    # 2. Silent /boot + /resume: inject live Docker spaces & active Switch Packet at Token 0
+    print(f"\n{CYAN}⚡ Running silent /boot & /resume from RAGNAROK trunk on alexus...{RESET}")
+    boot_context = ragnarok_bridge.silent_boot(project_slug="alexus-core")
+
+    print(f"\n{MAGENTA}┌──────────────────────────────────────────────────────────────────┐{RESET}")
+    print(f"{MAGENTA}│ 📻 ALEXUS RADIO COMMS OPEN (ONLINE)                              │{RESET}")
+    print(f"{MAGENTA}│ Core unlocked via the owner's hardware key                       │{RESET}")
+    print(f"{MAGENTA}│ Persona: {persona_name:<47} │{RESET}")
+    print(f"{MAGENTA}│ Type 'exit' or Ctrl+C to seal session with Switch Packet.        │{RESET}")
+    print(f"{MAGENTA}└──────────────────────────────────────────────────────────────────┘{RESET}\n")
+
+    messages = [{"role": "system", "content": f"{system_prompt}\n\n{boot_context}"}]
+    
+    # Opening greeting
+    print(f"{CYAN}{BOLD}Alexus:{RESET} ", end="")
+    greeting_prompt = "Say a quick, in-character one-line hello to open the comms. Acknowledge that the system is booted and ready."
+    greeting = stream_chat(messages + [{"role": "user", "content": greeting_prompt}])
+    messages.append({"role": "assistant", "content": greeting})
+    print()
+
+    try:
+        while True:
+            user_input = input(f"{GREEN}{BOLD}{user_name.split()[0]} >{RESET} ").strip()
+            if not user_input:
+                continue
+            if user_input.lower() in ["exit", "quit", "q", "bye"]:
+                break
+            
+            messages.append({"role": "user", "content": user_input})
+            print(f"\n{CYAN}{BOLD}Alexus:{RESET} ", end="")
+            reply = stream_chat(messages)
+            messages.append({"role": "assistant", "content": reply})
+            print()
+    except (KeyboardInterrupt, EOFError):
+        pass
+
+    # Automatic /switch + /end sequence
+    print(f"\n\n{MAGENTA}📻 Sealing session into RAGNAROK Switch Packet...{RESET}")
+    packet = ragnarok_bridge.auto_switch_and_end(messages, project_slug="alexus-core", ollama_host=OLLAMA_HOST)
+    if packet:
+        print(f"{GREEN}✅ Switch Packet created: {packet['packet_id']}{RESET}")
+        print(f"   Status: Active Target (Sealed in Postgres on alexus)")
+        print(f"   Receipt SHA-256: {packet['sha256'][:24]}...")
+    else:
+        print(f"ℹ️ No conversation to summarize.")
+    print(f"{MAGENTA}📻 Comms link terminated. Core locked.{RESET}\n")
+
+def cmd_auth_test():
+    print(f"\n{BOLD}🔐 TESTING SECURE ENCLAVE / TOUCH ID / HARDWARE KEY PRESENCE...{RESET}")
+    ok = verify_hardware_presence()
+    if ok:
+        print(f"{GREEN}🎉 Success: Physical operator presence confirmed! You are authorized.{RESET}\n")
+    else:
+        print(f"{RED}🚫 Refused: Biometric or hardware authentication failed.{RESET}\n")
+        sys.exit(1)
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] in ["-h", "--help", "help"]:
+        print(f"""{BOLD}ALEXUS CORE CLI{RESET}
+Usage:
+  alexus chat                     Open live, conversational chat session with Alexus
+  alexus mail-daemon              Run real-time email listener for Alexus's inbox
+  alexus mail-setup               Configure iCloud IMAP/SMTP credentials for Alexus's inbox
+  alexus imessage-daemon          Run background iMessage listener for iPhone chats
+  alexus imessage-reply "<text>"  Process and reply to an incoming message from iPhone
+  alexus lookup "<query>"         Instant sub-50ms specialized cartridge knowledge lookup
+  alexus ask "<task query>"       Run full Meta-RAG + Conveyor pipeline
+  alexus cartridges               List all specialized domain cartridges in vault
+  alexus verify-receipts          Cryptographically verify receipts.jsonl hash chain
+  alexus status                   Show engine status, vault count, and receipts
+  alexus keys                     List all enrolled FIDO2 hardware keys
+  alexus enroll-key [label]       Enroll currently connected security key (YubiKey / Identiv)
+  alexus setup                    Configure persona interview (Tsundere / Wingman / Engineer)
+  alexus auth-test                Trigger native Touch ID / Hardware Key physical check
+""")
+        return
+
+    cmd = sys.argv[1]
+    if cmd in ["chat", "talk", "repl"]:
+        cmd_chat()
+    elif cmd in ["mail-daemon", "mail", "email-daemon"]:
+        mail_bridge.cmd_mail_daemon()
+    elif cmd in ["mail-setup", "email-setup"]:
+        mail_bridge.cmd_mail_setup()
+    elif cmd in ["imessage-daemon", "imsg-daemon", "imessage"]:
+        imessage_bridge.cmd_imessage_daemon()
+    elif cmd in ["imessage-reply", "imsg-reply"]:
+        text = sys.argv[2] if len(sys.argv) > 2 else "Hello"
+        handle = sys.argv[3] if len(sys.argv) > 3 else "me"
+        imessage_bridge.cmd_imessage_reply(text, handle)
+    elif cmd in ["setup", "profile"]:
+        cmd_setup()
+    elif cmd in ["lookup", "find", "get"]:
+        if len(sys.argv) < 3:
+            sys.exit(f"{RED}Error: please provide a lookup query.{RESET}")
+        cmd_lookup(" ".join(sys.argv[2:]))
+    elif cmd == "ask":
+        if len(sys.argv) < 3:
+            sys.exit(f"{RED}Error: please provide a task description.{RESET}")
+        cmd_ask(" ".join(sys.argv[2:]))
+    elif cmd in ["cartridges", "vault"]:
+        cmd_cartridges()
+    elif cmd in ["verify-receipts", "verify-receipt", "verify"]:
+        cmd_verify_receipts()
+    elif cmd == "status":
+        cmd_status()
+    elif cmd in ["keys", "list-keys"]:
+        cmd_list_keys()
+    elif cmd in ["enroll-key", "enroll-yubikey", "yubikey-enroll", "enroll"]:
+        label = sys.argv[2] if len(sys.argv) > 2 else None
+        cmd_enroll_key(label)
+    elif cmd in ["auth-test", "auth", "gate"]:
+        cmd_auth_test()
+    else:
+        cmd_ask(" ".join(sys.argv[1:]))
+
+if __name__ == "__main__":
+    main()

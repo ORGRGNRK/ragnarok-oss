@@ -1,0 +1,29 @@
+{
+ "_README": "SAMPLE DATA. Real buyer quotes that beat the ladder go here; this one example keeps the tests honest.",
+ "quotes": [
+  {
+   "match": "iphone 12 pro max",
+   "storage": 128,
+   "lock": null,
+   "buyer": "Atlas Mobile Co",
+   "quoted": 40,
+   "date_approx": "2026-07",
+   "date_exact_recorded": false,
+   "units": [
+    "EXAMPLE-001"
+   ],
+   "requires_condition": [
+    "aftermarket_screen",
+    "cracked_back"
+   ],
+   "supersedes_ladder": true,
+   "note": "Example: a damaged unit (aftermarket screen + cracked back) quoted below the ladder."
+  }
+ ],
+ "advisories": [
+  {
+   "match": "iphone 12 pro max",
+   "text": "Example advisory: TWO units of one model can fail a buyer for TWO different reasons (damage on one, carrier lock on the other). Check each unit, not the model, and do not read the unlocked row for a locked unit."
+  }
+ ]
+}

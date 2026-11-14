@@ -1,0 +1,259 @@
+#!/usr/bin/env python3
+"""conveyor-local-agent -- the local seat's agent loop over an OpenAI-compatible API.
+
+WHY (2026-10-26, SPEC-planning.md). The model the belt should code with runs
+on a bigger machine on the operator's network (LM Studio, Ollama's /v1,
+llama.cpp server, vLLM...), not on the belt's own computer. All of those
+speak the OpenAI chat-completions API, so this is a small, dependency-free
+agent loop over that API: the model gets three tools (bash, read_file,
+write_file), the loop runs them in the seat's working directory, and the
+model's last message is the leg's answer.
+
+    prompt on stdin   ->  stream-json lines on stdout (the claude seat's shape:
+                          assistant / user / a final {"type":"result"}), so the
+                          runner's seat_text and the Mac app's live view read
+                          it unchanged.
+
+Settings, from the environment:
+  CONVEYOR_LOCAL_BASE_URL   default http://127.0.0.1:1234/v1
+  CONVEYOR_LOCAL_MODEL      the model name the server knows
+  CONVEYOR_LOCAL_API_KEY    optional; sent as a Bearer token, NEVER printed,
+                            and removed from the environment of every command
+                            the model runs, so it cannot echo it into a log.
+  CONVEYOR_LOCAL_MAX_TURNS  default 60 model calls per leg
+  CONVEYOR_LOCAL_TEXT_TOOLS 1 = also accept a tool call the model wrote as TEXT (Ragnarok,
+                            2026-10-30; runner/ragnarok/belt sets it). Measured that day on
+                            Ollama's /v1: qwen2.5-coder:7b and :3b answer a tool request with
+                            {"name": "write_file", "arguments": {...}} as plain text (sometimes
+                            fenced, sometimes in <tool_call> tags) and never fill tool_calls, so
+                            without this they do nothing. Only a JSON object whose "name" is one
+                            of the three tools counts; the result goes back as a user message.
+                            Also accepts write_file {...} (name, then arguments), trims stray
+                            ``` lines after the final RESULT line, and asks again (twice at
+                            most) when a reply ends without its RESULT/VERDICT line.
+Exit: 0 when the model finished (whatever it said -- the runner judges the
+words), 3 when the server could not be used (a seat crash: refunded, backoff).
+"""
+import json, os, subprocess, sys, urllib.error, urllib.request
+
+BASE = os.environ.get("CONVEYOR_LOCAL_BASE_URL", "http://127.0.0.1:1234/v1").rstrip("/")
+MODEL = os.environ.get("CONVEYOR_LOCAL_MODEL", "")
+KEY = os.environ.get("CONVEYOR_LOCAL_API_KEY", "")
+MAX_TURNS = int(os.environ.get("CONVEYOR_LOCAL_MAX_TURNS", "60") or 60)
+CMD_TIMEOUT = int(os.environ.get("CONVEYOR_LOCAL_CMD_TIMEOUT", "300") or 300)
+TEXT_TOOLS = os.environ.get("CONVEYOR_LOCAL_TEXT_TOOLS", "0") == "1"
+CAP = 12000  # characters of tool output handed back to the model
+
+TOOLS = [
+    {"type": "function", "function": {
+        "name": "bash", "description": "Run a bash command in the working directory. Returns exit code and output.",
+        "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}}},
+    {"type": "function", "function": {
+        "name": "read_file", "description": "Read a text file.",
+        "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
+    {"type": "function", "function": {
+        "name": "write_file", "description": "Write (create or replace) a text file.",
+        "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
+                       "required": ["path", "content"]}}},
+]
+
+CHILD_ENV = {k: v for k, v in os.environ.items() if k != "CONVEYOR_LOCAL_API_KEY"}
+
+
+def emit(obj):
+    sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
+    sys.stdout.flush()
+
+
+def fail(msg):
+    # The key is never in msg: only the URL and the server's status are named.
+    print("conveyor-local-agent: " + msg, file=sys.stderr)
+    emit({"type": "result", "is_error": True, "result": ""})
+    sys.exit(3)
+
+
+def chat(messages):
+    body = {"model": MODEL, "messages": messages, "tools": TOOLS}
+    req = urllib.request.Request(BASE + "/chat/completions", data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"})
+    if KEY:
+        req.add_header("Authorization", "Bearer " + KEY)
+    try:
+        with urllib.request.urlopen(req, timeout=CMD_TIMEOUT + 600) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        fail("%s/chat/completions answered HTTP %s" % (BASE, e.code))
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        fail("could not reach %s (%s)" % (BASE, getattr(e, "reason", e)))
+
+
+def clip(text, tail=False):
+    """Tool text handed back to the model. A failure keeps its tail, where the error is.
+    A file read keeps its head."""
+    text = text or ""
+    if len(text) <= CAP:
+        return text
+    if tail or "Traceback (most recent call last):" in text:
+        hidden = len(text) - CAP
+        return "[... %d earlier characters cut]\n%s" % (hidden, text[-CAP:].lstrip("\n"))
+    return text[:CAP] + "\n[... %d more characters cut]" % (len(text) - CAP)
+
+
+def parse_args(call):
+    """A tool call's arguments as a dict ({} when the model sent bad JSON)."""
+    try:
+        args = json.loads(call.get("function", {}).get("arguments") or "{}")
+    except ValueError:
+        return {}
+    return args if isinstance(args, dict) else {}
+
+
+TOOL_NAMES = {"bash", "read_file", "write_file"}
+
+
+def text_calls(text):
+    """Tool calls written as text: JSON objects {"name": <tool>, "arguments": {...}}, or a tool's
+    name followed by its arguments object (write_file {"path": ..., "content": ...})."""
+    import re
+    found, dec, i = [], json.JSONDecoder(), 0
+    t = re.sub(r"</?tool_call>", " ", text)
+    while True:
+        i = t.find("{", i)
+        if i < 0:
+            break
+        try:
+            obj, end = dec.raw_decode(t, i)
+        except ValueError:
+            i += 1
+            continue
+        if isinstance(obj, dict) and obj.get("name") in TOOL_NAMES:
+            args = obj.get("arguments", obj.get("parameters", {}))
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except ValueError:
+                    args = {}
+            if isinstance(args, dict):
+                found.append((obj["name"], args))
+        elif isinstance(obj, dict) and "name" not in obj:
+            m = re.search(r"\b(bash|read_file|write_file)\s*[:(]?\s*$", t[:i])
+            if m:
+                found.append((m.group(1), obj))
+        i = end
+    return found
+
+
+def tidy(final):
+    """Small models close their answer with a stray markdown fence AFTER the RESULT line (seen
+    2026-10-30: "RESULT: done ...\n```"). Drop trailing fence/blank lines only; the RESULT line
+    itself must still be the model's own last words."""
+    lines = final.rstrip().split("\n")
+    while lines and lines[-1].strip() in ("", "```", "```json"):
+        lines.pop()
+    return "\n".join(lines)
+
+
+def run_tool(name, args):
+    try:
+        if name == "bash":
+            p = subprocess.run(args.get("command", ""), shell=True, executable="/bin/bash", env=CHILD_ENV,
+                               capture_output=True, text=True, timeout=CMD_TIMEOUT)
+            err = p.stderr or ""
+            out = p.stdout or ""
+            if p.returncode != 0:
+                if err.strip() and "Traceback (most recent call last):" not in err and "Traceback (most recent call last):" in out:
+                    body = out
+                else:
+                    body = err if err.strip() else out
+                return clip("exit %d\n%s" % (p.returncode, body), tail=True)
+            return clip("exit %d\n%s%s" % (p.returncode, out, err))
+        if name == "read_file":
+            with open(os.path.expanduser(args["path"])) as f:
+                return clip(f.read())
+        if name == "write_file":
+            path = os.path.expanduser(args["path"])
+            if os.path.dirname(path):
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                f.write(args.get("content", ""))
+            return "wrote %d characters to %s" % (len(args.get("content", "")), path)
+        return "unknown tool %r (tools: bash, read_file, write_file)" % name
+    except subprocess.TimeoutExpired:
+        return "command timed out after %ds" % CMD_TIMEOUT
+    except Exception as e:  # a tool error is the model's to read, not a crash
+        return "error: %s" % e
+
+
+def main():
+    if not MODEL:
+        fail("CONVEYOR_LOCAL_MODEL is not set")
+    messages = [{"role": "user", "content": sys.stdin.read()}]
+    final = ""
+    nudges = 0
+    # The model name each API response reports (its "model" field), NOT the name we asked for:
+    # receipts keep this next to the configured model so a swapped/aliased model shows up.
+    reported = []
+    for _ in range(MAX_TURNS):
+        resp = chat(messages)
+        rm = resp.get("model") if isinstance(resp, dict) else None
+        if isinstance(rm, str) and rm.strip() and rm.strip()[:200] not in reported:
+            reported.append(rm.strip()[:200])
+        try:
+            msg = resp["choices"][0]["message"]
+        except (KeyError, IndexError, TypeError):
+            fail("%s/chat/completions returned no message" % BASE)
+        text = msg.get("content") or ""
+        calls = msg.get("tool_calls") or []
+        content = ([{"type": "text", "text": text}] if text else []) + [
+            {"type": "tool_use", "id": c.get("id", ""), "name": c.get("function", {}).get("name", ""),
+             "input": parse_args(c)} for c in calls]
+        emit({"type": "assistant", "message": {"content": content}})
+        if text:
+            final = text
+        if not calls and TEXT_TOOLS:
+            tcalls = text_calls(text)
+            if tcalls:
+                messages.append({"role": "assistant", "content": text})
+                outs = []
+                for n, (name, args) in enumerate(tcalls):
+                    cid = "text-%d-%d" % (_, n)
+                    emit({"type": "assistant", "message": {"content": [
+                        {"type": "tool_use", "id": cid, "name": name, "input": args}]}})
+                    out = run_tool(name, args)
+                    emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": cid,
+                                                                   "content": out}]}})
+                    outs.append("[result of %s]\n%s" % (name, out))
+                messages.append({"role": "user", "content": "\n\n".join(outs) + "\n\nContinue. To use a tool, answer "
+                                 "with one JSON object {\"name\": ..., \"arguments\": {...}}. When the work is finished, "
+                                 "give your final answer (its last line is the RESULT line)."})
+                final = ""
+                continue
+        if not calls and TEXT_TOOLS and nudges < 2 \
+                and not tidy(final).split("\n")[-1].startswith(("RESULT:", "VERDICT:")):
+            # A small model sometimes stops without its closing line (or with a call we could not
+            # read, e.g. a made-up tool). Ask twice at most; the task's own checks still decide.
+            nudges += 1
+            messages.append({"role": "assistant", "content": text})
+            messages.append({"role": "user", "content": "Your reply did not end with the required closing line. The only "
+                             "tools are bash, read_file and write_file (to run a check command, use bash). If work "
+                             "remains, call one as a JSON object {\"name\": ..., \"arguments\": {...}}. Otherwise end "
+                             "with the closing line your instructions ask for (RESULT: ... or VERDICT: ...)."})
+            continue
+        if not calls:
+            break
+        messages.append({"role": "assistant", "content": text or None, "tool_calls": calls})
+        for c in calls:
+            out = run_tool(c.get("function", {}).get("name", ""), parse_args(c))
+            emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": c.get("id", ""),
+                                                           "content": out}]}})
+            messages.append({"role": "tool", "tool_call_id": c.get("id", ""), "content": out})
+    else:
+        final = final + "\n(stopped: the model used all %d turns)" % MAX_TURNS
+    if TEXT_TOOLS:
+        final = tidy(final)
+    emit({"type": "result", "result": final, "model_reported": ",".join(reported) or None})
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

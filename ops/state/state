@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""state — machine memory. Asks the Mac and Alexus what is true right now. Read-only.
+
+  state            print a short summary, save full JSON to ~/.ragnarok/state/latest.json
+  state --json     print the full JSON
+Nothing here is remembered: every field is measured at run time. A field that could not be
+measured says so ("error": ...) instead of guessing.
+"""
+import json, os, platform, plistlib, re, subprocess, sys, time, glob
+
+
+
+def _local_conf(key, default):
+    """KEY=value from ~/.ragnarok/local.conf (read only, never executed)."""
+    try:
+        for line in open(os.path.expanduser("~/.ragnarok/local.conf")):
+            k, _, v = line.strip().partition("=")
+            if k == key and v:
+                return v
+    except OSError:
+        pass
+    return default
+
+
+ALEXUS = _local_conf("ALEXUS_HOST", "alexus")
+ALEXUS_TS = _local_conf("ALEXUS_TAILSCALE", "alexus")
+ALEXUS_USER = _local_conf("ALEXUS_USER", "")
+OUT_DIR = os.path.expanduser("~/.ragnarok/state")
+
+
+def run(cmd, timeout=20, inp=None):
+    try:
+        p = subprocess.run(cmd, input=inp, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, p.stdout, p.stderr
+    except Exception as e:  # noqa
+        return 99, "", str(e)
+
+
+def git_repos(root):
+    out = []
+    for g in sorted(glob.glob(os.path.join(root, "*", ".git"))):
+        d = os.path.dirname(g)
+        _, br, _ = run(["git", "-C", d, "rev-parse", "--abbrev-ref", "HEAD"])
+        _, head, _ = run(["git", "-C", d, "log", "-1", "--format=%h %cs"])
+        _, st, _ = run(["git", "-C", d, "status", "--porcelain"])
+        _, rem, _ = run(["git", "-C", d, "remote"])
+        out.append({"repo": os.path.basename(d), "branch": br.strip(), "head": head.strip(),
+                    "dirty": len([l for l in st.splitlines() if l.strip()]), "has_remote": bool(rem.strip())})
+    return out
+
+
+def mac():
+    s = {"host": platform.node(), "os": platform.mac_ver()[0]}
+    _, up, _ = run(["uptime"]); s["uptime"] = up.strip()
+    _, df, _ = run(["df", "-h", "/System/Volumes/Data"]); s["disk"] = df.splitlines()[-1] if df else None
+    # launch agents: schedule + loaded state + last exit
+    _, ll, _ = run(["launchctl", "list"])
+    loaded = {}
+    for line in ll.splitlines()[1:]:
+        parts = line.split("\t")
+        if len(parts) == 3:
+            loaded[parts[2]] = {"pid": parts[0], "last_exit": parts[1]}
+    agents = []
+    for f in sorted(glob.glob(os.path.expanduser("~/Library/LaunchAgents/co.rgnrk.*.plist"))):
+        try:
+            p = plistlib.load(open(f, "rb"))
+        except Exception as e:
+            agents.append({"file": os.path.basename(f), "error": str(e)}); continue
+        lab = p.get("Label", "")
+        sched = ("keepalive" if p.get("KeepAlive") else
+                 f"every {p['StartInterval']}s" if "StartInterval" in p else
+                 "calendar" if "StartCalendarInterval" in p else
+                 "at load only" if p.get("RunAtLoad") else "manual")
+        L = loaded.get(lab)
+        agents.append({"label": lab, "schedule": sched, "loaded": bool(L),
+                       "running": bool(L and L["pid"] != "-"), "last_exit": L and L["last_exit"]})
+    s["launch_agents"] = agents
+    _, ls, _ = run(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN"])
+    s["listening"] = sorted({f"{l.split()[0]} {l.split()[8]}" for l in ls.splitlines()[1:] if len(l.split()) > 8})
+    _, dl, _ = run(["diskutil", "list", "external", "physical"])
+    s["external_disks"] = [l.strip() for l in dl.splitlines() if l.startswith("/dev/") or re.match(r"\s+\d+:", l)]
+    _, io, _ = run(["ioreg", "-p", "IOUSB", "-l", "-w0"], timeout=10)
+    s["security_keys_plugged"] = sorted(set(re.findall(r'"USB Product Name" = "([^"]*(?:YubiKey|uTrust|FIDO|Security Key)[^"]*)"', io)))
+    try:
+        hooks = json.load(open(os.path.expanduser("~/.claude/settings.json"))).get("hooks", {})
+        s["claude_hooks"] = {ev: [os.path.basename((h.get("command") or "").split()[-1] if h.get("command") else "?")
+                                  for m in lst for h in m.get("hooks", [])] for ev, lst in hooks.items()}
+    except Exception as e:
+        s["claude_hooks"] = {"error": str(e)}
+    s["git"] = git_repos(os.path.expanduser("~/Developer"))
+    return s
+
+
+ALEXUS_PROBE = r'''
+import json, subprocess, glob, os, re
+def run(c, t=20):
+    try:
+        p = subprocess.run(c, shell=True, capture_output=True, text=True, timeout=t); return p.stdout
+    except Exception as e: return ""
+s = {}
+s["host"] = run("hostname").strip()
+s["os"] = run(". /etc/os-release; echo $PRETTY_NAME").strip()
+s["uptime"] = run("uptime -p").strip()
+s["timezone"] = run("timedatectl show -p Timezone --value").strip()
+m = run("free -b").split("\n")[1].split()
+s["mem_gb"] = {"total": round(int(m[1])/1e9,1), "available": round(int(m[6])/1e9,1)}
+s["root_disk"] = run("df -h / | tail -1").split()
+s["root_lv_vs_disk"] = run("lsblk -bdno SIZE /dev/nvme0n1").strip() and {
+    "lv_gb": round(int(run("lsblk -bno SIZE /dev/mapper/ubuntu--vg-ubuntu--lv").split()[0])/1e9),
+    "disk_gb": round(int(run("lsblk -bdno SIZE /dev/nvme0n1").strip())/1e9)}
+def allmounts(n):
+    # mounts on this partition or anything stacked on it (LUKS -> LVM -> fs)
+    out = [x for x in (n.get("mountpoints") or []) if x]
+    for c in n.get("children", []) or []:
+        out += allmounts(c)
+    return out
+bl = json.loads(run("lsblk -J -o NAME,SIZE,TYPE,FSTYPE,LABEL,MOUNTPOINTS,VENDOR,MODEL,TRAN") or "{}")
+s["disks"] = [{"name": d["name"], "size": d["size"], "model": f'{(d.get("vendor") or "").strip()} {(d.get("model") or "").strip()}'.strip(),
+               "tran": d.get("tran"),
+               "parts": [{"name": p["name"], "size": p["size"], "fs": p.get("fstype"), "label": p.get("label"),
+                          "mounted": allmounts(p)} for p in d.get("children", [])]}
+              for d in bl.get("blockdevices", []) if d.get("type") == "disk"]
+s["failed_units"] = run("systemctl --failed --no-legend --plain | awk '{print $1}'").split()
+s["key_services"] = {u: run(f"systemctl is-active {u}").strip() for u in
+                     ["ygg-trunk.service", "docker.service", "tailscaled.service", "auditd.service", "ssh.service", "cloudflared.service"]}
+s["user_services"] = run("systemctl --user list-units --type=service --state=running --no-legend --plain | awk '{print $1}'").split()
+s["timers"] = {"system": run("systemctl list-timers --all --no-legend --plain | awk '{print $(NF-1)}'").split(),
+               "user": run("systemctl --user list-timers --all --no-legend --plain | awk '{print $(NF-1)}'").split()}
+s["crontab"] = [l for l in run("crontab -l 2>/dev/null").splitlines() if l.strip() and not l.startswith("#")]
+cs = []
+for line in run("docker ps -a --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}'").splitlines():
+    n, img, st, ports = (line.split("|") + ["", "", "", ""])[:4]
+    rp = run(f"docker inspect -f '{{{{.HostConfig.RestartPolicy.Name}}}}' {n}").strip()
+    cs.append({"name": n, "image": img, "status": st, "restart": rp,
+               "public_ports": sorted(set(re.findall(r"0\.0\.0\.0:(\d+)", ports)))})
+s["containers"] = cs
+lis = run("ss -tlnH | awk '{print $4}'").split()
+s["listening_all_interfaces"] = sorted({a.rsplit(":",1)[1] for a in lis if a.startswith("0.0.0.0:") or a.startswith("[::]:") or a.startswith("*:")}, key=int)
+s["firewall_ufw"] = run("grep -h ^ENABLED /etc/ufw/ufw.conf").strip()
+s["tunnel"] = {"cloudflared_installed": bool(run("command -v cloudflared").strip()),
+               "cloudflared_running": bool(run("pgrep -x cloudflared").strip())}
+s["tailscale_ip"] = run("ip -4 -o addr show tailscale0 | awk '{print $4}'").strip()
+g = []
+for d in sorted(glob.glob(os.path.expanduser("~/Developer/*/.git"))):
+    d = os.path.dirname(d)
+    g.append({"repo": os.path.basename(d),
+              "head": run(f"git -C '{d}' log -1 --format='%h %cs'").strip(),
+              "dirty": len([l for l in run(f"git -C '{d}' status --porcelain").splitlines() if l.strip()])})
+s["git"] = g
+print(json.dumps(s))
+'''
+
+
+def alexus():
+    for target, via in ((ALEXUS, "lan"), (ALEXUS_TS, "tailscale")):
+        code, out, err = run(["/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=6",
+                              f"{ALEXUS_USER}@{target}" if ALEXUS_USER else target,
+                              "python3", "-I", "-"], timeout=90, inp=ALEXUS_PROBE)
+        if code == 0 and out.strip():
+            try:
+                d = json.loads(out); d["reached_via"] = via; return d
+            except Exception as e:
+                return {"error": f"bad probe output: {e}"}
+    return {"error": f"unreachable on LAN and Tailscale: {err.strip()[:200]}"}
+
+
+def summary(st):
+    L = [f"state @ {st['taken_at']}"]
+    m = st["mac"]
+    L.append(f"MAC {m['host']} macOS {m['os']} | disk {m['disk']}")
+    bad = [a["label"] for a in m["launch_agents"] if not a.get("loaded")]
+    L.append(f"  launch agents: {len(m['launch_agents'])} ({'not loaded: ' + ', '.join(bad) if bad else 'all loaded'})")
+    L.append(f"  security keys plugged in: {', '.join(m['security_keys_plugged']) or 'none'}")
+    L.append(f"  external disks: {len([d for d in m['external_disks'] if d.startswith('/dev/')])}")
+    dirty = [f"{g['repo']}({g['dirty']})" for g in m["git"] if g["dirty"]]
+    L.append(f"  git repos: {len(m['git'])}, uncommitted changes in: {', '.join(dirty) or 'none'}")
+    a = st["alexus"]
+    if "error" in a:
+        L.append(f"ALEXUS: {a['error']}")
+    else:
+        L.append(f"ALEXUS {a['host']} {a['os']} via {a['reached_via']} | {a['uptime']} | tz {a['timezone']}")
+        lv = a.get("root_lv_vs_disk")
+        lv_txt = f" (LV {lv['lv_gb']} GB of {lv['disk_gb']} GB disk)" if isinstance(lv, dict) else ""
+        L.append(f"  mem avail {a['mem_gb']['available']}/{a['mem_gb']['total']} GB | root {a['root_disk'][2]} used of {a['root_disk'][1]}{lv_txt}")
+        for d in a["disks"]:
+            for p in d["parts"]:
+                L.append(f"  disk {d['name']} {d['model']} {p['name']} {p['size']} {p['label'] or ''} -> {'mounted ' + ','.join(p['mounted']) if p['mounted'] else 'NOT MOUNTED'}")
+        L.append(f"  services: " + ", ".join(f"{k.split('.')[0]}={v}" for k, v in a["key_services"].items()))
+        L.append(f"  failed units: {', '.join(a['failed_units']) or 'none'}")
+        L.append(f"  timers (user): {', '.join(a['timers']['user']) or 'none'} | cron lines: {len(a['crontab'])}")
+        up = sum(1 for c in a["containers"] if c["status"].startswith("Up"))
+        L.append(f"  containers: {up}/{len(a['containers'])} up; public ports: "
+                 + (", ".join(f"{c['name']}:{'/'.join(c['public_ports'])}" for c in a["containers"] if c["public_ports"]) or "none"))
+        L.append(f"  listening on all interfaces: {', '.join(a['listening_all_interfaces'])} | firewall {a['firewall_ufw']}")
+        L.append(f"  tunnel: cloudflared installed={a['tunnel']['cloudflared_installed']} running={a['tunnel']['cloudflared_running']}")
+        dirty = [f"{g['repo']}({g['dirty']})" for g in a["git"] if g["dirty"]]
+        L.append(f"  git repos: {len(a['git'])}, uncommitted changes in: {', '.join(dirty) or 'none'}")
+    return "\n".join(L)
+
+
+def main():
+    st = {"taken_at": time.strftime("%Y-%m-%d %H:%M:%S %Z"), "mac": mac(), "alexus": alexus()}
+    os.makedirs(OUT_DIR, exist_ok=True)
+    path = os.path.join(OUT_DIR, "latest.json")
+    with open(path + ".tmp", "w") as f:
+        json.dump(st, f, indent=1)
+    os.replace(path + ".tmp", path)
+    print(json.dumps(st, indent=1) if "--json" in sys.argv else summary(st) + f"\n(full: {path})")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,35 @@
+{
+  "client": "Example Supply Co. (FAKE demo data)",
+  "description": "A made-up small shop with a product inventory and customer orders. Replace this file for a real client.",
+  "tables": [
+    {
+      "name": "Products",
+      "description": "What the shop stocks",
+      "fields": [
+        { "name": "SKU", "type": "text", "required": true, "unique": true, "max_length": 40, "description": "stock code, e.g. MUG-12OZ-BLK" },
+        { "name": "Name", "type": "text", "required": true },
+        { "name": "Category", "type": "select", "choices": ["Kitchen", "Office", "Outdoor", "Other"], "default": "Other" },
+        { "name": "Quantity On Hand", "type": "integer", "required": true, "default": 0 },
+        { "name": "Reorder Level", "type": "integer", "default": 5, "description": "reorder when stock falls to this" },
+        { "name": "Unit Price", "type": "money", "description": "selling price in dollars" },
+        { "name": "Active", "type": "boolean", "default": true },
+        { "name": "Notes", "type": "long_text" }
+      ]
+    },
+    {
+      "name": "Orders",
+      "description": "Customer orders",
+      "fields": [
+        { "name": "Order Number", "type": "text", "required": true, "unique": true, "max_length": 20 },
+        { "name": "Customer Name", "type": "text", "required": true },
+        { "name": "Customer Email", "type": "email" },
+        { "name": "SKU", "type": "text", "required": true, "description": "the product's SKU" },
+        { "name": "Quantity", "type": "integer", "required": true },
+        { "name": "Total", "type": "money" },
+        { "name": "Status", "type": "select", "choices": ["New", "Paid", "Shipped", "Cancelled"], "default": "New", "required": true },
+        { "name": "Order Date", "type": "date" },
+        { "name": "Notes", "type": "long_text" }
+      ]
+    }
+  ]
+}

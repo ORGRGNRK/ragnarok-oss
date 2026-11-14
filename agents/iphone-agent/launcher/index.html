@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>iPhone Commands</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+    <main class="shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="iPhone Commands home">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" role="img"><rect x="7" y="3" width="18" height="26" rx="5"></rect><path d="M13 6h6"></path><circle cx="16" cy="25" r="1"></circle></svg>
+          </span>
+          <span>
+            <strong>iPhone Commands</strong>
+            <small>Local launcher</small>
+          </span>
+        </a>
+        <div class="privacy-pill"><span></span> Local &amp; private</div>
+      </header>
+
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Your iPhone, one clear action at a time</p>
+          <h1>What would you like<br>your iPhone to do?</h1>
+          <p class="hero-copy">Choose a saved command. The launcher checks it first, runs only the allowed steps, and shows you exactly what happened.</p>
+        </div>
+        <div class="phone-illustration" aria-hidden="true">
+          <div class="phone-speaker"></div>
+          <div class="phone-screen">
+            <div class="screen-orb"></div>
+            <span>Ready</span>
+            <strong>iPhone Mirroring</strong>
+            <div class="screen-line"></div>
+            <div class="screen-line short"></div>
+          </div>
+        </div>
+      </section>
+
+      <div id="demo-banner" class="demo-banner hidden" role="status">Preview mode is on. Commands are simulated and will not touch your iPhone.</div>
+
+      <section class="workspace" aria-label="iPhone command launcher">
+        <div class="command-panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Saved commands</p>
+              <h2>Choose an action</h2>
+            </div>
+            <span id="command-count" class="count-pill">Loading…</span>
+          </div>
+          <div id="command-list" class="command-list" aria-live="polite">
+            <div class="skeleton-card"><span></span><div><i></i><i></i></div></div>
+          </div>
+        </div>
+
+        <section id="author-panel" class="author-panel hidden" aria-label="Create a command">
+          <div class="section-heading compact">
+            <div>
+              <p id="author-eyebrow" class="eyebrow">Create a command</p>
+              <h2 id="author-title">Describe a safe routine</h2>
+            </div>
+            <button id="author-cancel" class="text-button hidden" type="button">Cancel editing</button>
+          </div>
+          <p class="author-help">
+            Plain language, one routine. Try <code>open Notes and check for Notes</code>.
+            The launcher shows you the steps and checks them before anything can be saved.
+          </p>
+          <form id="author-form" autocomplete="off">
+            <label class="sr-only" for="author-text">Describe the routine</label>
+            <input id="author-text" name="text" type="text" maxlength="500"
+                   placeholder="open Notes and check for Notes">
+            <div class="author-actions">
+              <button id="author-check" class="secondary-button" type="submit">Check it</button>
+              <button id="author-save" class="save-button" type="button" disabled>Save</button>
+              <button id="author-delete" class="delete-button hidden" type="button">Delete</button>
+            </div>
+          </form>
+          <div id="author-preview" class="author-preview hidden" aria-live="polite"></div>
+        </section>
+
+        <aside class="activity-panel">
+          <div class="section-heading compact">
+            <div>
+              <p class="eyebrow">Latest activity</p>
+              <h2>Run status</h2>
+            </div>
+            <div id="connection-status" class="connection-status"><span></span> Ready to connect</div>
+          </div>
+          <div id="activity" class="activity empty" aria-live="polite">
+            <div class="activity-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 3v10"></path><path d="m8 9 4 4 4-4"></path><path d="M5 17v2h14v-2"></path></svg>
+            </div>
+            <h3>Nothing run yet</h3>
+            <p>Pick a command and press Run. Its verification result will appear here.</p>
+          </div>
+        </aside>
+      </section>
+
+      <section class="trust-row" aria-label="Launcher safeguards">
+        <div><span>1</span><p><strong>Checks first</strong><small>Validates every step before acting</small></p></div>
+        <div><span>2</span><p><strong>Stays local</strong><small>No command data leaves this Mac</small></p></div>
+        <div><span>3</span><p><strong>Verifies results</strong><small>Reports success only with evidence</small></p></div>
+      </section>
+
+      <footer>iPhone Commands <span>•</span> Built for your Mac</footer>
+    </main>
+
+    <dialog id="delete-dialog" class="delete-dialog">
+      <form method="dialog">
+        <p class="eyebrow">Delete saved command</p>
+        <h2>Delete <span id="delete-command-name"></span>?</h2>
+        <p>This removes the command from this Mac. It will no longer appear in the launcher.</p>
+        <div class="dialog-actions">
+          <button class="secondary-button" value="cancel">Keep command</button>
+          <button id="delete-confirm" class="delete-button" value="delete">Delete command</button>
+        </div>
+      </form>
+    </dialog>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

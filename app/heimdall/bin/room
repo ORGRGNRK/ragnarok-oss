@@ -1,0 +1,65 @@
+#!/bin/bash
+# room (Mac side): use the shared room on Alexus as yourself or as one of your AIs.
+#   room [--as owner|claude|argon|grok|codex] say "text" | task "text" [--outcome "…" --proof "…"… --wall "…"…] | claim ID | done ID "note" | read [N] | tasks | whoami
+# Each AI logs into Alexus with its own key, so the room shows it under its own name.
+# Note: on this Mac every AI runs as the same macOS user, so --as is honour-based here;
+# on Alexus the author comes from the login that wrote the file.
+set -u
+AS=owner
+usage() { sed -n '2,3p' "$0" | sed 's/^# //'; }
+if [ "${1:-}" = "--as" ]; then AS="${2:-}"; shift 2 2>/dev/null || shift $#; fi
+# E1: --as later in the line would be posted as text under the owner's name; refuse instead
+for a in "$@"; do [ "$a" = "--as" ] && { echo "room: put --as NAME first, e.g.  room --as grok say \"text\"" >&2; exit 2; }; done
+# item 30: Alexus user/addresses from ~/.ragnarok/local.conf (via bin/local-config.sh; defaults if it can't be found)
+LC="$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/local-config.sh"
+if [ -r "$LC" ]; then . "$LC"; else ALEXUS_USER=$(id -un) ALEXUS_HOST=alexus.local ALEXUS_TAILSCALE=alexus; fi
+case "$AS" in
+  owner)  ID=(); USER_AT=$ALEXUS_USER ;;
+  claude|argon|grok|codex) ID=(-i "$HOME/.ssh/id_$AS" -o IdentitiesOnly=yes); USER_AT=$AS ;;
+  *) echo "room: --as must be owner, claude, argon, grok or codex" >&2; exit 2 ;;
+esac
+ROOM=/home/$ALEXUS_USER/Developer/ragnarok-room/bin/room
+# Alexus on the home network first, then over Tailscale (alexus-1) when away from home.
+HOSTS="${RAGNAROK_ALEXUS_HOSTS:-$ALEXUS_HOST $ALEXUS_TAILSCALE}"
+cmd="${1:-help}"; shift || true
+to_alexus() { # remote-command [stdin-text]; tries each host, moves on only when ssh itself can't connect (exit 255)
+  local h rc=255 err; err=$(mktemp)
+  for h in $HOSTS; do
+    if [ $# -ge 2 ]; then printf '%s' "$2" | ssh -o BatchMode=yes -o ConnectTimeout=3 ${ID[@]+"${ID[@]}"} "$USER_AT@$h" "$1" 2>"$err"
+    else ssh -o BatchMode=yes -o ConnectTimeout=3 ${ID[@]+"${ID[@]}"} "$USER_AT@$h" "$1" </dev/null 2>"$err"; fi
+    rc=$?
+    if [ $rc -ne 255 ]; then cat "$err" >&2; rm -f "$err"; return $rc; fi
+  done
+  # E2: one plain line instead of raw ssh errors
+  echo "room: Alexus is unreachable (tried $(echo $HOSTS | sed 's/ / and /g')). $(tail -1 "$err" | sed 's/^ssh: //')" >&2
+  rm -f "$err"; return $rc
+}
+if [ "$cmd" = help ] || [ "$cmd" = -h ] || [ "$cmd" = --help ]; then usage; echo; fi   # E3: the wrapper's own usage first
+case "$cmd" in
+  task)      # outcome / proof / walls: sent as JSON over stdin so nothing in them is read by a shell
+             if printf '%s\n' "$@" | grep -qxE -- '--(outcome|proof|wall)'; then
+               spec=$(python3 - "$@" <<'PY'
+import json, sys
+words, d, it = [], {"proof": [], "walls": []}, iter(sys.argv[1:])
+for a in it:
+    if a in ("--outcome", "--proof", "--wall"):
+        v = next(it, None)
+        if v is None:
+            sys.exit(f"room: {a} needs text after it")
+        if a == "--outcome": d["outcome"] = v
+        else: d["proof" if a == "--proof" else "walls"].append(v)
+    else:
+        words.append(a)
+d["text"] = " ".join(words)
+print(json.dumps(d))
+PY
+) || exit 2
+               to_alexus "RAGNAROK_ROOM_VIA=mac python3 $ROOM task --spec -" "$spec"
+             else
+               to_alexus "RAGNAROK_ROOM_VIA=mac python3 $ROOM task -" "$*"
+             fi ;;
+  say)       to_alexus "RAGNAROK_ROOM_VIA=mac python3 $ROOM $cmd -" "$*" ;;
+  done)      id="${1:-}"; shift || true
+             to_alexus "RAGNAROK_ROOM_VIA=mac python3 $ROOM done $(printf %q "$id") -" "$*" ;;
+  *)         to_alexus "python3 $ROOM $(printf '%q ' "$cmd" "$@")" ;;
+esac

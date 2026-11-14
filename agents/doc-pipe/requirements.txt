@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+psycopg[binary]
+python-multipart
+pillow
+pillow-heif
+httpx
+arabic-reshaper
+python-bidi

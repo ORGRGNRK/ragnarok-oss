@@ -1,0 +1,27 @@
+# Pocket ID: passkey-only OIDC provider for rgnrk.co (YubiKeys).
+# Public origin is https://auth.example.com (via cloudflared, NOT behind Cloudflare Access,
+# or Access would need this page to log in to this page). Listens on loopback only.
+# Pinned to an exact release; v3 is a redesign, upgrade on purpose.
+services:
+  pocket-id:
+    image: ghcr.io/pocket-id/pocket-id:v2.19.2
+    container_name: pocket-id
+    restart: unless-stopped
+    environment:
+      APP_URL: https://auth.example.com
+      TRUST_PROXY: "true"
+      ANALYTICS_DISABLED: "true"
+      ENCRYPTION_KEY_FILE: /run/secrets/encryption_key
+      PUID: "1000"
+      PGID: "1000"
+    ports:
+      - "127.0.0.1:1411:1411"
+    volumes:
+      - ./data:/app/data
+      - ./secrets/encryption_key:/run/secrets/encryption_key:ro
+    healthcheck:
+      test: ["CMD", "/app/pocket-id", "healthcheck"]
+      interval: 1m30s
+      timeout: 5s
+      retries: 2
+      start_period: 10s

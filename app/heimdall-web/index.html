@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Heimdall Chat</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<script src="/splash.js"></script>
+<script src="/lock.js"></script>
+<header>
+  <span class="mark">CLR — Rgnrk. <small>heimdall</small></span>
+  <nav><a href="/" aria-current="page">Chat</a><a href="/room">Room</a><a href="/agents">Agents</a><a href="/hub">Hub</a><a href="/intake">Intake</a><a href="/timeline">Timeline</a><a href="/proved">Proved</a></nav>
+  <span class="status"><span class="dot" id="dot"></span><span id="status">Chat not started</span></span>
+  <select id="model" aria-label="Model"></select>
+  <button id="end" class="quiet" disabled title="Save a summary of this chat so the next one picks up from it">End chat</button>
+</header>
+<main id="log">
+  <div class="empty" id="empty">
+    <p>Alexus chat, running on Alexus. Starting loads the summary of your last chat and what is running on the server.</p>
+    <button id="start">Start chat</button>
+  </div>
+</main>
+<form id="form">
+  <textarea id="text" placeholder="Start a chat first" disabled aria-label="Message"></textarea>
+  <button id="send" disabled>Send</button>
+</form>
+<script>
+const $ = id => document.getElementById(id);
+let session = null, msgs = [], busy = false;
+
+function setStatus(text, state) { $("status").textContent = text; $("dot").className = "dot " + (state || ""); }
+function setBusy(b) {
+  busy = b;
+  $("send").disabled = b || !session; $("text").disabled = !session;
+  $("end").disabled = b || !session || !msgs.some(m => m.role === "user");
+}
+function add(role, content) {
+  $("empty")?.remove();
+  const el = document.createElement("div"); el.className = "msg " + role;
+  const who = document.createElement("div"); who.className = "who"; who.textContent = role === "user" ? "You" : "Alexus";
+  const body = document.createElement("div"); body.className = "body"; body.textContent = content;
+  el.append(who, body); $("log").append(el); $("log").scrollTop = $("log").scrollHeight;
+  return body;
+}
+function note(text) {
+  const el = document.createElement("div"); el.className = "note"; el.textContent = text;
+  $("log").append(el); $("log").scrollTop = $("log").scrollHeight;
+}
+
+async function loadModels() {
+  try {
+    const r = await fetch("api/models"); const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    let saved = null; try { saved = localStorage.getItem("heimdallModel"); } catch {}
+    for (const m of d.models) { const o = document.createElement("option"); o.value = o.textContent = m; $("model").append(o); }
+    $("model").value = d.models.includes(saved) ? saved : d.default;
+  } catch (e) { setStatus("Can't reach Ollama: " + e.message, "err"); }
+}
+$("model").onchange = () => { try { localStorage.setItem("heimdallModel", $("model").value); } catch {} };
+
+async function start() {
+  $("start").disabled = true; setStatus("Loading your last chat and the server state…", "busy");
+  try {
+    const r = await fetch("api/start", { method: "POST", body: "{}" }); const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    session = d.session; msgs = [];
+    setStatus("Connected to Alexus", "on"); $("text").placeholder = "Message Alexus";
+    await reply("Say a short, in-character one-line hello. Say you are ready to help.");
+    $("text").focus();
+  } catch (e) { setStatus(e.message, "err"); $("start").disabled = false; }
+}
+$("start").onclick = start;
+
+async function reply(extra) {
+  setBusy(true); setStatus("Alexus is answering…", "busy");
+  const body = add("assistant", ""); let text = "";
+  try {
+    const r = await fetch("api/send", { method: "POST",
+      body: JSON.stringify({ session, messages: msgs, model: $("model").value, extra: extra || "" }) });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      if (r.status === 409) { session = null; note(d.error + "."); location.reload(); return; }
+      throw new Error(d.error || ("HTTP " + r.status));
+    }
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    for (;;) {
+      const { value, done } = await reader.read(); if (done) break;
+      text += dec.decode(value, { stream: true }); body.textContent = text; $("log").scrollTop = $("log").scrollHeight;
+    }
+    text = text.trim(); body.textContent = text;
+    msgs.push({ role: "assistant", content: text });
+    setStatus("Connected to Alexus", "on");
+  } catch (e) { body.textContent = text + "\n[Couldn't get a reply: " + e.message + "]"; setStatus("Reply failed", "err"); }
+  setBusy(false);
+}
+
+$("form").onsubmit = ev => {
+  ev.preventDefault();
+  const t = $("text").value.trim(); if (!t || busy || !session) return;
+  $("text").value = ""; msgs.push({ role: "user", content: t }); add("user", t); reply();
+};
+$("text").addEventListener("keydown", ev => {
+  if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); $("form").requestSubmit(); }
+});
+
+$("end").onclick = async () => {
+  setBusy(true); setStatus("Saving a summary of this chat…", "busy");
+  try {
+    const r = await fetch("api/seal", { method: "POST", body: JSON.stringify({ session, messages: msgs }) });
+    const d = await r.json();
+    note(d.result || d.error);
+    if (d.saved) { session = null; msgs = []; setStatus("Chat ended and saved", "on"); setTimeout(() => location.reload(), 1500); return; }
+    setStatus("Not saved — the chat is kept, try again", "err");
+  } catch (e) { setStatus("Seal failed: " + e.message, "err"); }
+  setBusy(false);
+};
+
+loadModels();
+</script>
+</body>
+</html>

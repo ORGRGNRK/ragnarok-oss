@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Heimdall Timeline</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .bar { padding:10px 16px 0; display:flex; flex-direction:column; gap:8px; border-bottom:1px solid var(--line); }
+  .bar input { font:inherit; color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:8px 10px; width:100%; }
+  .bar input:focus { outline:1px solid var(--gold); outline-offset:1px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .chips > span { color:var(--dim); font-size:11px; letter-spacing:.12em; text-transform:uppercase; min-width:3.2rem; }
+  .chip { font-size:11px; letter-spacing:.06em; padding:4px 9px; border:1px solid var(--line); border-radius:999px; color:var(--dim); cursor:pointer; background:transparent; text-transform:none; }
+  .chip.on { color:var(--text); border-color:var(--dim); }
+  .chip i { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; vertical-align:baseline; }
+  details.feeds { font-size:12px; color:var(--dim); padding-bottom:8px; }
+  details.feeds summary { cursor:pointer; letter-spacing:.1em; text-transform:uppercase; font-size:11px; }
+  details.feeds summary.bad { color:var(--red); }
+  .feed { display:grid; grid-template-columns:minmax(8rem,14rem) 1fr; gap:2px 12px; padding:3px 0; }
+  .feed.bad { color:var(--red); }
+  main { flex:1; overflow-y:auto; padding:0 16px 40px; }
+  .day { position:sticky; top:0; background:var(--bg); color:var(--gold); font-size:11px; letter-spacing:.15em; text-transform:uppercase; padding:10px 0 4px; }
+  .ev { display:grid; grid-template-columns:4.6rem 5.2rem 1fr; gap:0 10px; padding:6px 0; border-top:1px solid var(--line); cursor:pointer; align-items:baseline; }
+  .ev .t { color:var(--dim); font-size:12px; white-space:nowrap; }
+  .ev .who { font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ev .who small { color:var(--dim); display:block; font-size:10px; letter-spacing:.08em; text-transform:uppercase; }
+  .ev .title { word-break:break-word; min-width:0; }
+  .ev .title .n { color:var(--amber); font-size:12px; margin-left:6px; }
+  .ev.result .title, .ev.audit .title { color:var(--dim); }
+  .ev.error .title { color:var(--red); }
+  .ev pre { grid-column:1 / -1; margin:8px 0 4px; padding:10px 12px; background:var(--panel); border:1px solid var(--line); border-radius:4px;
+    white-space:pre-wrap; word-break:break-word; font:13px/1.45 inherit; color:var(--text); cursor:text; max-height:60vh; overflow:auto; }
+  .ev pre .meta { color:var(--dim); display:block; margin-bottom:6px; }
+  .more { display:block; margin:16px auto; }
+  @media (max-width: 700px) { .ev { grid-template-columns:4.2rem 1fr; } .ev .title { grid-column:1 / -1; } }
+</style>
+</head>
+<body>
+<script src="/splash.js"></script>
+<script src="/lock.js"></script>
+<header>
+  <span class="mark">CLR — Rgnrk. <small>heimdall</small></span>
+  <nav><a href="/">Chat</a><a href="/room">Room</a><a href="/agents">Agents</a><a href="/hub">Hub</a><a href="/intake">Intake</a><a href="/timeline" aria-current="page">Timeline</a><a href="/proved">Proved</a></nav>
+  <span class="status"><span class="dot busy" id="dot"></span><span id="status">Reading the logs…</span></span>
+</header>
+<div class="bar">
+  <input id="q" type="search" placeholder="Search everything" autocomplete="off" spellcheck="false">
+  <div class="chips" id="who"><span>Who</span></div>
+  <div class="chips" id="where"><span>Where</span></div>
+  <div class="chips" id="what"><span>Feed</span></div>
+  <details class="feeds"><summary id="feedsum">Feeds</summary><div id="feeds"></div></details>
+</div>
+<main id="main"></main>
+<script>
+// This page only shows what /api/timeline returns. Reading the logs is app/heimdall/bin/ragnarok-timeline.
+const $ = id => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const ORDER = ["owner", "claude", "argon", "grok", "codex", "gemini", "alexus", "ai-admin", "heimdall", "os", "unknown"];
+const COLOR = { owner:"#c9a84c", claude:"#d97757", argon:"#6fa8dc", grok:"#e8e4d8", codex:"#7fbf7f", gemini:"#6fa8dc", alexus:"#b48ead", "ai-admin":"#e0a030", heimdall:"#8a857a", os:"#555", unknown:"#d9534f" };
+const PAGE = 300;
+
+let events = [];                 // every event seen, oldest first
+let seen = new Set();
+const latest = new Map();        // host|source|actor|title -> the newest row for that line
+let lastHere = 0;                // newest Alexus event time; the next poll asks only for newer
+let here = null, mac = null;     // feed status per machine
+const hide = { actor: new Set(), host: new Set(), source: new Set(["auditd"]) };   // auditd starts hidden: it is every program an AI ran
+const open = new Set();
+let shown = PAGE;
+
+function add(list) {
+  let n = 0;
+  for (const e of list || []) {
+    const id = [e.t, e.host, e.source, e.actor, e.title].join("|");
+    if (seen.has(id)) continue;
+    // A later poll only sees what is new, so a line that keeps repeating comes back as a fresh row each time.
+    // Fold it into the row already here, by the script's own rule: same line, no more than 10 minutes apart.
+    const key = [e.host, e.source, e.actor, e.title].join("|"), prev = latest.get(key);
+    if (prev && e.t > prev.t && e.t - prev.t <= 600) { prev.t = e.t; prev.n = (prev.n || 1) + (e.n || 1); seen.add(id); n++; continue; }
+    latest.set(key, e);
+    seen.add(id); e.id = id; e.hay = (e.title + "\n" + e.body + "\n" + e.actor + " " + e.source).toLowerCase(); events.push(e); n++;
+  }
+  if (n) events.sort((a, b) => a.t - b.t);
+  return n;
+}
+
+function chips(box, key, counts, order) {
+  box.querySelectorAll(".chip").forEach(c => c.remove());
+  const names = Object.keys(counts).sort((a, b) => (order ? (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99) : 0) || a.localeCompare(b));
+  for (const name of names) {
+    const c = el("button", "chip" + (hide[key].has(name) ? "" : " on"));
+    if (key === "actor") { const dot = el("i"); dot.style.background = COLOR[name] || "#8a857a"; c.append(dot); }
+    c.append(name + " " + counts[name]);
+    c.onclick = () => { hide[key].has(name) ? hide[key].delete(name) : hide[key].add(name); shown = PAGE; render(); };
+    box.append(c);
+  }
+}
+
+function clock(t) { return new Date(t * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }); }
+function day(t) { return new Date(t * 1000).toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" }); }
+function ago(sec) {
+  const s = Math.max(0, Date.now() / 1000 - sec);
+  return s < 90 ? "just now" : s < 5400 ? Math.round(s / 60) + " min ago" : s < 172800 ? Math.round(s / 3600) + " h ago" : Math.round(s / 86400) + " days ago";
+}
+
+function feeds() {
+  const box = $("feeds"); box.textContent = "";
+  let bad = 0;
+  for (const [label, m] of [["Alexus, live", here], [mac ? "Laptop (" + mac.host + "), snapshot from " + ago(mac.at) : "Laptop", mac]]) {
+    box.append(el("div", "day", label));
+    if (!m) { box.append(el("div", "feed", "No snapshot yet. On the laptop run: ~/Developer/ragnarok/app/heimdall-web/publish-timeline.sh")); continue; }
+    for (const f of m.feeds) {
+      if (!f.files && f.ok) continue;                      // a feed that does not live on that machine
+      const row = el("div", "feed" + (f.ok ? "" : " bad")); if (!f.ok) bad++;
+      row.append(el("span", null, f.name), el("span", null, f.status));
+      box.append(row);
+    }
+  }
+  $("feedsum").textContent = bad ? "Feeds — " + bad + " can't be read" : "Feeds";
+  $("feedsum").className = bad ? "bad" : "";
+  return bad;
+}
+
+function render() {
+  const q = $("q").value.trim().toLowerCase();
+  const count = key => { const c = {}; for (const e of events) c[e[key]] = (c[e[key]] || 0) + 1; return c; };
+  chips($("who"), "actor", count("actor"), ORDER); chips($("where"), "host", count("host")); chips($("what"), "source", count("source"));
+  const list = events.filter(e => !hide.actor.has(e.actor) && !hide.host.has(e.host) && !hide.source.has(e.source) && (!q || e.hay.includes(q)));
+  const box = $("main"); box.textContent = "";
+  if (!list.length) { box.append(el("div", "note", events.length ? "Nothing matches." : "No activity in the last 24 hours.")); return list.length; }
+  let lastDay = "";
+  for (const e of list.slice(-shown).reverse()) {            // newest first
+    const d = day(e.t);
+    if (d !== lastDay) { box.append(el("div", "day", d)); lastDay = d; }
+    const row = el("div", "ev " + e.kind);
+    const who = el("div", "who", e.actor); who.style.color = COLOR[e.actor] || "var(--text)"; who.append(el("small", null, e.host));
+    const title = el("div", "title", e.title); if (e.n > 1) title.append(el("span", "n", "×" + e.n));
+    row.append(el("div", "t", clock(e.t)), who, title);
+    const body = () => { const p = el("pre"); p.append(el("span", "meta", e.source + " · " + e.kind + (e.session ? " · " + e.session : "") + " · " + new Date(e.t * 1000).toLocaleString()), e.body || "(nothing more)"); p.onclick = x => x.stopPropagation(); return p; };
+    if (open.has(e.id)) row.append(body());
+    row.onclick = () => { if (open.has(e.id)) { open.delete(e.id); row.querySelector("pre").remove(); } else { open.add(e.id); row.append(body()); } };
+    box.append(row);
+  }
+  if (list.length > shown) { const b = el("button", "more quiet", "Show " + Math.min(PAGE, list.length - shown) + " older"); b.onclick = () => { shown += PAGE; render(); }; box.append(b); }
+  return list.length;
+}
+
+async function load() {
+  try {
+    const first = !here;
+    const r = await fetch("api/timeline" + (first ? "" : "?since=" + lastHere)); const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    here = d.here; if ("mac" in d) mac = d.mac;
+    const n = add(d.here.events) + (first && d.mac ? add(d.mac.events) : 0);
+    for (const e of d.here.events) if (e.t > lastHere) lastHere = e.t;
+    const bad = feeds();
+    if (n || first) render();
+    $("status").textContent = bad ? bad + " feed" + (bad > 1 ? "s" : "") + " can't be read" : "Read-only · last 24 hours · " + events.length + " events";
+    $("dot").className = bad ? "dot err" : "dot on";
+  } catch (e) { $("status").textContent = e.message; $("dot").className = "dot err"; }
+}
+let typing; $("q").oninput = () => { clearTimeout(typing); typing = setTimeout(() => { shown = PAGE; render(); }, 150); };
+load(); setInterval(load, 15000);
+</script>
+</body>
+</html>

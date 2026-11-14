@@ -1,0 +1,36 @@
+{
+  "_comment": "The two tables `./kit money add-tables` adds to a client's schema.json. `./kit money load` fills them; a row already loaded (same Row Key / Finding Key) is skipped, so loading overlapping exports twice doesn't double anything.",
+  "tables": [
+    {
+      "name": "Money Transactions",
+      "description": "Every row from the business's bank, sales and supplier files, sorted into spending groups by ./kit money",
+      "fields": [
+        { "name": "Row Key", "type": "text", "required": true, "unique": true, "max_length": 40, "description": "fingerprint of the row, so the same row is never loaded twice" },
+        { "name": "Date", "type": "date", "required": true },
+        { "name": "Source", "type": "select", "choices": ["bank", "sales", "purchases"], "required": true },
+        { "name": "Description", "type": "text", "max_length": 500 },
+        { "name": "Amount", "type": "money", "required": true, "description": "money in is positive, money out is negative" },
+        { "name": "Category", "type": "text", "max_length": 80 },
+        { "name": "Payee", "type": "text", "max_length": 200 },
+        { "name": "From File", "type": "text", "max_length": 300, "description": "file and line it came from" }
+      ]
+    },
+    {
+      "name": "Money Findings",
+      "description": "What ./kit money found: where money is leaking, what it is worth, the fix and the first step",
+      "fields": [
+        { "name": "Finding Key", "type": "text", "required": true, "unique": true, "max_length": 120 },
+        { "name": "Report Date", "type": "date", "required": true },
+        { "name": "Title", "type": "text", "required": true, "max_length": 200 },
+        { "name": "Per Month", "type": "money", "description": "what fixing it is worth every month" },
+        { "name": "One Time", "type": "money", "description": "money to get back once (refunds, missing deposits, unpaid invoices, extra stock)" },
+        { "name": "Why", "type": "long_text" },
+        { "name": "Fix", "type": "long_text" },
+        { "name": "First Step", "type": "long_text" },
+        { "name": "Check First", "type": "boolean", "default": false, "description": "might be on purpose: look before acting" },
+        { "name": "Status", "type": "select", "choices": ["New", "Doing", "Fixed", "Not a problem"], "default": "New" },
+        { "name": "Evidence", "type": "long_text", "description": "the rows behind the numbers" }
+      ]
+    }
+  ]
+}

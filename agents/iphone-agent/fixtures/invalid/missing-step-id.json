@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "0.1",
+  "id": "com.yggdrasil.iphone.invalid",
+  "name": "Invalid command",
+  "safety": { "risk": "reversible" },
+  "steps": [
+    {
+      "action": "openApp",
+      "app": { "name": "Settings" }
+    }
+  ]
+}

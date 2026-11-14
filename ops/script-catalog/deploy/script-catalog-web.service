@@ -1,0 +1,17 @@
+# systemd *user* unit for grok on Alexus: ~/.config/systemd/user/script-catalog-web.service
+[Unit]
+Description=Script catalog read-only search page (tailnet only)
+After=network-online.target ragnarok-pipe-db.service
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/opt/script-catalog/web.env
+WorkingDirectory=/opt/script-catalog/app
+ExecStart=/opt/script-catalog/.venv/bin/python /opt/script-catalog/app/web/app.py
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

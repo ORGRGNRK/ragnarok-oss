@@ -1,0 +1,6 @@
+security-test.json
+security-test.reimagined.json
+security-test-results*.json
+__pycache__/
+.env*
+*.log

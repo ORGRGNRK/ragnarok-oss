@@ -1,0 +1,15 @@
+# Extra settings for this client only. The shared kit loads this file when it is here.
+# File bytes stay on the host directory below, which is on Alexus's root disk, not in Postgres.
+services:
+  mcp:
+    environment:
+      INTAKE_BLOB_DIR: /intake-blobs
+      INTAKE_BLOB_HOST: ${INTAKE_BLOB_HOST:?set INTAKE_BLOB_HOST in .env}
+      INTAKE_MAX_BYTES: ${INTAKE_MAX_BYTES:-5368709120}
+      INTAKE_MIN_FREE_BYTES: ${INTAKE_MIN_FREE_BYTES:-10737418240}
+    volumes:
+      - ${INTAKE_BLOB_HOST:?set INTAKE_BLOB_HOST in .env}:/intake-blobs
+    # The shared stack keeps Postgres on 127.0.0.1. This extra publish is the Tailscale address only
+    # (INTAKE_TAILSCALE_BIND=100.x.x.x:8910). tailscale serve needs root, which this login does not have.
+    ports:
+      - "${INTAKE_TAILSCALE_BIND:?set INTAKE_TAILSCALE_BIND in .env}:8787"

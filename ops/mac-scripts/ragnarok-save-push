@@ -1,0 +1,17 @@
+#!/bin/bash
+# /save helper: copies this session's Claude Code transcript to Alexus, where the
+# Yggdrasil MCP (which runs there) can read it, and checks the copy is byte-exact.
+# Usage: ragnarok-save-push <session-uuid>
+# Prints the Alexus path to pass as transcript_path.
+set -euo pipefail
+id="${1:?usage: ragnarok-save-push <session-uuid>}"
+shopt -s nullglob
+files=(~/.claude/projects/*/"$id".jsonl)
+[ ${#files[@]} -eq 1 ] || { echo "PUSH FAILED -- expected one transcript for $id, found ${#files[@]}" >&2; exit 1; }
+src="${files[0]}"
+local_sha=$(shasum -a 256 "$src" | cut -d' ' -f1)
+out=$(ssh -i ~/.ssh/alexus -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10 \
+  claude@alexus "$id.jsonl" < "$src") || { echo "PUSH FAILED -- ssh: $out" >&2; exit 1; }
+remote_path=${out% *}; remote_sha=${out##* }
+[ "$remote_sha" = "$local_sha" ] || { echo "PUSH FAILED -- copy does not match (local $local_sha, alexus $remote_sha)" >&2; exit 1; }
+echo "$remote_path"

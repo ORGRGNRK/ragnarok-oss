@@ -1,0 +1,16 @@
+{
+  "_comment": "FAKE data for the demo. Names, emails (example.com) and orders are invented. A table is only seeded while it is empty.",
+  "Products": [
+    { "SKU": "MUG-12OZ-BLK", "Name": "12 oz mug, black", "Category": "Kitchen", "Quantity On Hand": 42, "Reorder Level": 10, "Unit Price": 9.5 },
+    { "SKU": "MUG-12OZ-WHT", "Name": "12 oz mug, white", "Category": "Kitchen", "Quantity On Hand": 7, "Reorder Level": 10, "Unit Price": 9.5 },
+    { "SKU": "PEN-GEL-BLU-10", "Name": "Gel pens, blue, 10-pack", "Category": "Office", "Quantity On Hand": 120, "Reorder Level": 25, "Unit Price": 6.25 },
+    { "SKU": "NOTE-A5-DOT", "Name": "A5 dotted notebook", "Category": "Office", "Quantity On Hand": 0, "Reorder Level": 8, "Unit Price": 12, "Notes": "Supplier backordered until next month" },
+    { "SKU": "BTL-STEEL-750", "Name": "Steel water bottle 750 ml", "Category": "Outdoor", "Quantity On Hand": 18, "Reorder Level": 6, "Unit Price": 24.99 },
+    { "SKU": "LAMP-DESK-LED", "Name": "LED desk lamp", "Category": "Office", "Quantity On Hand": 4, "Reorder Level": 3, "Unit Price": 39 }
+  ],
+  "Orders": [
+    { "Order Number": "SO-1001", "Customer Name": "Avery Example", "Customer Email": "avery@example.com", "SKU": "MUG-12OZ-BLK", "Quantity": 2, "Total": 19, "Status": "Shipped", "Order Date": "2026-10-20" },
+    { "Order Number": "SO-1002", "Customer Name": "Jordan Sample", "Customer Email": "jordan@example.com", "SKU": "BTL-STEEL-750", "Quantity": 1, "Total": 24.99, "Status": "Paid", "Order Date": "2026-10-24" },
+    { "Order Number": "SO-1003", "Customer Name": "Riley Placeholder", "SKU": "PEN-GEL-BLU-10", "Quantity": 3, "Total": 18.75, "Status": "New", "Order Date": "2026-10-26", "Notes": "Gift wrap requested" }
+  ]
+}

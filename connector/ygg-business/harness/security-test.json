@@ -1,0 +1,16 @@
+{
+  "target_name": "Ragnarok secure-mcp-platform",
+  "project_dir": "~/Developer/ragnarok/connector/ygg-business",
+  "mcp_url": "http://127.0.0.1:8787/mcp",
+  "status_url": "http://127.0.0.1:8787/status",
+  "lock_url": "http://127.0.0.1:8787/lock",
+  "status_tool": "platform_status",
+  "probe_tool": "platform_list_items",
+  "timeout_seconds": 8,
+  "postgres_host": "127.0.0.1",
+  "postgres_port": 5557,
+  "postgres_probe_from_host": true,
+  "compose_service": "mcp",
+  "restart_wait_seconds": 5,
+  "receipt_verify_command": "deploy/scripts/receipts.sh verify"
+}

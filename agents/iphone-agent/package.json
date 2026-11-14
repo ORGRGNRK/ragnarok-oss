@@ -1,0 +1,54 @@
+{
+  "name": "@alexus/iphone-agent",
+  "version": "0.1.0",
+  "description": "Portable iPhone command protocol, validator, and policy primitives",
+  "type": "module",
+  "bin": {
+    "iphone-command": "./dist/cli.js",
+    "iphone-launcher": "./dist/launcher-server.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./schemas/command": "./schemas/command.schema.json",
+    "./schemas/receipt": "./schemas/receipt.schema.json"
+  },
+  "files": [
+    "dist",
+    "schemas",
+    "commands",
+    "fixtures/live",
+    "launcher",
+    "native"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "postbuild": "node -e \"for (const file of ['dist/cli.js','dist/launcher-server.js']) require('node:fs').chmodSync(file, 0o755)\"",
+    "cli": "tsx src/cli.ts",
+    "launcher": "node dist/launcher-server.js",
+    "launcher:dev": "tsx src/launcher-server.ts",
+    "test": "tsx --test test/**/*.test.ts",
+    "check:schema-format": "node scripts/check-schema-format.mjs",
+    "accept:schema-format": "node scripts/check-schema-format.mjs --update",
+    "accept:confirmation-stale": "tsc -p tsconfig.json && node dist/confirmation-stale-acceptance.js",
+    "check": "node scripts/check-schema-format.mjs && tsc -p tsconfig.json && tsx --test test/**/*.test.ts"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "jpeg-js": "^0.4.4",
+    "semver": "^7.7.2",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "@types/semver": "^7.7.0",
+    "tsx": "^4.22.1",
+    "typescript": "^5.8.3"
+  }
+}

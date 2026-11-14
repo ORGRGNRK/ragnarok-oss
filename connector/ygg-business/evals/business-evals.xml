@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Business MCP evaluation: 10 read-only questions against scratch ygg_business.
+     Answers verified with the SELECTs in answer-key.tsv (run as ygg_read, read-only transaction). -->
+<evaluation>
+  <qa_pair>
+    <question>In the owner's Business inventory, how many items currently have the status Sold? Answer with a number.</question>
+    <answer>47</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Which inventory item sold for the highest price? Answer with its UID (e.g. INV-2026-000).</question>
+    <answer>INV-2026-082</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Counting only items that have a sold price, which category has produced the most realized net profit (sold price minus buy price minus parts)? Answer with the category name.</question>
+    <answer>Phone</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>What is the total realized net profit, in dollars, of Phone-category items that have a sold price? Answer with the number only (e.g. 1234.56).</question>
+    <answer>3145.37</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>How many Pokemon-category items are in Active status? Answer with a number.</question>
+    <answer>5</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>How many Phone-category items have a sold date in April 2026? Answer with a number.</question>
+    <answer>6</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Which item had the most money invested in parts? Answer with its UID.</question>
+    <answer>INV-2026-013</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>List the UIDs of all items with status Listed, sorted ascending and joined by commas with no spaces.</question>
+    <answer>INV-2026-017,INV-2026-025</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Within the Gaming category, which status do the most items have? Answer with the status name.</question>
+    <answer>Non-Liquid</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Across all items that have a sold price, what is the total realized net profit in dollars? Answer with the number only.</question>
+    <answer>5785.37</answer>
+  </qa_pair>
+</evaluation>

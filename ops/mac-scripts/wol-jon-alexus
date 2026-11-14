@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""
+Wake a Windows PC (WOL_* in ~/.ragnarok/local.conf) from Alexus. Alexus is on the same LAN, so it sends
+the magic packet itself; no relay needed. Reach it from any tailnet device with:
+
+    ssh <you>@alexus wol-jon            send, then wait for the PC to answer on the LAN
+    ssh <you>@alexus wol-jon --no-wait  send and exit
+
+Installed 2026-10-23 as /usr/local/bin/wol-jon. Same packet as ~/scripts/wol-jon.py on the MacBook
+(verified that day). Full write-up: ~/scripts/WOL-RUNBOOK.md on the MacBook.
+"""
+import socket
+import subprocess
+import sys
+import time
+
+def _conf(key, default=""):
+    """One KEY=value from ~/.ragnarok/local.conf (read only, never run)."""
+    try:
+        for line in open(__import__("os").path.expanduser("~/.ragnarok/local.conf"), encoding="utf-8"):
+            k, sep, v = line.strip().partition("=")
+            if sep and not k.startswith("#") and k.strip() == key:
+                default = v.strip().strip("\"'")
+    except OSError:
+        pass
+    return default
+
+
+MAC = _conf("WOL_MAC") or sys.exit("set WOL_MAC in ~/.ragnarok/local.conf")
+LAN_IP = _conf("WOL_LAN_IP") or sys.exit("set WOL_LAN_IP in ~/.ragnarok/local.conf")
+BROADCAST = _conf("WOL_BROADCAST") or LAN_IP.rsplit(".", 1)[0] + ".255"
+
+
+def send():
+    payload = b"\xff" * 6 + bytes.fromhex(MAC.replace("-", "")) * 16
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    for port in (9, 7):
+        s.sendto(payload, (BROADCAST, port))   # subnet broadcast
+        s.sendto(payload, (LAN_IP, port))      # directed, in case the router keeps a stale ARP entry
+    print(f"magic packet sent for {MAC} to {BROADCAST} and {LAN_IP} (ports 9, 7)")
+
+
+def wait_for_it(seconds=150):
+    print(f"waiting up to {seconds}s for {LAN_IP} to answer ...")
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if subprocess.run(["ping", "-c", "1", "-W", "2", LAN_IP], capture_output=True).returncode == 0:
+            print(f"UP: {LAN_IP} answers ping")
+            return True
+        time.sleep(3)
+    print("no answer yet. Work through 'If it does not wake' in ~/scripts/WOL-RUNBOOK.md on the MacBook.")
+    return False
+
+
+if __name__ == "__main__":
+    send()
+    if "--no-wait" not in sys.argv[1:]:
+        sys.exit(0 if wait_for_it() else 1)

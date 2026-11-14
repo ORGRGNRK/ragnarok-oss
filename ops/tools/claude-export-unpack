@@ -1,0 +1,554 @@
+#!/usr/bin/env python3
+"""
+claude-export-unpack — Claude.ai chat export zips -> ONE MARKDOWN FILE PER
+CONVERSATION, written under a directory ragnarok-corpus actually walks.
+
+WHY THIS EXISTS. A Claude.ai data export arrives as a zip of JSON: one
+75 MB `conversations.json` holding every chat, plus `design_chats/`,
+`projects/`, `memories/`, `light_metadata/`. Nothing on this box can read
+that. ragnarok-corpus walks ~ for TEXT, and `~/ingest` — where the zips
+land — is in its SKIP_TOP, so his entire Claude chat history was invisible
+to every local model and every retrieval on this machine. Unpacking it into
+per-conversation markdown somewhere the walker goes is the whole job.
+
+WHAT IS RENDERED, and what is not:
+  conversations.json      -> one .md per conversation          RENDERED
+  design_chats/*.json     -> one .md per design chat           RENDERED
+  projects/, memories/, light_metadata/, anything else         SKIPPED, NAMED
+Projects and memories are not conversations, so they are out of scope here —
+but every skipped zip and member is printed in the run summary, because a
+source dropped in silence teaches a reader a confident absence.
+
+REDACTION IS STRUCTURAL, NOT REMEMBERED. Chat history is the most
+credential-dense text on this box that nobody thinks of as credential-dense:
+pasted tokens, MCP tool_result payloads, .env contents quoted into a
+question. The output lands in a walked directory, so the very next
+`ragnarok-corpus` run reads all of it — and that build REFUSES (exit 4) if a
+live secret survives its sweep. So every rendered document goes through
+ragnarok-save's sweep first, IMPORTED, never copied: two copies of a
+redaction list is one list that is wrong.
+  - No ragnarok-save, or no live secrets loaded -> nothing is written. Fail
+    closed; a redactor that is absent is not a redactor that passed.
+  - A live value that survives redaction -> that ONE file is skipped and
+    named loudly. The run is not abandoned: 300 clean conversations are not
+    forfeit because one is dirty.
+  - The TITLE is redacted before it becomes a filename. Metadata is output
+    too (ragnarok-corpus learned that from a Config record whose primary
+    field WAS the token).
+
+EXPORTS ARE CUMULATIVE, SO THE SAME CONVERSATION ARRIVES AGAIN. Every
+Claude.ai export contains the whole history, not the delta. Zips are therefore
+collected across every source FIRST and deduplicated by conversation uuid,
+keeping the copy with the newest `updated_at` — without that, the second export
+he ever drops in writes a second file per conversation (the uuid8 in the stem
+makes the names collide, and the collision suffix turns them into `-2.md`),
+each one holding the OLDER version, and the state file then reports both as
+unchanged forever. The count of conversations seen in more than one zip is
+printed. If a conversation's TITLE changed between exports its old file is an
+ORPHAN: that is reported with the exact `rm` for it and is NEVER deleted here —
+this script does not remove files it did not just write.
+
+THE FILENAME CAN UNDO THE WHOLE JOB, and this was measured, not imagined.
+ragnarok-corpus refuses to OPEN any file whose NAME matches a credential
+pattern — `(?i)credential`, `(?i)secret`, `.env`, `.pat`. Two of his chats are
+titled "Handling credentials securely" and "Microsoft credential prefix", so
+the first real run wrote 317 files and the corpus walked 315: the two most
+security-relevant conversations were dropped, silently, by a rule meant for
+`.env` files. The gate is therefore IMPORTED from the corpus and asked about
+every filename before it is used; a slug word that trips it is dropped from
+the NAME while the full title stays in the document's H1 and header. Never a
+copy of the corpus's exclusion list — that would be a second list to keep
+right. A missing corpus script degrades this to a printed warning, not a
+failure: unpacking is the job, and the gate is an assurance on top of it.
+
+MESSAGE ORDER. `parent_message_uuid` implies a tree, and branches are real —
+regenerated/edited turns give two messages the same parent. Measured on the
+2026-09-09 export: 22 of 313 conversations branch, and in ALL 313 the array
+order equals created_at order. So messages are rendered in ARRAY ORDER, which
+is chronological, and a conversation that branches SAYS SO in its header
+instead of being silently flattened. No tree walker.
+
+THE 1 MB LINE IS NOT COSMETIC. ragnarok-corpus tails any file over
+MAX_FILE_BYTES (1,000,000) — it keeps the END and drops the head. A long chat
+rendered as one 3 MB file would enter the corpus with its beginning missing
+and nothing would say so, so oversized conversations are SPLIT at message
+boundaries into `-part02.md`, each part carrying the same header.
+
+USAGE
+  claude-export-unpack                       # ~/ingest -> ~/claude-chats
+  claude-export-unpack path/to/export.zip …  # explicit zips and/or dirs
+  claude-export-unpack --dry-run             # render, redact, count; write nothing
+  claude-export-unpack --force               # re-render even if unchanged
+  --out DIR          where the markdown goes (default ~/claude-chats)
+  --tool-chars N     cap per tool_use/tool_result payload (0 = omit them)
+  --thinking-chars N cap per thinking block (0 = omit them)
+  --max-bytes N      split a conversation above this (default 900000)
+
+Reruns are incremental: state is keyed on conversation uuid + updated_at and
+lives in ~/.local/state/ragnarok/, NOT in the output directory — anything
+non-markdown left there would itself be walked into the corpus.
+
+Read-only apart from --out and its own state file. Exit 0 clean, 1 if some
+file was skipped for surviving secrets, 2 if it could not run at all.
+"""
+
+import argparse, hashlib, importlib.machinery, importlib.util, json, os, re, sys, time, zipfile
+
+HOME = os.path.expanduser("~")
+OUT_DIR = os.environ.get("CLAUDE_EXPORT_OUT", os.path.join(HOME, "claude-chats"))
+DEFAULT_SRC = os.environ.get("CLAUDE_EXPORT_SRC", os.path.join(HOME, "ingest"))
+# ragnarok/ops/tools: the redaction copy sits next to this file; ~/scripts/ragnarok-save is the Alexus original
+_HERE = os.path.dirname(os.path.realpath(__file__))
+SAVE_SCRIPT = os.environ.get("CLAUDE_EXPORT_SAVE_SCRIPT") or next((p for p in (os.path.join(_HERE, "ragnarok-save"), os.path.join(HOME, "scripts", "ragnarok-save")) if os.path.exists(p)), os.path.join(_HERE, "ragnarok-save"))
+STATE_DIR = os.environ.get("CLAUDE_EXPORT_STATE",
+                           os.path.join(HOME, ".local", "state", "ragnarok"))
+STATE_FILE = os.path.join(STATE_DIR, "claude-export-unpack.json")
+CORPUS_SCRIPT = os.environ.get("CLAUDE_EXPORT_CORPUS_SCRIPT",
+                               os.path.join(HOME, "scripts", "ragnarok-corpus", "compile.py"))
+
+# Test seam, the git-history-scan shape: extra secret VALUES, one per line, so
+# a fixture can prove a planted credential never reaches the output without
+# ever touching this box's real tokens.
+EXTRA_SECRETS_FILE = os.environ.get("CLAUDE_EXPORT_SECRETS_FILE", "")
+
+MAX_BYTES = 900_000          # ragnarok-corpus tails anything over 1,000,000
+SLUG_MAX = 60
+
+
+def die(msg, code=2):
+    print(f"claude-export-unpack: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def load_save_module():
+    """Import ~/scripts/ragnarok-save for its redaction. It has no .py suffix and
+    everything real is behind __main__, so importing runs nothing."""
+    spec = importlib.util.spec_from_loader(
+        "ragnarok_save", importlib.machinery.SourceFileLoader("ragnarok_save", SAVE_SCRIPT))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def load_corpus_gate():
+    """A predicate: would ragnarok-corpus OPEN a file with this name? IMPORTED
+    from the corpus itself, so its exclusion list stays in one place. Returns
+    None when the corpus is not on this box — the caller degrades and says so."""
+    try:
+        spec = importlib.util.spec_from_file_location("ragnarok_corpus_compile", CORPUS_SCRIPT)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return lambda name: bool(mod.wanted_file(os.path.join(OUT_DIR, name), name))
+    except Exception:                                               # noqa: BLE001
+        return None
+
+
+def corpus_safe_words(words, date, uuid8, gate):
+    """Drop only the slug words that make the corpus refuse the file. The title
+    is never altered — it stays in the H1 — this is the FILENAME alone."""
+    def nm(ws):
+        return f"{date}-{'-'.join(ws) or 'untitled'}-{uuid8}.md"
+    if not gate or gate(nm(words)):
+        return words, []
+    kept = [w for w in words if gate(nm([w]))]
+    dropped = [w for w in words if w not in kept]
+    if not gate(nm(kept)):
+        kept, dropped = [], list(words)
+    return kept, dropped
+
+
+# ---------------------------------------------------------------------------
+# Rendering
+# ---------------------------------------------------------------------------
+
+def slugify(name):
+    s = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
+    return (s[:SLUG_MAX].rstrip("-") or "untitled")
+
+
+def as_list(v):
+    """Export fields are sometimes JSON-encoded strings and sometimes real lists."""
+    if isinstance(v, str):
+        try:
+            v = json.loads(v)
+        except Exception:
+            return []
+    return v if isinstance(v, list) else []
+
+
+def cap(text, limit):
+    text = text if isinstance(text, str) else json.dumps(text, ensure_ascii=False)
+    if limit and len(text) > limit:
+        return text[:limit] + f"\n… [{len(text) - limit:,} chars capped]", 1
+    return text, 0
+
+
+def render_blocks(msg, opts, stats):
+    """Content blocks -> markdown. Falls back to the flattened `text` field when
+    a message carries no parseable blocks (349 of 8,536 in the first export had
+    an empty text field but real blocks, and a handful the reverse)."""
+    out = []
+    for b in as_list(msg.get("content")):
+        if not isinstance(b, dict):
+            continue
+        t = b.get("type")
+        if t == "text":
+            if (b.get("text") or "").strip():
+                out.append(b["text"])
+        elif t == "thinking":
+            if opts.thinking_chars == 0:
+                stats["omitted_thinking"] += 1
+                continue
+            body, capped = cap(b.get("thinking") or "", opts.thinking_chars)
+            stats["capped"] += capped
+            if body.strip():
+                out.append("**[thinking]**\n\n```\n" + body + "\n```")
+        elif t == "tool_use":
+            if opts.tool_chars == 0:
+                stats["omitted_tools"] += 1
+                continue
+            body, capped = cap(b.get("input") or {}, opts.tool_chars)
+            stats["capped"] += capped
+            out.append(f"**[tool_use: {b.get('name') or '?'}]**\n\n```json\n{body}\n```")
+        elif t == "tool_result":
+            if opts.tool_chars == 0:
+                stats["omitted_tools"] += 1
+                continue
+            body, capped = cap(b.get("content") or b.get("display_content") or "", opts.tool_chars)
+            stats["capped"] += capped
+            err = " (error)" if b.get("is_error") else ""
+            out.append(f"**[tool_result: {b.get('name') or '?'}{err}]**\n\n```\n{body}\n```")
+        elif t == "injected_prompt_block":
+            body, capped = cap(b.get("prompt") or "", opts.tool_chars or 2000)
+            stats["capped"] += capped
+            if body.strip():
+                out.append(f"**[injected prompt: {b.get('injection_source') or '?'}]**\n\n```\n{body}\n```")
+        elif t in ("token_budget", "flag"):
+            out.append(f"*[{t}: {b.get('remaining', b.get('flag', ''))}]*")
+        else:
+            out.append(f"*[unrendered block type: {t}]*")
+            stats["unknown_blocks"] += 1
+
+    if not out and (msg.get("text") or "").strip():
+        out.append(msg["text"])
+
+    # Attachments carry their extracted text IN FULL — a pasted file is the
+    # substance of the turn, not decoration. `files` carries only a name.
+    for a in as_list(msg.get("attachments")):
+        if not isinstance(a, dict):
+            continue
+        name = a.get("file_name") or a.get("name") or "attachment"
+        content = a.get("extracted_content") or a.get("content") or ""
+        out.append(f"**[attachment: {name}]**\n\n```\n{content}\n```" if content
+                   else f"*[attachment: {name} — no extracted text in the export]*")
+    for f in as_list(msg.get("files")):
+        if isinstance(f, dict):
+            out.append(f"*[file: {f.get('file_name') or f.get('file_uuid') or '?'} — content not in the export]*")
+    return "\n\n".join(out).strip()
+
+
+def conversation_doc(conv, opts, stats, source):
+    """One conversation -> (title, header, [message chunks])."""
+    msgs = conv.get("chat_messages") or conv.get("messages") or []
+    title = (conv.get("name") or conv.get("title") or "").strip()
+
+    parents = {}
+    for m in msgs:
+        p = m.get("parent_message_uuid")
+        if p:
+            parents[p] = parents.get(p, 0) + 1
+    branched = sum(n - 1 for n in parents.values() if n > 1)
+
+    header = [
+        f"# {title or '(untitled conversation)'}",
+        "",
+        f"- source: `{source}`",
+        f"- uuid: `{conv.get('uuid', '')}`",
+        f"- created: {conv.get('created_at', '')}",
+        f"- updated: {conv.get('updated_at', '')}",
+        f"- messages: {len(msgs)}",
+    ]
+    if branched:
+        header.append(f"- branches: {branched} message(s) share a parent (edited or "
+                      f"regenerated turns). Rendered in export array order, which is "
+                      f"chronological; no branch was dropped and none is marked as the "
+                      f"one that 'won'.")
+    if conv.get("summary"):
+        header.append(f"- summary: {conv['summary']}")
+    header += ["", "---", ""]
+
+    parts = []
+    for m in msgs:
+        # design_chats nest the real message under content{}: role, content, timestamp.
+        inner = m.get("content") if isinstance(m.get("content"), dict) else None
+        if inner is not None:
+            sender = inner.get("role") or m.get("role") or "?"
+            when = inner.get("timestamp") or m.get("created_at") or ""
+            body = (inner.get("content") or "").strip()
+            for a in inner.get("attachments") or []:
+                if isinstance(a, dict) and (a.get("content") or "").strip():
+                    body += (f"\n\n**[attachment: {a.get('name') or a.get('type') or '?'}]**"
+                             f"\n\n```\n{a['content']}\n```")
+        else:
+            sender = m.get("sender") or m.get("role") or "?"
+            when = m.get("created_at") or ""
+            body = render_blocks(m, opts, stats)
+        if not body:
+            continue
+        parts.append(f"## {sender} — {when}\n\n{body}\n")
+    return title, "\n".join(header), parts
+
+
+def split_parts(header, parts, max_bytes):
+    """Pack message chunks into documents under max_bytes, splitting only at
+    message boundaries. A single message bigger than the cap gets its own
+    document rather than being cut mid-sentence."""
+    docs, cur, size = [], [], 0
+    for p in parts:
+        if cur and size + len(p) > max_bytes:
+            docs.append(cur); cur, size = [], 0
+        cur.append(p); size += len(p)
+    if cur:
+        docs.append(cur)
+    if not docs:
+        docs = [[]]
+    out = []
+    for i, chunk in enumerate(docs, 1):
+        note = "" if len(docs) == 1 else f"\n*(part {i} of {len(docs)} — split so ragnarok-corpus does not tail it)*\n"
+        out.append(header + note + "\n" + "\n".join(chunk))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Zip reading — by MEMBER SHAPE, never by filename. A design-components export
+# sits in the same folder and is not chat.
+# ---------------------------------------------------------------------------
+
+def zip_label(path):
+    """Parent dir + filename. Every Claude.ai export is named `conversations-000.zip`,
+    so the basename alone cannot tell two exports apart — and they land in dated
+    folders precisely so a human can."""
+    parent = os.path.basename(os.path.dirname(os.path.abspath(path)))
+    return f"{parent}/{os.path.basename(path)}" if parent else os.path.basename(path)
+
+
+def read_zip(path):
+    """-> (conversations, skipped_members). Never extracts to disk."""
+    convs, skipped = [], []
+    with zipfile.ZipFile(path) as z:
+        names = z.namelist()
+        for n in names:
+            if n.endswith("/"):
+                continue
+            base = os.path.basename(n)
+            if n == "conversations.json":
+                data = json.loads(z.read(n))
+                for c in (data if isinstance(data, list) else [data]):
+                    convs.append((c, f"{zip_label(path)}::conversations.json"))
+            elif n.startswith("design_chats/") and n.endswith(".json"):
+                c = json.loads(z.read(n))
+                convs.append((c, f"{zip_label(path)}::{n}"))
+            else:
+                skipped.append((os.path.basename(path), n if len(n) < 80 else base))
+    return convs, skipped
+
+
+def gather_zips(sources):
+    zips = []
+    for s in sources:
+        s = os.path.expanduser(s)
+        if os.path.isdir(s):
+            for root, dirs, files in os.walk(s):
+                dirs[:] = sorted(dirs)
+                zips += [os.path.join(root, f) for f in sorted(files) if f.lower().endswith(".zip")]
+        elif os.path.isfile(s):
+            zips.append(s)
+        else:
+            print(f"  ! not found, skipped: {s}")
+    return zips
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Claude.ai chat export zips -> per-conversation markdown")
+    ap.add_argument("sources", nargs="*", default=[DEFAULT_SRC],
+                    help=f"zip files and/or directories to scan (default {DEFAULT_SRC})")
+    ap.add_argument("--out", default=OUT_DIR)
+    ap.add_argument("--tool-chars", type=int, default=2000, help="cap per tool block; 0 omits them")
+    ap.add_argument("--thinking-chars", type=int, default=4000, help="cap per thinking block; 0 omits them")
+    ap.add_argument("--max-bytes", type=int, default=MAX_BYTES)
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--force", action="store_true", help="re-render conversations that have not changed")
+    opts = ap.parse_args()
+    sources = opts.sources or [DEFAULT_SRC]
+
+    # Redaction first: no redactor, no output. An absent sweep is not a sweep
+    # that passed, and this output lands where the corpus will read it.
+    if not os.path.exists(SAVE_SCRIPT):
+        die(f"{SAVE_SCRIPT} is missing — it owns the redaction sweep and this script "
+            f"will not invent a second one. Nothing written.")
+    try:
+        save = load_save_module()
+        _, secrets, srcs = save.collect_secrets()
+        secrets = set(secrets)
+    except Exception as e:                                          # noqa: BLE001
+        die(f"could not load the redaction sweep ({type(e).__name__}: {e}) — refusing to "
+            f"write chat history with only best-effort redaction. Nothing written.")
+    if EXTRA_SECRETS_FILE and os.path.exists(EXTRA_SECRETS_FILE):
+        extra = [l.strip() for l in open(EXTRA_SECRETS_FILE) if l.strip()]
+        secrets |= set(extra)
+        srcs = list(srcs) + [f"{len(extra)} from CLAUDE_EXPORT_SECRETS_FILE"]
+    if not secrets:
+        die("no live secret values loaded — the sweep would be blind to this box's own "
+            "tokens. Fix the credential paths first. Nothing written.")
+    print(f"claude-export-unpack: redaction armed — {len(secrets)} live value(s) from "
+          f"{', '.join(srcs) or 'none'}, plus ragnarok-save's shape patterns")
+
+    zips = gather_zips(sources)
+    if not zips:
+        die(f"no .zip found under: {', '.join(sources)}")
+
+    state = {}
+    if os.path.exists(STATE_FILE) and not opts.force:
+        try:
+            state = json.load(open(STATE_FILE)).get("conversations", {})
+        except Exception:
+            state = {}
+
+    gate = load_corpus_gate()
+    if gate is None:
+        print(f"  ! {CORPUS_SCRIPT} not importable — filenames are NOT checked against "
+              f"the corpus's own exclusion rules, so a chat titled about credentials may "
+              f"be written and then never walked. Unpacking continues.")
+
+    stats = {"capped": 0, "omitted_tools": 0, "omitted_thinking": 0, "unknown_blocks": 0}
+    redactions, skipped_members, written, unchanged, dirty, oversize = {}, [], [], 0, [], []
+    renamed = []
+    chat_zips, non_chat_zips = [], []
+    new_state, used_names = {}, {}
+
+    if not opts.dry_run:
+        os.makedirs(opts.out, mode=0o700, exist_ok=True)
+        os.chmod(opts.out, 0o700)
+
+    # Collect across every zip BEFORE rendering: the same conversation appears in
+    # every export that covers its date, and the newest copy is the one to keep.
+    collected, duplicates = {}, 0
+    for zp in zips:
+        try:
+            convs, skipped = read_zip(zp)
+        except (zipfile.BadZipFile, json.JSONDecodeError, KeyError) as e:
+            non_chat_zips.append((os.path.basename(zp), f"unreadable: {type(e).__name__}"))
+            continue
+        if convs:
+            chat_zips.append((os.path.basename(zp), len(convs)))
+        else:
+            non_chat_zips.append((os.path.basename(zp), f"no conversations.json / design_chats/ member "
+                                                        f"({len(skipped)} other member(s))"))
+        skipped_members += skipped
+
+        for conv, source in convs:
+            uuid = conv.get("uuid") or hashlib.sha256(json.dumps(conv, sort_keys=True).encode()).hexdigest()[:36]
+            prev = collected.get(uuid)
+            if prev is None:
+                collected[uuid] = (conv, source)
+            else:
+                duplicates += 1
+                if (conv.get("updated_at") or "") > (prev[0].get("updated_at") or ""):
+                    collected[uuid] = (conv, source)
+
+    for uuid, (conv, source) in collected.items():
+        key = f"{uuid}:{conv.get('updated_at', '')}"
+        title, header, parts = conversation_doc(conv, opts, stats, source)
+
+        clean_title, found = save.redact(title, secrets)
+        for k, v in found.items():
+            redactions[k] = redactions.get(k, 0) + v
+        date = (conv.get("created_at") or conv.get("updated_at") or "")[:10] or "undated"
+        words, dropped_words = corpus_safe_words(
+            slugify(clean_title).split("-"), date, uuid[:8], gate)
+        if dropped_words:
+            renamed.append((clean_title or "(untitled)", "-".join(dropped_words)))
+        stem = f"{date}-{'-'.join(words) or 'untitled'}-{uuid[:8]}"
+        n = used_names.get(stem, 0)
+        used_names[stem] = n + 1
+        if n:
+            stem = f"{stem}-{n+1}"
+
+        docs = split_parts(header, parts, opts.max_bytes)
+        paths = [os.path.join(opts.out, stem + (".md" if i == 0 else f"-part{i+1:02d}.md"))
+                 for i in range(len(docs))]
+        new_state[uuid] = {"key": key, "files": [os.path.basename(p) for p in paths]}
+
+        if state.get(uuid, {}).get("key") == key and not opts.force \
+                and all(os.path.exists(p) for p in paths):
+            unchanged += 1
+            continue
+
+        for path, body in zip(paths, docs):
+            body, found = save.redact(body, secrets)
+            for k, v in found.items():
+                redactions[k] = redactions.get(k, 0) + v
+            survivors = [s for s in secrets if s in body]
+            if survivors:
+                dirty.append(os.path.basename(path))
+                new_state.pop(uuid, None)
+                continue
+            if len(body.encode()) > 1_000_000:
+                oversize.append(os.path.basename(path))
+            if not opts.dry_run:
+                with open(path, "w") as fh:
+                    fh.write(body)
+                os.chmod(path, 0o600)
+            written.append(os.path.basename(path))
+
+    if not opts.dry_run:
+        os.makedirs(STATE_DIR, mode=0o700, exist_ok=True)
+        merged = dict(state); merged.update(new_state)
+        with open(STATE_FILE, "w") as fh:
+            json.dump({"updated": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "out": opts.out,
+                       "conversations": merged}, fh, indent=1)
+        os.chmod(STATE_FILE, 0o600)
+
+    # -- summary. Everything not rendered is NAMED. ---------------------------
+    print(f"\n{'DRY RUN — nothing written' if opts.dry_run else 'wrote'}: "
+          f"{len(written)} markdown file(s) -> {opts.out}")
+    print(f"  unchanged, skipped: {unchanged}")
+    for name, n in chat_zips:
+        print(f"  chat export: {name} — {n} conversation(s)")
+    for name, why in non_chat_zips:
+        print(f"  NOT a chat export, skipped: {name} — {why}")
+    kinds = {}
+    for zname, member in skipped_members:
+        top = member.split("/")[0] if "/" in member else member
+        kinds[f"{zname}::{top}"] = kinds.get(f"{zname}::{top}", 0) + 1
+    for k in sorted(kinds):
+        print(f"  member not rendered (not a conversation): {k} x{kinds[k]}")
+    print(f"  redacted: {redactions or 'nothing matched'}")
+    print(f"  blocks capped: {stats['capped']}, tool blocks omitted: {stats['omitted_tools']}, "
+          f"thinking omitted: {stats['omitted_thinking']}, unknown block types: {stats['unknown_blocks']}")
+    if duplicates:
+        print(f"  same conversation seen in more than one zip: {duplicates} — kept the newest "
+              f"copy of each (exports are cumulative, not deltas)")
+    orphans = []
+    for uuid, rec in state.items():
+        if uuid in new_state:
+            for old in rec.get("files", []):
+                if old not in new_state[uuid]["files"] and os.path.exists(os.path.join(opts.out, old)):
+                    orphans.append(old)
+    if orphans:
+        print(f"  ! ORPHAN(S) from an earlier run — the title changed, so these are the OLD "
+              f"filenames for conversations that were just rewritten. Not deleted here:\n"
+              f"      rm {' '.join(repr(os.path.join(opts.out, o)) for o in orphans)}")
+    for title, words in renamed:
+        print(f"  filename word(s) dropped so ragnarok-corpus will open the file "
+              f"(its credential-name rule): '{words}' in \"{title}\" — the title is intact inside")
+    if oversize:
+        print(f"  ! still over 1 MB after splitting (ragnarok-corpus will TAIL these): {', '.join(oversize)}")
+    if dirty:
+        print(f"  !! SKIPPED — a live credential survived redaction in: {', '.join(dirty)}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

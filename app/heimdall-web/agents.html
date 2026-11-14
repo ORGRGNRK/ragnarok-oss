@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Heimdall Agents</title>
+<link rel="stylesheet" href="style.css">
+<script src="gate.js"></script>
+<style>
+  .wrap { flex:1; display:flex; min-height:0; }
+  #runs { width:22rem; border-right:1px solid var(--line); overflow-y:auto; }
+  .run { padding:10px 14px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .run:hover, .run.sel { background:var(--panel); }
+  .run .t { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .run .m { font-size:11px; color:var(--dim); letter-spacing:.08em; text-transform:uppercase; }
+  .v-proved { color:var(--gold); } .v-dead { color:var(--red); } .v-needs { color:var(--amber); } .v-run { color:var(--amber); }
+  #detail { flex:1; overflow-y:auto; padding:16px 20px; }
+  #detail h2 { font-size:12px; letter-spacing:.15em; text-transform:uppercase; color:var(--gold); font-weight:400; margin:18px 0 8px; }
+  #detail .big { font-size:17px; white-space:pre-wrap; word-wrap:break-word; }
+  .check { display:flex; gap:8px; margin:4px 0; }
+  .check .mk { width:1.2em; flex:none; }
+  .check .out { color:var(--dim); font-size:12px; white-space:pre-wrap; word-wrap:break-word; }
+  .act { font-size:12px; color:var(--dim); border-left:1px solid var(--line); padding:2px 0 2px 10px; margin:2px 0; white-space:pre-wrap; word-wrap:break-word; }
+  .act b { color:var(--text); font-weight:400; }
+  .pre { white-space:pre-wrap; word-wrap:break-word; }
+  #newform { display:flex; flex-direction:column; gap:8px; padding:12px 14px; border-bottom:1px solid var(--line); }
+  #newform textarea { height:70px; padding:8px; }
+  #newform input, #newform select, #detail select { font:inherit; color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:6px 8px; max-width:none; width:100%; }
+  #detail form.handoff { display:flex; gap:8px; align-items:center; }
+  #detail form.handoff select { width:auto; max-width:16rem; }
+  .row { display:flex; gap:8px; } .row input { flex:1; min-width:0; }
+  @media (max-width: 760px) { .wrap { flex-direction:column; } #runs { width:auto; border-right:0; max-height:45vh; border-bottom:1px solid var(--line); } }
+</style>
+</head>
+<body>
+<script src="/splash.js"></script>
+<script src="/lock.js"></script>
+<header>
+  <span class="mark">CLR — Rgnrk. <small>heimdall</small></span>
+  <nav><a href="/">Chat</a><a href="/room">Room</a><a href="/agents" aria-current="page">Agents</a><a href="/hub">Hub</a><a href="/intake">Intake</a><a href="/timeline">Timeline</a><a href="/proved">Proved</a></nav>
+  <span class="status"><span class="dot" id="dot"></span><span id="status">Loading runs…</span></span>
+</header>
+<div class="wrap">
+  <div id="runs">
+    <form id="newform">
+      <textarea id="task" placeholder="Task for the runners you picked. It must prove it's done with checks Ragnarok runs itself." aria-label="Task"></textarea>
+      <select id="runners" aria-label="Runners">
+        <option value="claude,codex,grok" selected>Claude, then Codex, then Grok</option>
+        <option value="claude,grok,codex">Claude, then Grok, then Codex</option>
+        <option value="grok,codex,claude">Grok, then Codex, then Claude</option>
+        <option value="grok,claude,codex">Grok, then Claude, then Codex</option>
+        <option value="codex,claude,grok">Codex, then Claude, then Grok</option>
+        <option value="codex,grok,claude">Codex, then Grok, then Claude</option>
+        <option value="claude,codex">Claude, then Codex</option>
+        <option value="claude,grok">Claude, then Grok</option>
+        <option value="grok,codex">Grok, then Codex</option>
+        <option value="grok,claude">Grok, then Claude</option>
+        <option value="codex,claude">Codex, then Claude</option>
+        <option value="codex,grok">Codex, then Grok</option>
+        <option value="claude">Claude only</option>
+        <option value="grok">Grok only</option>
+        <option value="codex">Codex only</option>
+      </select>
+      <div class="row"><input id="cwd" placeholder="folder (in /home/claude, default work)" aria-label="Folder"><input id="name" placeholder="name (optional)" aria-label="Name"></div>
+      <button id="go">Start agent</button>
+    </form>
+    <div id="gatebar" class="note" style="padding:8px 14px;text-align:left"></div>
+    <div id="list"></div>
+  </div>
+  <main id="detail"><div class="empty"><p>Pick a run on the left, or start one.</p></div></main>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+let selected = null, detailTimer = null;
+const LIVE = new Set(["starting", "running", "proving", "checking", "critic", "resuming"]);
+const RUNNERS = ["claude", "grok", "codex"];
+const RUNNER_NAME = { claude: "Claude", grok: "Grok", codex: "Codex" };
+
+function runnerName(w) { return RUNNER_NAME[w] || w || "Claude"; }
+function route(r) {
+  const names = [];
+  const push = w => { if (w && names[names.length - 1] !== w) names.push(w); };
+  push(r.started_who || r.who);
+  for (const h of r.handoffs || []) push(h.to);
+  push(r.who);
+  for (const w of r.handoff_chain || []) push(w);
+  return names.map(runnerName).join(" → ");
+}
+
+function setStatus(text, state) { $("status").textContent = text; $("dot").className = "dot " + (state || ""); }
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function when(ts) {
+  if (!ts) return ""; const d = new Date(ts.replace(/([+-]\d\d)(\d\d)$/, "$1:$2")); if (isNaN(d)) return ts;
+  return d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+function label(r) {
+  if (LIVE.has(r.status)) return ["running", "v-run"];
+  const v = r.verdict || r.status || "?";
+  return [v, v === "proved" ? "v-proved" : /dead|fail|error/.test(v) ? "v-dead" : /need|human/.test(v) ? "v-needs" : ""];
+}
+
+async function loadList() {
+  try {
+    const r = await fetch("api/agents"); const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    const box = $("list"); box.textContent = "";
+    if (!d.items.length) box.append(el("div", "note", "No runs yet."));
+    for (const run of d.items) {
+      const row = el("div", "run" + (run.id === selected ? " sel" : ""));
+      const [v, cls] = label(run);
+      row.append(el("div", "t", run.name || run.task || run.id));
+      const m = el("div", "m"); const s = el("span", cls, v);
+      m.append(s, document.createTextNode(" · " + route(run) + " · " + when(run.started)));
+      row.append(m);
+      row.onclick = () => { selected = run.id; loadList(); loadDetail(); };
+      box.append(row);
+    }
+    setStatus("Runs as the claude login on Alexus", "on");
+  } catch (e) { setStatus(e.message, "err"); }
+}
+
+async function loadDetail() {
+  clearTimeout(detailTimer);
+  if (!selected) return;
+  const id = selected;
+  try {
+    const r = await fetch("api/agents/" + encodeURIComponent(id)); const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    if (id !== selected) return;
+    const box = $("detail"); box.textContent = "";
+    const [v, cls] = label(d);
+    const head = el("div", "m"); head.append(el("span", cls, v.toUpperCase()), document.createTextNode(
+      " · " + d.id + " · " + route(d) + (d.model ? " · " + d.model : "") + " · " + (d.tools || 0) + " tools" + (d.ended ? " · ended " + when(d.ended) : "")));
+    box.append(head, el("h2", null, "Task"), el("div", "big", d.task || ""));
+    if (d.verdict_note) box.append(el("h2", null, "Result"), el("div", "pre", d.verdict_note));
+    if (d.human_request) box.append(el("h2", null, "Needs you"), el("div", "pre v-needs", typeof d.human_request === "string" ? d.human_request : JSON.stringify(d.human_request, null, 1)));
+    if ((d.checks || []).length) {
+      box.append(el("h2", null, "Proof checks (run by Ragnarok, not the agent)"));
+      for (const c of d.checks) {
+        const row = el("div", "check");
+        row.append(el("span", "mk " + (c.ok === true ? "v-proved" : c.ok === false ? "v-dead" : "v-needs"), c.ok === true ? "✓" : c.ok === false ? "✗" : "?"));
+        const t = el("div"); t.append(el("div", null, c.claim), el("div", "out", c.out || ""));
+        row.append(t); box.append(row);
+      }
+    }
+    if ((d.plan || []).length) {
+      box.append(el("h2", null, "Plan"));
+      for (const p of d.plan) box.append(el("div", "check", (p.status === "completed" ? "✓ " : p.status === "in_progress" ? "▸ " : "· ") + p.step));
+    }
+    if (d.final || d.remark) box.append(el("h2", null, "What it said at the end"), el("div", "pre", d.final || d.remark));
+    if ((d.handoffs || []).length) {
+      box.append(el("h2", null, "Handoffs"));
+      for (const h of d.handoffs) {
+        const why = h.reason ? " — " + h.reason : "";
+        box.append(el("div", "act", runnerName(h.from) + " → " + runnerName(h.to) + why));
+      }
+    }
+    const others = RUNNERS.filter(w => w !== (d.who || ""));
+    if (others.length) {
+      const f = el("form", "handoff");
+      const sel = el("select");
+      sel.setAttribute("aria-label", "Hand off to");
+      for (const w of others) { const o = el("option", null, runnerName(w)); o.value = w; sel.append(o); }
+      const b = el("button", null, "Hand off");
+      f.append(sel, b);
+      f.onsubmit = async ev => { ev.preventDefault(); b.disabled = true; await act(id, "handoff", { who: sel.value }); };
+      box.append(el("h2", null, "Hand off this run"), f);
+    }
+    if ((d.actions || []).length) {
+      box.append(el("h2", null, "Latest steps"));
+      for (const a of d.actions.slice().reverse().slice(0, 25)) {
+        const row = el("div", "act"); row.append(el("b", null, (a.kind || "") + " "), document.createTextNode((a.what || "").slice(0, 400)));
+        box.append(row);
+      }
+    }
+    if (LIVE.has(d.status)) {
+      const stop = el("button", "quiet", "Stop this run");
+      stop.onclick = async () => { stop.disabled = true; await act(id, "stop"); };
+      box.prepend(stop);
+      detailTimer = setTimeout(loadDetail, 2500);
+    } else if (/need/.test(d.verdict || "") || d.human_request) {
+      const f = el("form"); const t = el("textarea"); t.placeholder = "Answer or extra context, then resume";
+      const b = el("button", null, "Resume"); f.append(t, b);
+      f.onsubmit = async ev => { ev.preventDefault(); b.disabled = true; await act(id, "resume", { text: t.value.trim() }); };
+      box.append(el("h2", null, "Answer and resume"), f);
+    }
+  } catch (e) { $("detail").textContent = ""; $("detail").append(el("div", "note", e.message)); }
+}
+
+async function act(id, verb, extra) {
+  try {
+    const say = verb === "handoff" ? "hand off" : verb;
+    setStatus("Touch your YubiKey to " + say + " this run…", "busy");
+    const gate = await touch("agents:" + verb);
+    const r = await fetch("api/agents/" + encodeURIComponent(id) + "/" + verb, { method: "POST", body: JSON.stringify(Object.assign({ gate }, extra || {})) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    if (d.id) selected = d.id;
+  } catch (e) { setStatus(verb + " failed: " + e.message, "err"); }
+  loadList(); loadDetail();
+}
+
+async function loadGate() {
+  const bar = $("gatebar"); bar.textContent = "";
+  try {
+    const d = await (await fetch("api/gate")).json();
+    if (d.canRegister) {
+      const b = el("button", null, d.keys ? "Register another YubiKey" : "Register your YubiKey");
+      b.onclick = async () => {
+        b.disabled = true;
+        try { const n = await register(d.keys ? "YubiKey " + (d.keys + 1) : "YubiKey 1"); setStatus(n + " YubiKey(s) registered", "on"); }
+        catch (e) { setStatus("Registration failed: " + e.message, "err"); }
+        loadGate();
+      };
+      bar.append(b);
+    } else {
+      bar.textContent = d.keys ? "🔑 Start, stop, resume, and hand off need a YubiKey touch (" + d.keys + " key" + (d.keys > 1 ? "s" : "") + " registered)"
+                               : "No YubiKey registered yet, so agents can't be started from here.";
+    }
+    if (!window.isSecureContext) bar.append(el("div", "v-needs", "YubiKey only works on " + d.origin + "/agents"));
+  } catch (e) { bar.textContent = e.message; }
+}
+
+$("newform").onsubmit = async ev => {
+  ev.preventDefault();
+  const task = $("task").value.trim(); if (!task) return;
+  $("go").disabled = true; setStatus("Touch your YubiKey to start the agent…", "busy");
+  try {
+    const gate = await touch("agents:start");
+    setStatus("Starting the agent…", "busy");
+    const r = await fetch("api/agents/start", { method: "POST",
+      body: JSON.stringify({ task, cwd: $("cwd").value.trim(), name: $("name").value.trim(), runners: $("runners").value, gate }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    $("task").value = ""; $("name").value = ""; selected = d.id;
+    await loadList(); loadDetail();
+  } catch (e) { setStatus("Start failed: " + e.message, "err"); }
+  $("go").disabled = false;
+};
+
+loadGate(); loadList(); setInterval(loadList, 6000);
+</script>
+</body>
+</html>

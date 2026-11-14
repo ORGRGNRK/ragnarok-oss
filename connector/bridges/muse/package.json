@@ -1,0 +1,22 @@
+{
+  "name": "muse-mcp-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Let Meta's Muse Spark use the Yggdrasil MCP tools (read-only by default)",
+  "type": "module",
+  "scripts": {
+    "start": "node bridge.ts",
+    "tools": "node bridge.ts --list-tools",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": { "node": ">=22.18" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3",
+    "zod": "^3.25.76"
+  }
+}

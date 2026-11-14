@@ -1,0 +1,11 @@
+build/
+.build/
+*.xcodeproj
+.DS_Store
+.staging/
+__pycache__/
+*.pyc
+Controls/.xbuild/
+Controls/RagnarokControls.xcodeproj/
+._*
+.wrangler/

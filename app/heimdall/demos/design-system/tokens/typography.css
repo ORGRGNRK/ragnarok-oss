@@ -1,0 +1,23 @@
+:root{
+/* Ceremonial mono — wordmarks, titles, the portal voice */
+--font-display:'Courier New', Courier, monospace;
+/* UI sans — dashboards, tools, body */
+--font-sans:-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
+/* Data mono — urls, timestamps, ledgers, code */
+--font-mono:"SF Mono", ui-monospace, Menlo, Consolas, monospace;
+/* ── Display scale (portal) ── */
+--display-title-size:clamp(18px, 2.5vw, 32px);
+--display-title-spacing:.35em;
+--display-sub-size:clamp(9px, 1vw, 12px);
+--display-sub-spacing:.5em;
+--display-weight:300;
+/* ── UI scale (dashboard) ── */
+--text-h1-size:13px; --text-h1-spacing:.12em;
+--text-label-size:11px; --text-label-spacing:.1em;
+--text-row-size:13px;
+--text-meta-size:12px;
+--text-micro-size:11px;
+--text-nav-size:11px; --text-nav-spacing:.4em;
+--weight-medium:500;
+--weight-bold:700;
+}

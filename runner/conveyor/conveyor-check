@@ -1,0 +1,441 @@
+#!/usr/bin/env python3
+# conveyor-check — run a task file's checklist verifies and tick only what proves.
+#   conveyor-check <taskfile>
+#
+# Grammar, one step per line (PLAN.md Slice 1):
+#   - [ ] <claim> :: verify: <command>
+#   - [ ] <claim> :: verify: <command> :: expect: <regex>
+# Tick = command exits 0 AND expect (if given) matches its output.
+# `verify: HUMAN` is never auto-ticked — a judgment step cannot be scripted
+# into green — and a hand-tick on one is never revoked by THIS mode (the
+# --erase mode below is what reverts one, and the runner calls it after every
+# seat leg, before this mode runs).
+#
+# Non-HUMAN steps are ALWAYS re-verified, ticked or not, and a [x] whose
+# command now fails is unticked: the commands are the gate, not the mark —
+# otherwise a leg could game the loop by writing [x] directly.
+#
+# Lines without " :: verify: " are not steps and are left byte-identical.
+# No model, no network beyond what the verifies themselves do. Exits nonzero
+# if any non-HUMAN step ends unticked; exit 2 = usage/IO error.
+#
+#   conveyor-check --list <taskfile>
+# prints "[x] <claim>" / "[ ] <claim>", one per step, and RUNS NOTHING. Added
+# for slice 4's progress rule: the runner needs the checklist's shape (which
+# steps exist, which are ticked) before and after a leg, and a second parser
+# of the same grammar is how the two would drift apart. One grammar, one
+# regex, two readers. Always exits 0 when the file is readable -- --list is a
+# question about the file, not about the world.
+#
+#   conveyor-check --list-json <taskfile>
+# same question, machine-readable: one JSON object per step,
+# {"ticked": bool, "human": bool, "claim": str}. Added 2026-09-01 for slice
+# 5's watcher, which has to tell an unticked HUMAN step (waiting on the operator,
+# expected) from an unticked non-HUMAN step in done/ (a defect). --list
+# cannot answer that -- it prints the tick and the claim only -- and the
+# runner parses --list output positionally, so widening it would break the
+# baseline comparison. A THIRD reader of this grammar is the thing the --list
+# comment exists to prevent, so the watcher gets a mode here instead. Runs
+# nothing; exits 0 when the file is readable.
+#
+#   conveyor-check --erase <taskfile> <pre-leg-snapshot>
+# A SEAT'S TICK CANNOT MATTER (2026-09-04). Restores every step's tick to the
+# state it had in <pre-leg-snapshot> (a copy of the task file taken before the
+# seat ran — the runner's logs/<slug>.prebump) and leaves any step that did not
+# exist there unticked. The runner calls this after EVERY seat leg and BEFORE
+# the check mode, so the only ticks a task file ever carries are this
+# checker's (command steps) and conveyor-tap's (HUMAN steps). Why the runner
+# needs it when the check mode already re-verifies every command step: a
+# hand-tick on a command step was harmless to ROUTING but survived in the file
+# for the verifier seat to read and fail the task on process (cash-gap,
+# 2026-09-04 20:41 — a build leg and a verify leg spent on a mark the code had
+# already made irrelevant); and a hand-tick on a HUMAN step was never revoked
+# at all, so a driver writing `[x]` on `the operator confirms this spec :: verify:
+# HUMAN` forged the human gate and the runner routed on a ruling the operator never
+# made. Only conveyor-tap sets a HUMAN tick, and it does so BETWEEN legs, so
+# a HUMAN tick that appeared during a leg is a forgery and one that vanished
+# during a leg is the operator's ruling being erased — both are reverted to the
+# snapshot.
+# RESTORE-TO-SNAPSHOT, NOT UNTICK-ALL, on purpose: the task that queued this
+# said "every non-HUMAN step is unticked", but the verifier-fail path and
+# every dead-end path run NO check mode afterwards, and the runner's progress
+# rule (made_progress) reads the ticks in the file — unticking every command
+# step there would make a moving task read as a zero-progress round trip and
+# dead-end it. Wherever the check mode does follow, the two are the same
+# end state, since it re-verifies every command step regardless.
+# THE SIBLING BYPASS, closed 2026-09-05: this mode also RESTORES A STEP THE
+# SEAT REMOVED. Rewriting the tick character of steps that are still present
+# closes the forged-tick route and leaves the DELETION route wide open, and the
+# two are equally effective — a seat whose only change is
+# `sed -i '/:: verify: HUMAN$/d'` used to send the task to verify/ with the gate
+# simply gone, no intent minted, the operator never asked (verified against the live
+# runner, 2026-09-04, by the verifier leg that refused this task). made_progress
+# iterates the CURRENT steps, so a removed step was invisible to it too. Every
+# step in the snapshot that is not in the file is inserted back whole, at its
+# snapshot position, carrying its snapshot tick — so a HUMAN gate comes back
+# unticked and parks the task on the operator, and a gate conveyor-tap had already
+# ruled on comes back ticked. If the seat deleted the `## Checklist` heading
+# along with every step, that heading is restored too: without it the next leg
+# reads the task as having no checklist and spends a SPEC seat on a task that
+# was mid-build.
+# KEYED BY CLAIM, like the tick pass and like made_progress. Editing a step's
+# verify COMMAND passes through untouched — EXCEPT a HUMAN step's, whose kind is
+# pinned (see the third route below). 2026-09-04's step-7 repair was a
+# command-to-command edit and is legitimate; renaming a CLAIM reads as a delete
+# plus an add, so the original comes back and the reworded one stays. That is
+# the intended direction — a step is never silently retired, and the driver is
+# told in executor-preamble.md that the checklist is append-only.
+# THE THIRD AND FOURTH ROUTES, closed by pinning a step's KIND in BOTH
+# directions: rewrite the `verify:` and leave the claim alone, and the tick pass
+# recognises the step while the deletion pass never misses it. DOWNGRADE,
+# `:: verify: HUMAN` → `:: verify: true` — the tick pass unticks it, then the
+# checker runs `true` and ticks it, and the task files itself with the operator never
+# asked. UPGRADE, an already-ticked command step → `:: verify: HUMAN`
+# (2026-09-05) — the tick already MATCHES the snapshot, so nothing was reverted
+# and nothing printed; the checker never re-ticks or revokes a HUMAN step and
+# route_done greps only for an UNTICKED gate, so the task reached done/ with a
+# ticked HUMAN box no tap ever set, and the command that proved that step
+# stopped running. A step whose kind differs from the snapshot's is reinstated
+# whole, either way; a step ABSENT from the snapshot is left alone, so appending
+# a real HUMAN gate still works.
+# LEFT OPEN, deliberately: a seat that WEAKENS a command step's verify
+# (`bash tests/x.sh` → `true`). Nothing in this file can tell that from the
+# step-7 repair, and refusing both would block the repairs; the verifier seat
+# reads the diff and is the right instrument for it.
+# Prints one line per reverted step — `ERASED command <claim>` (a hand-tick),
+# `ERASED HUMAN <claim>` (a forgery), `RESTORED command|HUMAN <claim>` (a tick
+# the seat removed), `RESTORED_KIND command|HUMAN <claim>` (a step whose kind
+# the seat rewrote — the kind named is the one REINSTATED, so a downgraded gate
+# reads HUMAN and an upgraded command step reads command),
+# `RESTORED_MISSING command|HUMAN <claim>` (a whole step the
+# seat deleted), `RESTORED_MISSING section ## Checklist` — and nothing when the
+# seat left the checklist alone. Runs no commands; only ticks, rewritten
+# `verify:` kinds and deleted lines change, every other byte is preserved;
+# exit 2 = IO.
+# A THIRD parser of the grammar is the thing the --list comment exists to
+# prevent, which is why this is a mode here and not a sed in the runner.
+import json
+import os
+import re
+import subprocess
+import sys
+
+STEP_RE = re.compile(r"^(\s*- \[)( |x)(\] )(.*?) :: verify: (.*)$")
+TIMEOUT = int(os.environ.get("CONVEYOR_CHECK_TIMEOUT", "120"))
+
+
+# TASK FILES IN AND OUT (2026-10-26). Every task has an output folder and may
+# have attachments. conveyor-add writes "outputs: <abs path>" under
+# "## Outputs"; a task without that line (older tasks, other writers) gets
+# <belt root>/outputs/<task file stem>. Attachments live in the sibling
+# attachments/<same id>/. Check mode exports these to every verify command as
+# $CONVEYOR_OUTPUTS, $CONVEYOR_ATTACHMENTS and $CONVEYOR_TASK_ID, so a step
+# can say `test -s "$CONVEYOR_OUTPUTS/report.csv"`. `--io <taskfile>` prints
+# the same three as KEY=VALUE lines for the runner: one reader, not two.
+OUTPUTS_RE = re.compile(r"^outputs: (/.*?)\s*$")
+
+
+def task_io(path, lines):
+    outputs = None
+    for line in lines:
+        m = OUTPUTS_RE.match(line.rstrip("\n"))
+        if m:
+            outputs = m.group(1).rstrip("/")
+            break
+    if outputs is None:
+        root = os.environ.get("CONVEYOR_ROOT") or os.path.dirname(
+            os.path.dirname(os.path.abspath(path)))
+        stem = os.path.splitext(os.path.basename(path))[0]
+        outputs = os.path.join(os.path.abspath(root), "outputs", stem)
+    task_id = os.path.basename(outputs)
+    belt = os.path.dirname(os.path.dirname(outputs))
+    return {"CONVEYOR_TASK_ID": task_id,
+            "CONVEYOR_OUTPUTS": outputs,
+            "CONVEYOR_ATTACHMENTS": os.path.join(belt, "attachments", task_id)}
+
+
+def split_expect(rest):
+    """Command, then optional regex after the LAST ' :: expect: '."""
+    idx = rest.rfind(" :: expect: ")
+    if idx == -1:
+        return rest.strip(), None
+    return rest[:idx].strip(), rest[idx + len(" :: expect: "):].strip()
+
+
+def failure_body(stdout, stderr):
+    """The part of a failed check worth showing again. The traceback, or the tail.
+    The head of a long log is what gets dropped."""
+    stdout = stdout or ""
+    stderr = stderr or ""
+    marker = "Traceback (most recent call last):"
+    if stderr.strip() and marker not in stderr and marker in stdout:
+        body = stdout
+    else:
+        body = stderr if stderr.strip() else stdout
+    body = body.replace("\x00", "")
+    start = body.rfind(marker)
+    if start != -1:
+        chunk = body[start:]
+    else:
+        chunk = "\n".join(body.splitlines()[-40:])
+    chunk = chunk.strip("\n")
+    if len(chunk) > 2400:
+        chunk = chunk[-2400:].lstrip("\n")
+    return chunk.strip()
+
+
+def run_step(command, expect):
+    """True iff the command exits 0 and expect (if any) matches its output."""
+    try:
+        proc = subprocess.run(
+            command, shell=True, executable="/bin/bash",
+            capture_output=True, text=True, timeout=TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as err:
+        body = failure_body(getattr(err, "stdout", None), getattr(err, "stderr", None))
+        note = "timeout after %ds" % TIMEOUT
+        return False, note + ("\n" + body if body else "")
+    if proc.returncode != 0:
+        body = failure_body(proc.stdout, proc.stderr)
+        return False, "exit %d%s" % (proc.returncode, ("\n" + body) if body else "")
+    if expect is not None:
+        try:
+            # rstrip the trailing newline before matching. Without it, MULTILINE
+            # gives every command output a phantom empty line at the end, so
+            # `expect: ^$` (the natural way to write "no output") matched ANY
+            # output and could never fail — a check that cannot fail, inside the
+            # thing whose job is to falsify. Found 2026-09-01 when a step
+            # asserting a clean `git status --porcelain` went green while the
+            # file was untracked. Truly empty output still matches `^$`, which
+            # is the intended meaning.
+            out = (proc.stdout + proc.stderr).rstrip("\n")
+            if not re.search(expect, out, re.MULTILINE):
+                body = failure_body(proc.stdout, proc.stderr)
+                return False, "expect %r not matched%s" % (expect, ("\n" + body) if body else "")
+        except re.error as e:
+            return False, "bad expect regex: %s" % e
+    return True, "exit 0"
+
+
+def step_kind(rest):
+    """HUMAN or command, from a step's post-`verify:` remainder."""
+    command, _ = split_expect(rest)
+    return "HUMAN" if command == "HUMAN" else "command"
+
+
+def erase_hand_ticks(path, snapshot):
+    """--erase: every step's tick back to the snapshot's; new steps unticked;
+    every step the seat deleted restored whole, at its snapshot position."""
+    try:
+        with open(snapshot) as f:
+            snap_lines = f.readlines()
+        with open(path) as f:
+            lines = f.readlines()
+    except OSError as e:
+        print("conveyor-check: %s" % e, file=sys.stderr)
+        return 2
+    # Keyed by claim, like the runner's progress rule (made_progress): a step
+    # the seat reworded is a step that did not exist before the leg.
+    before = {}              # claim -> (tick, kind, whole snapshot line)
+    snap_steps = []          # (claim, line) in snapshot order
+    for line in snap_lines:
+        m = STEP_RE.match(line.rstrip("\n"))
+        if m:
+            before[m.group(4)] = (m.group(2), step_kind(m.group(5)), line)
+            snap_steps.append((m.group(4), line))
+    changed = False
+    for i, line in enumerate(lines):
+        m = STEP_RE.match(line.rstrip("\n"))
+        if not m:
+            continue
+        prefix, tick, close, claim, rest = m.groups()
+        want, want_kind, want_line = before.get(claim, (" ", None, None))
+        kind = step_kind(rest)
+        # A STEP'S KIND IS PINNED, BOTH WAYS. Two routes to the same forgery
+        # ride on rewriting `verify:` and leaving the CLAIM alone, so the tick
+        # pass recognises the step and the deletion pass never misses it.
+        #   THIRD ROUTE — DOWNGRADE, `:: verify: HUMAN` → `:: verify: true`:
+        # the tick pass restores `[ ]`, the checker then runs `true`, ticks it,
+        # and the task files itself with no intent minted.
+        #   FOURTH ROUTE — UPGRADE, an already-ticked command step rewritten to
+        # `:: verify: HUMAN` (closed 2026-09-05, refuted by the verifier leg
+        # that had just passed the third). The tick MATCHES the snapshot, so the
+        # tick pass fell through its `tick == want` continue and printed
+        # nothing; the checker never re-ticks or revokes a HUMAN step, and
+        # route_done greps only for an UNTICKED HUMAN gate — so the task walked
+        # to verify/ and then done/ carrying a ticked HUMAN box with no tap, no
+        # `## Leg N — HUMAN ruling` block and no receipt, while the command that
+        # used to prove that step was never run again by any later leg. A ticked
+        # command step sits in the snapshot of every bounced task, so the route
+        # is not hypothetical.
+        # Neither direction is ever legitimate: nothing turns a judgment step
+        # into a scripted one, and a seat that needs a NEW human gate appends
+        # one — a step absent from the snapshot is left alone (and unticked by
+        # the tick pass), so appending still works. So a kind mismatch either
+        # way puts the whole snapshot line back, tick included: that tick is the
+        # snapshot's, never this seat's.
+        # command → command edits still pass through untouched — that is the
+        # step-7 repair (2026-09-04), and a seat that WEAKENS a command
+        # (`bash tests/x.sh` → `true`) is deliberately left to the verifier
+        # seat: no rule here can tell that from a legitimate repair, and
+        # guessing would block the repairs.
+        if want_kind is not None and want_kind != kind:
+            print("RESTORED_KIND %s %s" % (want_kind, claim))
+            lines[i] = want_line if want_line.endswith("\n") else want_line + "\n"
+            changed = True
+            continue
+        if tick == want:
+            continue
+        print("%s %s %s" % ("ERASED" if tick == "x" else "RESTORED", kind, claim))
+        nl = "\n" if line.endswith("\n") else ""
+        lines[i] = prefix + want + close + claim + " :: verify: " + rest + nl
+        changed = True
+
+    # --- the deletion route ---------------------------------------------------
+    # Indices are re-derived after every insert rather than batched: a seat that
+    # both deleted AND reordered steps makes a precomputed anchor list stale,
+    # and a task file is ~100 lines, so the rescan costs nothing.
+    def step_index(claim):
+        for i, ln in enumerate(lines):
+            m = STEP_RE.match(ln.rstrip("\n"))
+            if m and m.group(4) == claim:
+                return i
+        return None
+
+    def first_step_index():
+        for i, ln in enumerate(lines):
+            if STEP_RE.match(ln.rstrip("\n")):
+                return i
+        return None
+
+    def has_heading(where):
+        return any(ln.startswith("## Checklist") for ln in where)
+
+    missing = [s for s in snap_steps if step_index(s[0]) is None]
+    if missing and has_heading(snap_lines) and not has_heading(lines):
+        # The whole block went. Restore the heading first so the steps below
+        # land under it and the next leg does not read this as a spec task.
+        if lines and not lines[-1].endswith("\n"):
+            lines[-1] += "\n"
+        lines.append("\n## Checklist\n")
+        print("RESTORED_MISSING section ## Checklist")
+        changed = True
+    anchor = None            # line index of the last snapshot step still present
+    for claim, snap_line in snap_steps:
+        idx = step_index(claim)
+        if idx is not None:
+            anchor = idx
+            continue
+        if anchor is not None:
+            pos = anchor + 1                     # back in its snapshot order
+        else:
+            nxt = first_step_index()             # nothing survived before it
+            pos = nxt if nxt is not None else len(lines)
+        if not snap_line.endswith("\n"):
+            snap_line += "\n"
+        lines.insert(pos, snap_line)
+        anchor = pos
+        m = STEP_RE.match(snap_line.rstrip("\n"))
+        print("RESTORED_MISSING %s %s" % (step_kind(m.group(5)), claim))
+        changed = True
+
+    if changed:
+        try:
+            with open(path, "w") as f:
+                f.write("".join(lines))
+        except OSError as e:
+            print("conveyor-check: %s" % e, file=sys.stderr)
+            return 2
+    return 0
+
+
+def main():
+    args = sys.argv[1:]
+    list_only = json_only = erase = io_only = False
+    if args and args[0] == "--io":
+        io_only = True
+        args = args[1:]
+    elif args and args[0] == "--list":
+        list_only = True
+        args = args[1:]
+    elif args and args[0] == "--list-json":
+        json_only = True
+        args = args[1:]
+    elif args and args[0] == "--erase":
+        erase = True
+        args = args[1:]
+    if len(args) != (2 if erase else 1):
+        print("usage: conveyor-check [--list|--list-json] <taskfile>\n"
+              "       conveyor-check --erase <taskfile> <pre-leg-snapshot>\n"
+              "       conveyor-check --io <taskfile>",
+              file=sys.stderr)
+        return 2
+    path = args[0]
+    if erase:
+        return erase_hand_ticks(path, args[1])
+    try:
+        with open(path) as f:
+            lines = f.readlines()
+    except OSError as e:
+        print("conveyor-check: %s" % e, file=sys.stderr)
+        return 2
+    old_content = "".join(lines)
+    io = task_io(path, lines)
+    if io_only:
+        for k in ("CONVEYOR_TASK_ID", "CONVEYOR_OUTPUTS", "CONVEYOR_ATTACHMENTS"):
+            print("%s=%s" % (k, io[k]))
+        return 0
+
+    if list_only or json_only:
+        for line in lines:
+            m = STEP_RE.match(line.rstrip("\n"))
+            if not m:
+                continue
+            if list_only:
+                print("[%s] %s" % (m.group(2), m.group(4)))
+            else:
+                command, _ = split_expect(m.group(5))
+                print(json.dumps({"ticked": m.group(2) == "x",
+                                  "human": command == "HUMAN",
+                                  "claim": m.group(4)},
+                                 separators=(",", ":")))
+        return 0
+
+    os.environ.update(io)  # every verify command below inherits these
+    steps = unticked = 0
+    for i, line in enumerate(lines):
+        m = STEP_RE.match(line.rstrip("\n"))
+        if not m:
+            continue
+        steps += 1
+        prefix, tick, close, claim, rest = m.groups()
+        command, expect = split_expect(rest)
+
+        if command == "HUMAN":
+            print("[%s] HUMAN %s" % (tick, claim))
+            continue
+
+        ok, why = run_step(command, expect)
+        new_tick = "x" if ok else " "
+        if new_tick != tick:
+            nl = "\n" if line.endswith("\n") else ""
+            lines[i] = prefix + new_tick + close + claim + " :: verify: " + rest + nl
+        if ok:
+            print("[x] PASS  %s" % claim)
+        else:
+            unticked += 1
+            print("[ ] FAIL  %s (%s)" % (claim, why))
+
+    if steps == 0:
+        print("conveyor-check: no checklist steps found")
+        return 0
+
+    new_content = "".join(lines)
+    if new_content != old_content:
+        with open(path, "w") as f:
+            f.write(new_content)
+    return 1 if unticked else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

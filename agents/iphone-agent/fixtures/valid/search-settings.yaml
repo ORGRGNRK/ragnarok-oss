@@ -1,0 +1,34 @@
+schemaVersion: "0.1"
+id: com.yggdrasil.iphone.search-settings
+name: Search Settings
+description: Types a caller-provided query into a Settings search field.
+inputs:
+  query:
+    type: string
+    description: Text to enter into Settings Search.
+  auditTag:
+    type: string
+    required: false
+    default: slice-2
+safety:
+  risk: reversible
+steps:
+  - id: open-settings
+    action: openApp
+    app:
+      name: Settings
+      bundleId: com.apple.Preferences
+    expect:
+      screenText: Settings
+  - id: enter-query
+    action: typeText
+    target:
+      role: searchField
+      label: Search
+      within: Settings
+      minimumConfidence: 0.9
+    text: "${input.query}"
+    expect:
+      screenText: "${input.query}"
+postconditions:
+  - screenText: "${input.query}"

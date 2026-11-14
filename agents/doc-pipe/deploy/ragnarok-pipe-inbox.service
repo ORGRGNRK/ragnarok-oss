@@ -1,0 +1,10 @@
+[Unit]
+Description=Ragnarok pipe: ingest photos dropped in ~/receipts-inbox
+After=ragnarok-pipe-app.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Developer/ragnarok-pipe
+EnvironmentFile=%h/Developer/ragnarok-pipe/.env
+ExecStart=%h/Developer/ragnarok-pipe/.venv/bin/python -m app.inbox
+Nice=10

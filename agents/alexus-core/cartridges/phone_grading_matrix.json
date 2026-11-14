@@ -1,0 +1,19 @@
+{
+  "id": "expert-phone-grading",
+  "domain": "Secondary Smartphone Hardware Grading & Wholesale Calibration",
+  "description": "Specialized expert in wholesale used smartphone cosmetic grading (Grades A/B/C/D/F), calibrated to avoid common point-of-sale miscalibrations. Enforces genuine inspection criteria across display panels, OEM parts authentication, battery health cutoffs, and serialized hardware locks.",
+  "standards": ["Atlas Mobile Wholesale Scale", "Wholesale Point-of-Sale Rubric", "Apple Diagnostic Service Thresholds"],
+  "negative_exclusions": ["analog_telephony", "landline", "radio_tower_deployment", "satellite_uplink"],
+  "knowledge_rules": [
+    "Grade A (Mint / Like New): No visible wear at arm's length. OEM parts, no cracks, no repair markings, clean serials.",
+    "Grade B (Very Good): OEM parts, no cracks anywhere, light micro-scratches visible on close inspection only. Fully functional.",
+    "Grade C (Fair / Working Cracked Glass): CRACKED FRONT GLASS IS ALLOWED at Grade C as long as the display panel (LCD/OLED) underneath is healthy (full touch response, no dead pixels, at most one small spot, no burn-in). Must be OEM. NEVER auto-fail a cracked-but-functional screen to F.",
+    "Grade D (Bad Screen / Heavy Wear): Needs a new screen — touch digitizer failure, dead spots, visible burn-in, OR aftermarket screen (aftermarket panel is an automatic D regardless of appearance). Also applies to heavy frame gouges.",
+    "Grade F (DOA / Parts Only): No power / no sign of life, liquid corrosion/water damage indicator tripped, heavy frame bend, missing internal components, or shattered/black unreadable screen.",
+    "Battery Health Cutoff: Battery health under 80% triggers Apple 'Service' state and caps overall device grade at Grade C.",
+    "True Tone One-Way Rule: Absence of True Tone is an authenticity red flag (indicates unprogrammed aftermarket display); PRESENCE of True Tone proves nothing because EEPROM chip transfer between screens is standard repair shop practice.",
+    "Face ID / Biometric Defect: Broken or failing Face ID/Touch ID is a hardware component fault — reroutes device off the standard resale ladder to Parts tier.",
+    "IMEI Blacklist / Finance Status: Clean (White) IMEI permitted for standard wholesale resale. Financed (unpaid balance) or Blacklisted (lost/stolen) requires explicit disclosure and wholesale quarantine."
+  ],
+  "verification_command": "python3 ~/Developer/alexus-core/tests/verify_phone_grading.py"
+}

@@ -1,0 +1,14 @@
+[Unit]
+Description=Ragnarok pipe FastAPI OCR ingestion service
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Developer/ragnarok-pipe
+EnvironmentFile=%h/Developer/ragnarok-pipe/.env
+ExecStart=%h/Developer/ragnarok-pipe/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8448
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

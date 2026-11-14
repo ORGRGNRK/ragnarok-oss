@@ -1,0 +1,8 @@
+#!/bin/bash
+# One-time: stop the Mac's ygg-scratch containers (data kept in their volume) and start the tunnel to Alexus.
+set -e
+cd ~/Developer/ygg-scratch && docker compose stop
+cp ~/scripts/co.rgnrk.alexus-tunnel.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/co.rgnrk.alexus-tunnel.plist
+for i in $(seq 1 15); do nc -z 127.0.0.1 5547 2>/dev/null && break; sleep 1; done
+nc -z 127.0.0.1 5547 && echo "tunnel up: 127.0.0.1:5547 -> Alexus" || { echo "tunnel not up; see ~/.ragnarok/alexus-tunnel.log"; exit 1; }

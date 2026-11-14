@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# ./kit <command>   -- run the Ragnarok data layer (Postgres + receipts). Run ./kit with no command for help.
+set -euo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/scripts/lib.sh"
+cd "$ROOT"
+
+usage() { cat <<'U'
+./kit up             start Postgres + MCP (first run makes .env with fresh secrets), apply client/schema.json;
+                     KIT_UI=1 ./kit up also starts the NocoDB screen (off by default)
+./kit seed           load client/seed.json into tables that are still empty
+./kit status         what's running, record counts, receipt check
+./kit check          check client/schema.json and client/seed.json for mistakes
+./kit verify         recompute the receipt hash chain and check the append-only lock
+./kit anchor [W A]   one JSON line: verify result + head seq/hash of both logs (for off-server copies);
+                     W A = previously anchored write_log / access_log seq, to also print the hash now stored there
+./kit pending        list archive requests waiting for approval
+./kit approve CODE   approve an archive (soft delete) the AI asked for; a person must type yes
+                     at a real terminal (refuses when run from a script, pipe or AI tool)
+./kit mcp-stdio      what Claude Desktop / Claude Code run locally (stdio MCP)
+./kit logs [svc]     follow logs (postgres, mcp, nocodb)
+./kit restart        restart the MCP server (e.g. after changing tokens in .env)
+./kit backup         save a database dump into backups/
+./kit test           full self-test on a throwaway copy (your data is not touched)
+./kit down           stop everything, keep the data
+./kit wipe           stop and DELETE all data for this client (asks first)
+U
+}
+
+approval_info_sql() { cat <<'SQL'
+SELECT 'Archive ' || a.table_name || ' #' || a.record_id || E'\n  reason:       ' || a.reason || E'\n  requested by: ' || a.requested_by ||
+       E'\n  record now:   ' || coalesce((SELECT (xpath('/row/r/text()', query_to_xml(format('SELECT to_jsonb(t)::text AS r FROM %I t WHERE id = %s', a.table_name, a.record_id), false, true, '')))[1]::text), '(not found)')
+  FROM approvals a WHERE a.code = upper(:'c')
+SQL
+}
+
+ensure_env() {
+  if [ ! -f "$KIT_ENV_FILE" ]; then
+    # project name comes from .env.example (ragnarok-data); the folder is just called "data"
+    make_env "$ROOT/.env.example" "$KIT_ENV_FILE" "$(grep '^COMPOSE_PROJECT_NAME=' "$ROOT/.env.example" | cut -d= -f2)"
+    say "created .env with fresh random secrets (private: never share or commit it)"
+  fi
+  load_env
+}
+
+cmd="${1:-help}"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  up)
+    ensure_env
+    dc build mcp >/dev/null
+    dc up -d postgres
+    wait_pg
+    apply_schema
+    dc up -d mcp
+    # NocoDB (the spreadsheet screen) is opt-in: KIT_UI=1 ./kit up
+    if [ "${KIT_UI:-0}" = 1 ]; then dc --profile ui up -d nocodb; fi
+    wait_mcp
+    bold "up: ${COMPOSE_PROJECT_NAME}"
+    say "  MCP (HTTP)  http://127.0.0.1:${MCP_HOST_PORT}/mcp   (needs Authorization: Bearer <MCP_TOKEN from .env>)"
+    if [ "${KIT_UI:-0}" = 1 ]; then say "  NocoDB      http://127.0.0.1:${NOCODB_PORT:-8191}   (first start takes ~30s; see README to connect it)"
+    else say "  NocoDB      off (start it too with: KIT_UI=1 ./kit up)"; fi
+    say "  Postgres    127.0.0.1:${POSTGRES_PORT:-5491}  db=${POSTGRES_DB}"
+    say "  scope       ${KIT_SCOPE:-write}"
+    ;;
+  seed)
+    load_env
+    kit_cli seed-sql | admin_psql -q >/dev/null
+    say "seeded (tables that already had data were left alone)"
+    admin_psql -t -A -c "SELECT display_name || ': ' || (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM %I', sql_name), false, true, '')))[1]::text || ' records' FROM kit_tables ORDER BY 1"
+    ;;
+  check)
+    load_env; kit_cli check ;;
+  status)
+    load_env
+    dc --profile ui ps
+    admin_psql -t -A -c "SELECT display_name || ': ' || (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM %I', sql_name), false, true, '')))[1]::text || ' records' FROM kit_tables ORDER BY 1" || true
+    "$0" verify || true
+    ;;
+  verify)
+    load_env
+    out="$(admin_psql -t -A -F '|' -c "SELECT chain, rows_checked, intact, coalesce(first_bad_seq::text,''), coalesce(problem,''), coalesce(head_hash,''), lock_on, coalesce(lock_problem,'') FROM kit_verify()")" || { echo "could not run the check (is it running? ./kit up)" >&2; exit 2; }
+    bad=0
+    while IFS='|' read -r chain rows intact fbad problem head lock lockp; do
+      [ -n "$chain" ] || continue
+      if [ "$intact" = t ]; then printf 'INTACT  %-10s rows=%-6s head=%s\n' "$chain" "$rows" "${head:-(empty)}"
+      else bad=1; printf 'BROKEN  %-10s rows=%-6s first bad row #%s: %s\n' "$chain" "$rows" "$fbad" "$problem"; fi
+      if [ "$lock" = t ]; then printf '        lock ON (UPDATE/DELETE/TRUNCATE refused)\n'
+      else bad=1; printf '        lock OFF: %s\n' "$lockp"; fi
+    done <<EOT
+$out
+EOT
+    if [ $bad = 0 ]; then say "all receipts intact. Tip: copy the head hashes somewhere outside this server now and then."; exit 0; fi
+    echo "PROBLEM: receipts were altered or unlocked outside the normal path." >&2; exit 1
+    ;;
+  anchor)
+    # One JSON line for an off-server "anchor" copy (scripts/mac-anchor.sh keeps them on the Mac).
+    # Optional W A = write_log / access_log seq numbers anchored earlier: the line then also carries
+    # the hash the database holds at those seqs NOW, so the Mac can spot a rewritten history.
+    # Exit 0 = intact and locked, 1 = verify found a problem (the line is still printed), 2 = could not run.
+    cw="${1:-0}"; ca="${2:-0}"
+    [ $# -le 2 ] || die "usage: ./kit anchor [WRITE_LOG_SEQ ACCESS_LOG_SEQ]"
+    case "$cw$ca" in *[!0-9]*) die "anchor: seq numbers must be whole numbers" ;; esac
+    [ ${#cw} -le 18 ] && [ ${#ca} -le 18 ] || die "anchor: seq number too large"
+    load_env
+    row="$(admin_psql -q -t -A -F '|' -v cw="$cw" -v ca="$ca" <<'SQL'
+BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+WITH v AS (SELECT * FROM kit_verify()),
+     w AS (SELECT * FROM v WHERE chain = 'write_log'),
+     a AS (SELECT * FROM v WHERE chain = 'access_log')
+SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+       (SELECT bool_and(intact AND lock_on) FROM v),
+       (SELECT coalesce(max(seq), 0) FROM write_log),  coalesce((SELECT head_hash FROM w), ''),
+       (SELECT intact FROM w), (SELECT lock_on FROM w),
+       (SELECT coalesce(max(seq), 0) FROM access_log), coalesce((SELECT head_hash FROM a), ''),
+       (SELECT intact FROM a), (SELECT lock_on FROM a),
+       coalesce((SELECT hash FROM write_log  WHERE seq = :'cw'::bigint), ''),
+       coalesce((SELECT hash FROM access_log WHERE seq = :'ca'::bigint), '');
+COMMIT;
+SQL
+)" || { echo "anchor: could not run the check (is it running? ./kit up)" >&2; exit 2; }
+    IFS='|' read -r at good wseq whead wint wlock aseq ahead aint alock cwh cah <<EOT
+$row
+EOT
+    [ -n "${at:-}" ] || { echo "anchor: empty answer from the database" >&2; exit 2; }
+    b() { [ "$1" = t ] && echo true || echo false; }
+    s() { [ -n "$1" ] && printf '"%s"' "$1" || printf 'null'; }
+    printf '{"v":1,"project":"%s","at":"%s","intact":%s,"write_log_seq":%s,"write_log_head":%s,"write_log_intact":%s,"write_log_lock":%s,"access_log_seq":%s,"access_log_head":%s,"access_log_intact":%s,"access_log_lock":%s,"check_write_log_seq":%s,"check_write_log_hash":%s,"check_access_log_seq":%s,"check_access_log_hash":%s}\n' \
+      "$COMPOSE_PROJECT_NAME" "$at" "$(b "$good")" "$wseq" "$(s "$whead")" "$(b "$wint")" "$(b "$wlock")" \
+      "$aseq" "$(s "$ahead")" "$(b "$aint")" "$(b "$alock")" "$((10#$cw))" "$(s "$cwh")" "$((10#$ca))" "$(s "$cah")"
+    [ "$good" = t ] || exit 1
+    ;;
+  pending)
+    load_env
+    admin_psql -P pager=off -c "SELECT code, table_name AS table, record_id AS id, reason, requested_by, to_char(expires_at, 'YYYY-MM-DD HH24:MI TZ') AS expires FROM approvals WHERE approved_at IS NULL AND used_at IS NULL AND expires_at > now() ORDER BY created_at"
+    ;;
+  approve)
+    # A person approves, at a terminal, by typing yes. There is deliberately no --yes / no-prompt
+    # option, and the command refuses to run when stdin is not a terminal (a script, a pipe, or an
+    # AI tool running commands), before it touches the database.
+    code="${1:-}"; [ -n "$code" ] || die "usage: ./kit approve CODE"
+    [ $# -eq 1 ] || die "usage: ./kit approve CODE (no options: a person must type yes at a terminal). Nothing was approved."
+    case "$code" in *[!A-Za-z0-9-]*) die "that doesn't look like an approval code" ;; esac
+    [ -t 0 ] || die "refusing to approve: ./kit approve must be run by a person at a terminal (stdin is not a TTY). Nothing was approved."
+    load_env
+    info="$(approval_info_sql | admin_psql -t -A -v c="$code")"
+    [ -n "$info" ] || die "no request with code $code (see ./kit pending)"
+    say "$info"
+    printf 'Approve this? Type yes: '; read -r ans
+    [ "$ans" = yes ] || { say "not approved."; exit 1; }
+    by="$(id -un 2>/dev/null || echo owner)@$(hostname -s 2>/dev/null || hostname)"
+    admin_psql -t -A -v c="$code" -v by="$by" 2>&1 <<'SQL' | grep -v -e '^$' -e '^CONTEXT' || true
+SELECT kit_approve(:'c', :'by');
+SQL
+    admin_psql -t -A -v c="$code" <<'SQL'
+SELECT CASE WHEN approved_at IS NOT NULL THEN 'APPROVED. Tell the AI it can now call data_archive_record with approval_code ' || code ELSE 'NOT approved' END FROM approvals WHERE code = upper(:'c')
+SQL
+    ;;
+  mcp-stdio)
+    load_env
+    # nothing but MCP messages may go to stdout from here on
+    if [ "${MCP_LOCAL:-0}" = 1 ]; then
+      export MCP_HOST_LABEL="$(hostname -s 2>/dev/null || hostname)" MCP_USER_LABEL="$(id -un)" KIT_SCHEMA="$ROOT/client/schema.json"
+      exec node "$ROOT/../connector/dist/src/stdio.js"   # build it first: cd ../connector && npm ci && npm run build
+    fi
+    scope_args=""; [ -n "${SCOPE:-}" ] && scope_args="-e KIT_SCOPE=$SCOPE"
+    # shellcheck disable=SC2086
+    exec $COMPOSE --env-file "$KIT_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" run --rm -T --no-deps \
+      -e MCP_HOST_LABEL="$(hostname -s 2>/dev/null || hostname)" -e MCP_USER_LABEL="$(id -un)" $scope_args \
+      mcp node dist/src/stdio.js
+    ;;
+  logs)    load_env; dc --profile ui logs -f --tail 100 "$@" ;;
+  restart) load_env; dc up -d --force-recreate mcp; wait_mcp; say "MCP restarted on port $MCP_HOST_PORT" ;;
+  backup)
+    load_env; mkdir -p backups; f="backups/${COMPOSE_PROJECT_NAME}-$(date +%Y%m%d-%H%M%S).sql"
+    ( umask 077; dc exec -T postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" > "$f" )
+    say "saved $f ($(wc -c < "$f" | tr -d ' ') bytes). It contains the client's data: keep it private."
+    ;;
+  test) exec "$ROOT/scripts/test.sh" "$@" ;;
+  down) load_env; dc --profile ui down; say "stopped (data kept). Start again: ./kit up" ;;
+  wipe)
+    load_env
+    bold "This DELETES every record, receipt and NocoDB setting for '${COMPOSE_PROJECT_NAME}'. It cannot be undone."
+    say "Make a backup first if you might want it: ./kit backup"
+    printf 'Type the project name (%s) to confirm: ' "$COMPOSE_PROJECT_NAME"; read -r ans
+    [ "$ans" = "$COMPOSE_PROJECT_NAME" ] || { say "cancelled."; exit 1; }
+    dc --profile ui down -v --remove-orphans
+    docker image rm "${COMPOSE_PROJECT_NAME}-mcp:local" "${COMPOSE_PROJECT_NAME}-mcp-test:local" >/dev/null 2>&1 || true
+    say "wiped. .env and client/ are still here; ./kit up starts fresh. Delete the folder to remove everything."
+    ;;
+  help|-h|--help) usage ;;
+  *) usage; exit 2 ;;
+esac

@@ -1,0 +1,307 @@
+#!/usr/bin/env bash
+# runner/ragnarok/belt -- Ragnarok's task belt: the conveyor (runner/conveyor) run INSIDE A CONTAINER,
+# with local models only, every step receipted in data/'s hash-chained write_log, and nothing an
+# AI says ever approved automatically. Works with macOS bash 3.2.
+#
+#   ./belt build                     build the belt image (the box every leg runs in)
+#   ./belt doctor                    check docker, image, local model server, data layer
+#   ./belt probe                     prove the box's walls from inside (door, no internet, read-only)
+#   ./belt add "title" [--plan] -m "what you want"   (or body on stdin)   put a task on the belt
+#   ./belt run [--max N]             work the belt (default 20 legs), then copy receipts to data/
+#   ./belt status                    what is where, and what waits on you
+#   ./belt show TASK                 print a task file (its whole history)
+#   ./belt approve TASK              YOU: approve a proposed plan / tick the HUMAN boxes -> queue/
+#   ./belt accept TASK               YOU: accept a proposed result -> done/
+#   ./belt reject TASK [why]         YOU: say no -> failed/
+#   ./belt receipts [N]              the last N belt receipts from data/ (default 20)
+#   ./belt verify                    check data/'s receipt chains (kit_verify)
+#   ./belt ingest                    copy new belt receipt lines to data/ (run does this itself)
+#
+# approve / accept / reject must be typed by a person at a terminal (stdin a TTY, then "yes").
+# There is no --yes. Settings: environment, else runner/ragnarok/belt.env (RUNNER_* lines only;
+# see belt.env.example), else the defaults below. The data layer's settings come from
+# KIT_ENV_FILE or data/.env (its AI read/write login copies receipts; a person's yes is
+# written with its admin login). None of them are ever passed into the belt container.
+set -uo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+RUNNER_DIR="$(cd "$HERE/.." && pwd)"
+RAG="$(cd "$RUNNER_DIR/.." && pwd)"
+DATA="$RAG/data"
+PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:$HOME/.orbstack/bin"; export PATH
+
+load_settings() {
+  local f="${RUNNER_ENV_FILE:-$HERE/belt.env}" line key cur
+  [ -r "$f" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|'#'*) continue ;; esac
+    line="${line#export }"; key="${line%%=*}"
+    case "$key" in RUNNER_*) ;; *) continue ;; esac
+    case "$key" in *[!A-Za-z0-9_]*) continue ;; esac
+    eval "cur=\${$key:-}"; [ -n "$cur" ] && continue
+    export "$key=${line#*=}"
+  done < "$f"
+}
+load_settings
+: "${RUNNER_OLLAMA_HOST:=http://alexus:11434}"   # the alexus box; must be a local address
+: "${RUNNER_CODER_MODEL:=qwen2.5-coder:7b}"             # driver + verifier legs (tools: bash/read/write)
+: "${RUNNER_PLANNER_MODEL:=qwen2.5-coder:7b}"           # writes the JSON task
+: "${RUNNER_CRITIC_MODEL:=llama3.2:3b}"                 # a different model reviews the plan
+: "${RUNNER_PROJECT:=ragnarok-belt}"                    # docker names: <project>-gw, <project>-net, <project>-leg
+: "${RUNNER_IMAGE:=$RUNNER_PROJECT:local}"
+: "${RUNNER_BELT_DIR:=$RUNNER_DIR/.belt}"               # the trays (plan/ queue/ ... done/ failed/ logs/)
+: "${RUNNER_WORK_DIR:=$RUNNER_DIR/.work}"               # the ONLY Mac folder the AI can write to (as /work)
+: "${RUNNER_DOOR_PORT:=58190}"                          # the model door on the Mac (127.0.0.1 only)
+: "${RUNNER_TASK_TIMEOUT:=1800}"
+: "${RUNNER_HUMAN:=$(id -un 2>/dev/null || echo owner)}"
+P="$RUNNER_PROJECT"; BELT="$RUNNER_BELT_DIR"; WORK="$RUNNER_WORK_DIR"
+
+say() { printf '%s\n' "$*"; }
+die() { printf 'belt: %s\n' "$*" >&2; exit 1; }
+
+# data/'s helpers (dc, admin_psql, load_env). lib.sh sets ROOT to data/.
+data_env() {
+  # shellcheck disable=SC1091
+  . "$DATA/scripts/lib.sh"
+  load_env
+}
+rw_psql() { dc exec -T postgres psql -U "$MCP_DB_USER" -d "$POSTGRES_DB" -X -q -t -A -v ON_ERROR_STOP=1 "$@"; }
+
+init_trays() {
+  local d
+  for d in plan queue running verify human done failed logs attachments outputs; do mkdir -p "$BELT/$d" || die "cannot make $BELT/$d"; done
+  mkdir -p "$WORK" || die "cannot make $WORK"; touch "$BELT/logs/receipts.jsonl"
+}
+
+# The belt container. --network none unless a leg needs the model (then only the internal net).
+in_box() { # network args...
+  local net="$1"; shift
+  docker run --rm -i --cpus="${RUNNER_CPUS:-2}" --memory=2g --network "$net" --label "ragnarok.belt=$P" \
+    -v "$BELT":/belt -v "$BELT/done":/belt/done:ro -v "$WORK":/work \
+    -e CONVEYOR_ROOT=/belt -e CONVEYOR_STANDALONE=1 -e CONVEYOR_REVIEW_GATE=1 \
+    -e CONVEYOR_DRIVER_SEAT=local -e CONVEYOR_VERIFIER_SEAT=local \
+    -e CONVEYOR_PLANNER_SEAT=api -e CONVEYOR_CRITIC_SEAT=api -e CONVEYOR_ESCALATE_SEAT= \
+    -e CONVEYOR_PLAN_FORMAT=json -e CONVEYOR_JSON_ALLOWED_ROOTS=/work \
+    -e CONVEYOR_LOCAL_API=openai -e CONVEYOR_LOCAL_BASE_URL=http://modelgw:11434/v1 \
+    -e CONVEYOR_LOCAL_MODEL="$RUNNER_CODER_MODEL" -e CONVEYOR_LOCAL_TEXT_TOOLS=1 \
+    -e CONVEYOR_API_BASE_URL=http://modelgw:11434/v1 -e CONVEYOR_API_MODEL="$RUNNER_PLANNER_MODEL" \
+    -e CONVEYOR_PLANNER_API_MODEL="$RUNNER_PLANNER_MODEL" -e CONVEYOR_CRITIC_API_MODEL="$RUNNER_CRITIC_MODEL" \
+    -e CONVEYOR_TASK_TIMEOUT="$RUNNER_TASK_TIMEOUT" \
+    "$RUNNER_IMAGE" "$@"
+}
+
+DOOR_PID=""
+open_door() {
+  local i
+  python3 "$HERE/model-door.py" --upstream "$RUNNER_OLLAMA_HOST" --port "$RUNNER_DOOR_PORT" \
+    --allow "$RUNNER_CODER_MODEL" --allow "$RUNNER_PLANNER_MODEL" --allow "$RUNNER_CRITIC_MODEL" \
+    >> "$BELT/logs/model-door.log" 2>&1 &
+  DOOR_PID=$!
+  i=0; while [ $i -lt 20 ]; do
+    curl -fsS -m 2 "http://127.0.0.1:$RUNNER_DOOR_PORT/v1/models" >/dev/null 2>&1 && break
+    kill -0 "$DOOR_PID" 2>/dev/null || die "the model door did not start (see $BELT/logs/model-door.log)"
+    i=$((i+1)); sleep 0.5
+  done
+  docker network create --internal --label "ragnarok.belt=$P" "$P-net" >/dev/null || die "could not create network $P-net"
+  docker run -d --rm --cpus=0.5 --name "$P-gw" --label "ragnarok.belt=$P" --network bridge "$RUNNER_IMAGE" \
+    socat TCP-LISTEN:11434,fork,reuseaddr "TCP:host.docker.internal:$RUNNER_DOOR_PORT" >/dev/null || die "could not start the gateway"
+  docker network connect --alias modelgw "$P-net" "$P-gw" || die "could not connect the gateway"
+  # wait until a box on the internal network actually reaches the door through the gateway
+  i=0; until docker run --rm --cpus=0.5 --network "$P-net" "$RUNNER_IMAGE" curl -fsS -m 3 -o /dev/null http://modelgw:11434/v1/models 2>/dev/null; do
+    i=$((i+1)); [ $i -ge 15 ] && die "the box cannot reach the model door through the gateway"; sleep 1
+  done
+}
+close_door() {
+  docker rm -f "$P-gw" >/dev/null 2>&1
+  docker network rm "$P-net" >/dev/null 2>&1
+  [ -n "$DOOR_PID" ] && kill "$DOOR_PID" 2>/dev/null
+  DOOR_PID=""
+}
+
+# Copy every receipts.jsonl line not yet in data/ into runner.runner_events (idempotent: line_sha).
+# Always a PROPOSAL row written by the AI's login; a line can never become a person's yes.
+ingest() {
+  local f="$BELT/logs/receipts.jsonl" n
+  [ -s "$f" ] || { say "no belt receipts yet"; return 0; }
+  n="$(python3 - "$f" "$P" "$RUNNER_CODER_MODEL" "$RUNNER_PLANNER_MODEL" "$RUNNER_CRITIC_MODEL" <<'PY' | rw_psql
+import hashlib, json, re, secrets, sys
+path, belt, coder, planner, critic = sys.argv[1:6]
+models = {"planner": planner, "critic": critic, "driver": coder, "spec": coder, "escalated": coder, "verifier": coder}
+def q(s):
+    tag = "r" + secrets.token_hex(6)
+    while tag in s: tag = "r" + secrets.token_hex(6)
+    return "$%s$%s$%s$" % (tag, s, tag)
+print("SELECT count(*) AS before FROM runner.runner_events WHERE belt = %s \\gset" % q(belt))
+for no, line in enumerate(open(path, encoding="utf-8", errors="replace"), 1):
+    line = line.rstrip("\n")
+    if not line.strip(): continue
+    try:
+        d = json.loads(line)
+        if not isinstance(d, dict): d = {"unparsed": line}
+    except ValueError:
+        d = {"unparsed": line}
+    seat = re.sub(r"[^a-z0-9_-]", "", str(d.get("seat", "runner")).lower())[:30] or "runner"
+    sha = hashlib.sha256(("%s\n%d\n%s" % (belt, no, line)).encode()).hexdigest()
+    model = models.get(seat)
+    mr = d.get("model_reported")   # what the model API answered with (belt line), not what was configured
+    mr = str(mr)[:200] if isinstance(mr, str) and mr.strip() else None
+    print("BEGIN;")
+    print("SELECT set_config('receipt.actor', %s, true), set_config('receipt.session', %s, true), set_config('receipt.note', %s, true) \\g /dev/null"
+          % (q("runner:" + seat), q("belt:" + belt), q("belt receipt line %d (AI output: a proposal)" % no)))
+    print("INSERT INTO runner.runner_events (belt, line_no, line_sha, task, verdict, seat, model, model_reported, actor, detail) "
+          "VALUES (%s, %d, %s, %s, %s, %s, %s, %s, %s, %s::jsonb) ON CONFLICT (line_sha) DO NOTHING;"
+          % (q(belt), no, q(sha), q(str(d.get("task", "?"))[:300]), q(str(d.get("verdict", "?"))[:100]), q(seat),
+             q(model) if model else "NULL", q(mr) if mr else "NULL", q("runner:" + seat), q(json.dumps(d))))
+    print("COMMIT;")
+print("SELECT count(*) - :before FROM runner.runner_events WHERE belt = %s;" % q(belt))
+PY
+)" || die "copying belt receipts to data/ failed (is the data layer up? cd data && ./kit up)"
+  say "belt receipts copied to data/: $n new"
+}
+
+# A person's yes/no: written by the admin login with proposal = false, receipted like everything else.
+human_event() { # task verdict note -> prints "receipt #seq hash"
+  python3 - "$P" "$1" "$2" "$3" "$RUNNER_HUMAN" <<'PY' | admin_psql -q -t -A
+import datetime, hashlib, json, secrets, sys
+belt, task, verdict, note, who = sys.argv[1:6]
+def q(s):
+    tag = "h" + secrets.token_hex(6)
+    while tag in s: tag = "h" + secrets.token_hex(6)
+    return "$%s$%s$%s$" % (tag, s, tag)
+ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+sha = hashlib.sha256(("%s\nhuman\n%s\n%s\n%s" % (belt, task, verdict, ts)).encode()).hexdigest()
+detail = json.dumps({"ts": ts, "task": task, "verdict": verdict, "note": note, "by": who})
+print("BEGIN;")
+print("SELECT set_config('receipt.actor', %s, true), set_config('receipt.session', %s, true), set_config('receipt.note', %s, true) \\g /dev/null"
+      % (q("human:" + who), q("belt:" + belt), q(note)))
+print("INSERT INTO runner.runner_events (belt, line_no, line_sha, task, verdict, seat, actor, proposal, detail) "
+      "VALUES (%s, 0, %s, %s, %s, 'human', %s, false, %s::jsonb) RETURNING id \\gset"
+      % (q(belt), q(sha), q(task), q(verdict), q("human:" + who), q(detail)))
+print("SELECT 'receipt #' || seq || ' ' || left(hash, 12) FROM write_log WHERE table_name = 'runner_events' AND record_id = :'id' AND action = 'INSERT';")
+print("COMMIT;")
+PY
+}
+
+# approve / accept / reject: a person at a terminal, typing yes. No --yes, no pipe.
+person_gate() { # action task
+  [ -t 0 ] || die "refusing to $1: ./belt $1 must be run by a person at a terminal (stdin is not a TTY). Nothing was changed."
+  local ans
+  printf '%s %s? Type yes: ' "$1" "$2"; read -r ans
+  [ "$ans" = yes ] || { say "not done (you did not type yes)."; exit 1; }
+}
+task_in_human() { # name -> path
+  local t="$1"
+  case "$t" in */*|''|.*) die "give the task's file name as shown by ./belt status" ;; esac
+  case "$t" in *.md) ;; *) t="$t.md" ;; esac
+  [ -f "$BELT/human/$t" ] || die "$t is not waiting on you (not in $BELT/human/)"
+  printf '%s' "$t"
+}
+live_human_boxes() { grep -nE '^- \[ \] .*:: verify: HUMAN[[:space:]]*$' "$1"; }
+
+cmd="${1:-help}"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  build)
+    docker build -q -t "$RUNNER_IMAGE" -f "$HERE/Dockerfile" "$RUNNER_DIR" >/dev/null || die "image build failed"
+    say "built $RUNNER_IMAGE" ;;
+  doctor)
+    bad=0
+    command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1 && say "  ok    docker" || { say "  FIX   docker is not running"; bad=1; }
+    docker image inspect "$RUNNER_IMAGE" >/dev/null 2>&1 && say "  ok    image $RUNNER_IMAGE" || { say "  FIX   no image $RUNNER_IMAGE: ./belt build"; bad=1; }
+    tags="$(curl -fsS -m 5 "$RUNNER_OLLAMA_HOST/api/tags" 2>/dev/null)" && say "  ok    model server $RUNNER_OLLAMA_HOST answers" || { say "  FIX   model server $RUNNER_OLLAMA_HOST does not answer"; bad=1; }
+    for m in "$RUNNER_CODER_MODEL" "$RUNNER_PLANNER_MODEL" "$RUNNER_CRITIC_MODEL"; do
+      printf '%s' "$tags" | grep -q "\"$m\"" && say "  ok    model $m" || { say "  FIX   model $m is not on $RUNNER_OLLAMA_HOST"; bad=1; }
+    done
+    ( data_env; rw_psql -c "SELECT count(*) FROM runner.runner_events" >/dev/null 2>&1 ) \
+      && say "  ok    data layer: runner.runner_events reachable" || { say "  FIX   data layer not reachable or db/runner.sql not applied (cd data && ./kit up)"; bad=1; }
+    [ $bad -eq 0 ] && say "Ready." || exit 1 ;;
+  add)
+    init_trays
+    in_box none /opt/conveyor/conveyor add "$@" ;;
+  run)
+    max=20; [ "${1:-}" = "--max" ] && max="${2:?--max needs a number}"
+    init_trays
+    trap close_door EXIT INT TERM
+    open_door
+    in_box "$P-net" /opt/conveyor/conveyor run --max "$max"; rc=$?
+    close_door
+    data_env; ingest
+    exit $rc ;;
+  status)
+    init_trays
+    in_box none /opt/conveyor/conveyor status
+    n=$(ls "$BELT/human" 2>/dev/null | grep -c '\.md$')
+    if [ "$n" -gt 0 ]; then
+      say ""; say "WAITING ON YOU ($n):"
+      for f in "$BELT"/human/*.md; do
+        if grep -q '^## Result proposed' "$f"; then k="result proposed: ./belt accept or reject"
+        elif grep -q '^## Plan proposed' "$f"; then k="plan proposed: ./belt approve or reject"
+        else k="HUMAN step: ./belt approve or reject"; fi
+        say "  $(basename "$f")  ($k)"
+      done
+    fi ;;
+  show)
+    t="${1:?usage: ./belt show TASK}"; case "$t" in *.md) ;; *) t="$t.md" ;; esac
+    f="$(ls "$BELT"/*/"$t" 2>/dev/null | head -1)"; [ -n "$f" ] || die "no task $t"
+    say "($f)"; cat "$f" ;;
+  approve)
+    [ $# -eq 1 ] || die "usage: ./belt approve TASK (no options: a person types yes at a terminal)"
+    t="$(task_in_human "$1")" || exit 1; f="$BELT/human/$t"
+    grep -q '^## Result proposed' "$f" && die "$t is a proposed RESULT: use ./belt accept or ./belt reject"
+    boxes="$(live_human_boxes "$f")"; [ -n "$boxes" ] || die "$t has no open HUMAN box to approve"
+    say "$t: you are approving"; printf '%s\n' "$boxes" | sed 's/^[0-9]*:- \[ \] /  - /; s/ :: verify: HUMAN[[:space:]]*$//'
+    person_gate approve "$t"
+    data_env
+    r="$(human_event "$t" approved "approved by $RUNNER_HUMAN at a terminal")" || die "could not write the receipt; nothing changed"
+    sed -E 's/^- \[ \] (.*:: verify: HUMAN[[:space:]]*)$/- [x] \1/' "$f" > "$f.tmp" && mv "$f.tmp" "$f" || die "could not tick the boxes"
+    printf '\n## Approved by %s at %s (%s)\n' "$RUNNER_HUMAN" "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$r" >> "$f"
+    mv "$f" "$BELT/queue/$t" || die "could not move $t to queue/"
+    say "approved: $t is back on the belt ($r). Run ./belt run." ;;
+  accept)
+    [ $# -eq 1 ] || die "usage: ./belt accept TASK (no options: a person types yes at a terminal)"
+    t="$(task_in_human "$1")" || exit 1; f="$BELT/human/$t"
+    grep -q '^## Result proposed' "$f" || die "$t is not a proposed result (see ./belt status)"
+    [ -z "$(live_human_boxes "$f")" ] || die "$t still has an open HUMAN box: ./belt approve it first"
+    say "$t: the checks and the verifier passed it. Outputs: $BELT/outputs/${t%.md}/ and $WORK"
+    person_gate accept "$t"
+    data_env
+    r="$(human_event "$t" accepted "accepted by $RUNNER_HUMAN at a terminal")" || die "could not write the receipt; nothing changed"
+    printf '\n## Accepted by %s at %s (%s)\n' "$RUNNER_HUMAN" "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$r" >> "$f"
+    mv "$f" "$BELT/done/$t" || die "could not move $t to done/"
+    say "accepted: $t is done ($r)." ;;
+  reject)
+    [ $# -ge 1 ] || die "usage: ./belt reject TASK [why]"
+    t="$(task_in_human "$1")" || exit 1; f="$BELT/human/$t"; shift; why="${*:-no reason given}"
+    person_gate reject "$t"
+    data_env
+    r="$(human_event "$t" rejected "rejected by $RUNNER_HUMAN: $why")" || die "could not write the receipt; nothing changed"
+    printf '\n## Rejected by %s at %s (%s)\n\n%s\n' "$RUNNER_HUMAN" "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$r" "$why" >> "$f"
+    mv "$f" "$BELT/failed/$t" || die "could not move $t to failed/"
+    say "rejected: $t is in failed/ ($r)." ;;
+  probe)
+    # Open the door and prove the box's walls from inside it, then close it again.
+    init_trays; trap close_door EXIT INT TERM; open_door
+    in_box "$P-net" bash -s "$RUNNER_CODER_MODEL" <<'PROBE'; rc=$?
+bad=0
+c() { curl -s -o /dev/null -w '%{http_code}' -m 10 "$@"; }
+[ "$(c http://modelgw:11434/v1/models)" = 200 ] && echo "  ok    the box reaches the model door (/v1/models)" || { echo "  FAIL  the box cannot reach the model door"; bad=1; }
+curl -s -m 10 http://modelgw:11434/v1/models | grep -q "\"$1\"" && echo "  ok    the door lists $1" || { echo "  FAIL  the door does not list $1"; bad=1; }
+for u in /api/pull /api/delete /api/tags; do
+  code="$(c -X POST http://modelgw:11434$u -d '{}')"
+  [ "$code" = 403 ] && echo "  ok    the door refuses POST $u (403)" || { echo "  FAIL  POST $u gave $code"; bad=1; }
+done
+curl -s -m 5 -o /dev/null https://example.com && { echo "  FAIL  the box reached the internet"; bad=1; } || echo "  ok    no internet from the box"
+touch /belt/done/.probe 2>/dev/null && { rm -f /belt/done/.probe; echo "  FAIL  the box can write done/"; bad=1; } || echo "  ok    done/ is read-only to the box (only ./belt accept files there)"
+touch /opt/conveyor/.probe 2>/dev/null && { echo "  FAIL  the box can change the belt code"; bad=1; } || echo "  ok    the belt code is read-only to the box"
+env | grep -qiE 'POSTGRES|MCP_DB|PASSWORD|API_KEY' && { echo "  FAIL  database or key settings leaked into the box"; bad=1; } || echo "  ok    no database logins or keys inside the box"
+exit $bad
+PROBE
+    close_door; exit $rc ;;
+  ingest) data_env; ingest ;;
+  receipts)
+    data_env
+    rw_psql -F ' | ' -c "SELECT id, to_char(created_at,'YYYY-MM-DD HH24:MI'), task, verdict, actor, CASE WHEN proposal THEN 'proposal' ELSE 'PERSON' END FROM runner.runner_events ORDER BY id DESC LIMIT ${1:-20}" ;;
+  verify)
+    data_env
+    rw_psql -F ' | ' -c "SELECT chain, rows_checked, CASE WHEN intact THEN 'INTACT' ELSE 'BROKEN at ' || coalesce(first_bad_seq::text,'?') || ': ' || coalesce(problem,'') END FROM kit_verify()" ;;
+  help|-h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) die "unknown command $cmd (./belt help)" ;;
+esac

@@ -1,0 +1,156 @@
+#!/bin/bash
+# heimdall-edit: change Heimdall while it keeps running.
+#
+#   heimdall-edit <who> "<instruction>"
+#     who = claude | grok | codex   (subscription CLIs on this Mac)
+#           api:anthropic | api:openai | api:xai | api:gemini   (API key in the macOS keychain, see heimdall-api-edit.py)
+#           manual                                 (the owner's own uncommitted edits in ~/Developer/heimdall; no instruction needed)
+#
+# What happens, every time:
+#   1. a separate copy of the code (git worktree under .staging/) is made from the last good commit
+#   2. the chosen AI edits that copy (manual: the owner's working-tree changes are copied in)
+#   3. the copy must build and pass `Heimdall --selftest`, or nothing changes
+#   4. it is committed, fast-forwarded onto main, and installed as the new current build;
+#      the build that was running becomes "previous" (the launcher rolls back to it if the new one crashes)
+#   5. the running app shows "update ready"; it restarts only when the owner clicks Restart
+# Every step is a line in ~/.ragnarok/heimdall-edits.jsonl, which Heimdall shows live.
+# Shared plumbing (logger, lock, signal cleanup) is in bin/loop-lib.sh.
+set -u
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+. "$REPO/bin/loop-lib.sh"
+WHO="${1:-}"; shift || true
+INSTR="${*:-}"
+[ "$INSTR" = "-" ] && INSTR="$(cat)"          # A8: long instructions come on stdin (`heimdall-edit claude -`)
+LOG="$HOME/.ragnarok/heimdall-edits.jsonl"
+SUPPORT="$HOME/Library/Application Support/Heimdall"
+CURRENT="$HOME/Applications/Ragnarok.app"   # the app in the Dock; the previous build is kept in $SUPPORT
+ID="$(date +%Y%m%d-%H%M%S)-$$"
+# Child processes inherit explicit actor/run labels independently of the shared OS account.
+export RAGNAROK_ACTOR="$WHO" RAGNAROK_RUN_ID="$ID" RAGNAROK_ORIGIN="app-edit"
+[ "$WHO" = manual ] && export RAGNAROK_ACTOR=owner
+WT="$REPO/.staging/$ID"
+BRANCH="edit/$ID"
+mkdir -p "$HOME/.ragnarok" "$SUPPORT"; [ -e "$LOG" ] || install -m 600 /dev/null "$LOG"
+LOGFIELDS="\"edit\":\"$ID\",\"who\":\"$WHO\",\"by\":\"$(id -un)\""
+
+fail() { log "$1" 0 "${2:-}"; cleanup; echo "heimdall-edit: FAILED at $1: ${2:-}" >&2; exit 1; }
+cleanup() { cd "$REPO" 2>/dev/null; git -C "$REPO" worktree remove --force "$WT" >/dev/null 2>&1; git -C "$REPO" branch -D "$BRANCH" >/dev/null 2>&1; }
+save_failed() {  # a change that failed its build/test is kept as a patch, so the next round can reuse the good parts
+  local d="$HOME/.ragnarok/failed-edits"; mkdir -p "$d" && chmod 700 "$d"
+  git -C "$WT" add -A >/dev/null 2>&1
+  if git -C "$WT" diff --cached --binary HEAD > "$d/$ID.patch" 2>/dev/null && [ -s "$d/$ID.patch" ]; then
+    chmod 600 "$d/$ID.patch"; echo "the failed change is saved in $d/$ID.patch"
+  else rm -f "$d/$ID.patch"; fi
+}
+stale_cleanup() {  # an earlier run died holding the lock: remove its staging copies and edit/ branches
+  local wt
+  for wt in "$REPO"/.staging/*; do [ -d "$wt" ] && git -C "$REPO" worktree remove --force "$wt" >/dev/null 2>&1; done
+  git -C "$REPO" worktree prune >/dev/null 2>&1
+  git -C "$REPO" for-each-ref --format='%(refname:short)' refs/heads/edit/ | while read -r b; do git -C "$REPO" branch -D "$b" >/dev/null 2>&1; done
+}
+
+case "$WHO" in
+  claude|grok|codex|manual|api:*) ;;
+  *) echo "usage: heimdall-edit <claude|grok|codex|api:anthropic|api:openai|api:xai|api:gemini|manual> \"instruction\" (or - to read it from stdin)" >&2; exit 2 ;;
+esac
+[ "$WHO" = manual ] || [ -n "$INSTR" ] || { echo "heimdall-edit: give an instruction" >&2; exit 2; }
+loop_logger_start
+loop_lock "$SUPPORT/edit.lock" stale_cleanup     # one edit at a time; a lock left by a crash is cleared (A3)
+[ -n "${LOOP_CLEANED_STALE:-}" ] && log stale 1 "cleaned up an interrupted edit"
+
+log start 1 "$INSTR"
+BASE="$(git -C "$REPO" rev-parse HEAD 2>/dev/null)" || fail start "not a git repo: $REPO"
+# the app lives in app/heimdall/ of the ragnarok repo (since 2026-11-02); PREFIX is that subfolder, or empty
+PREFIX="$(git -C "$REPO" rev-parse --show-prefix)"
+git -C "$REPO" worktree add -q -b "$BRANCH" "$WT" HEAD 2>&1 || fail worktree "could not make staging copy"
+
+PROMPT="You are editing Heimdall, a SwiftUI macOS app, in the current folder. Read AGENTS.md first.
+Make this change: $INSTR
+Rules: edit only files inside this folder; keep the unlock gate (FIDO2 key or Touch ID, no password fallback);
+never print or log secrets; do not run the app; keep it compiling. Stop when the change is made."
+
+# A2: manual mode copies tracked changes plus NEW files only under the code folders; never secret-looking files
+CODE_DIRS="Sources/ bin/ recall/ Resources/ docs/ Controls/ launcher/ room/ ops/ checks/ Package.swift make-app.sh make-launcher.sh AGENTS.md .gitignore"
+secretish() { case "$(basename "$1" | tr 'A-Z' 'a-z')" in .env*|*.pem|*.key|*.p12|*.p8|*secret*|*token*|*apikey*|*api-key*|*api_key*|id_rsa*|id_ed25519*|*password*|*credential*) return 0;; esac; return 1; }
+manual_snapshot() {  # writes the patch of the owner's changes to stdout; lists skipped untracked files on stderr
+  local f keep=()
+  ( cd "$REPO" && git diff --binary --relative HEAD -- . )   # only this folder, paths relative to it
+  while IFS= read -r -d '' f; do
+    if secretish "$f"; then echo "skipped (looks like a secret): $f" >&2; continue; fi
+    case " $CODE_DIRS " in *" ${f%%/*}/ "*|*" $f "*) keep+=("$f") ;; *) echo "skipped (new file outside the code folders): $f" >&2 ;; esac
+  done < <(cd "$REPO" && git ls-files --others --exclude-standard -z)
+  # git diff --no-index takes ONE new file at a time (several at once fails), so each new file is diffed on its own
+  for f in ${keep[@]+"${keep[@]}"}; do ( cd "$REPO" && git diff --binary --no-index /dev/null "$f"; true ); done
+}
+
+cd "$WT/$PREFIX" || fail worktree "staging copy missing"
+echo "▸ stage: ai"   # the Hub's progress bar follows these lines
+case "$WHO" in
+  claude) stream ai "$REPO/bin/claude-live" -p "$PROMPT" --permission-mode acceptEdits --allowedTools "Read,Edit,Write,Glob,Grep,Bash(swift build*)" ;;
+  grok)   stream ai grok --cwd "$WT" --always-approve -p "$PROMPT" ;;
+  codex)  command -v codex >/dev/null || fail ai "codex CLI is not installed on this Mac"
+          stream ai codex exec --full-auto "$PROMPT" ;;
+  api:*)  stream ai /usr/bin/python3 "$REPO/bin/heimdall-api-edit.py" "${WHO#api:}" "$WT" "$INSTR" ;;
+  manual) PATCH="$(mktemp)"; SKIPS="$(manual_snapshot 2>&1 >"$PATCH")"
+          [ -n "$SKIPS" ] && { log skipped 1 "$SKIPS"; printf '%s\n' "$SKIPS"; }
+          # applied from the top of the staging copy: inside a subfolder, git apply skips every file silently
+          if [ -s "$PATCH" ]; then git -C "$WT" apply --index ${PREFIX:+--directory="${PREFIX%/}"} "$PATCH" 2>&1 || { rm -f "$PATCH"; fail ai "could not copy your changes into the staging copy"; }
+          else rm -f "$PATCH"; fail ai "no uncommitted changes in $REPO (new files outside the code folders aren't picked up)"; fi
+          rm -f "$PATCH" ;;
+esac
+rc=$?; [ $rc -eq 0 ] || fail ai "$WHO exited $rc"
+
+git add -A .
+[ -n "$(git status --porcelain .)" ] || fail ai "$WHO made no changes"
+log diff 1 "$(git diff --cached --stat)"
+
+echo "▸ stage: build"
+stream build ./make-app.sh || { save_failed; fail build "build failed (see lines above)"; }
+echo "▸ stage: test"
+out=$(/usr/bin/perl -e 'alarm 30; exec @ARGV' build/Heimdall.app/Contents/MacOS/Heimdall --selftest 2>&1); rc=$?
+log selftest $([ $rc -eq 0 ] && echo 1 || echo 0) "$out"
+[ $rc -eq 0 ] || { printf '%s\n' "$out" | grep -E '^FAIL|SELFTEST'; save_failed; fail selftest "self-test failed (exit $rc)"; }
+
+git -c user.name="heimdall-edit ($WHO)" -c user.email="$(git config user.email || echo heimdall@localhost)" commit -q -m "heimdall-edit ($WHO): $(printf '%s' "${INSTR:-manual edit}" | head -c 2000)" || fail commit "commit failed"
+NEW=$(git rev-parse --short HEAD)
+# re-sign after stamping, the same way make-app.sh signed it (Apple Development when the tiles are in, else ad-hoc)
+# Signing identity: RAGNAROK_SIGN_ID, else the first "Apple Development" identity in this Mac's keychain.
+SIGN="${RAGNAROK_SIGN_ID:-$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Apple Development: [^"]*\)".*/\1/p' | head -1)}"
+SIGN="${SIGN:-no-apple-development-identity}"
+if [ -d build/Heimdall.app/Contents/PlugIns ]; then SIGNWITH=(--timestamp=none -s "$SIGN"); else SIGNWITH=(-s -); fi
+echo "$NEW" > build/Heimdall.app/Contents/Resources/commit && codesign --force "${SIGNWITH[@]}" build/Heimdall.app >/dev/null 2>&1 || fail commit "could not stamp the build"
+cd "$REPO"
+if [ "$WHO" = manual ]; then
+  # A1: never stash, reset --hard or clean the owner's folder. Move main to the new commit and re-sync only the index; the
+  # files on disk are left exactly as they are, so anything he changed during the build stays as an uncommitted change.
+  [ "$(git symbolic-ref -q HEAD)" = refs/heads/main ] || fail merge "your folder isn't on main; nothing was installed (your files are untouched)"
+  [ "$(git rev-parse HEAD)" = "$BASE" ] || fail merge "main moved during the build; nothing was installed (your files are untouched)"
+  git update-ref -m "heimdall-edit $ID" refs/heads/main "$(git -C "$WT" rev-parse HEAD)" "$BASE" && git reset -q \
+    || fail merge "could not move main to the new commit; nothing was installed (your files are untouched)"
+elif ! git merge -q --ff-only "$BRANCH" 2>&1; then
+  fail merge "main moved, or you have unsaved edits to the same files; nothing was installed"
+fi
+
+echo "▸ stage: install"
+# install: current -> previous (a copy), then refresh current IN PLACE from incoming. The ~/Applications/Ragnarok.app
+# folder itself is never replaced, so Dock icons and other shortcuts (which follow the folder, not the name) keep working.
+mkdir -p "$(dirname "$CURRENT")"   # A5: new Macs have no ~/Applications
+notinstalled() { log install 0 "$1"; cleanup; echo "heimdall-edit: committed $NEW to main, but NOT installed: $1" >&2; exit 1; }
+rm -rf "$SUPPORT/incoming.app" && cp -R "$WT/$PREFIX/build/Heimdall.app" "$SUPPORT/incoming.app" || notinstalled "copy failed"
+rm -rf "$SUPPORT/previous.app"
+[ -d "$CURRENT" ] && { cp -R "$CURRENT" "$SUPPORT/previous.app" || notinstalled "could not keep the previous build"; }
+mkdir -p "$CURRENT" && rsync -a --delete --ignore-times "$SUPPORT/incoming.app/" "$CURRENT/" || notinstalled "swap failed"
+rm -rf "$SUPPORT/incoming.app"
+date +%s > "$SUPPORT/installed-at"
+printf '%s\n%s\n' "$NEW" "$(oneline "${INSTR:-manual edit}" | head -c 300)" > "$SUPPORT/update-ready"   # A9
+log installed 1 "$NEW: $(oneline "${INSTR:-manual edit}" | head -c 500)"
+cleanup
+# off-Mac copy: push to the backup repo on Alexus (never blocks or fails the edit)
+if ! git -C "$REPO" remote get-url alexus >/dev/null 2>&1; then
+  log backup 0 "no 'alexus' backup remote set for $(git -C "$REPO" rev-parse --show-toplevel); nothing pushed off the Mac"
+else
+  if out=$(GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=8" git -C "$REPO" push -q alexus main --tags 2>&1); then
+    log backup 1 "pushed $NEW to alexus:backups/heimdall.git"
+  else log backup 0 "push to Alexus failed (copy is behind): $out"; fi
+fi
+echo "heimdall-edit: installed $NEW. Click Restart in Heimdall when ready."

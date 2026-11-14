@@ -1,0 +1,66 @@
+{
+  "ragnarok/app/heimdall": [
+    {
+      "name": "Doctor fixture/integration suite",
+      "command": "python3 checks/doctor-check.py",
+      "result": "passed",
+      "cases": 34,
+      "checked_at": "2026-11-04T09:14:27-08:00",
+      "scope": "Fake AI and scratch git; production repairs and app UI not tested.",
+      "files": [
+        {
+          "path": "ragnarok/app/heimdall/bin/ragnarok-doctor",
+          "sha256": "c46b6b592b799ae53029eb96a482873fb794d5990e67b4c59337495774f7d8c7"
+        },
+        {
+          "path": "ragnarok/app/heimdall/checks/doctor-check.py",
+          "sha256": "05033dc3bd9cce9221a226049d729f487f8661dee55aced8df1f13f53ca7ee11"
+        }
+      ]
+    }
+  ],
+  "ragnarok/app/heimdall/demos/hardware-proof": [
+    {
+      "name": "Proof Lab offline suite",
+      "command": "python3 verify_test.py",
+      "result": "passed",
+      "cases": 20,
+      "checked_at": "2026-11-04T09:41:50-08:00",
+      "scope": "Software-key fixtures and local HTTP tests; no live OpenAI call or physical hardware proof.",
+      "files": [
+        {
+          "path": "ragnarok/app/heimdall/demos/hardware-proof/proof.py",
+          "sha256": "f5c29950aff95fffb7205f2190e977e77dc62a35958c23ab0a5d48f2ebdb935b"
+        },
+        {
+          "path": "ragnarok/app/heimdall/demos/hardware-proof/verify_test.py",
+          "sha256": "790e1777b473b784a37c8317e4bad740665d39131e2244d8fccbdd79fc8c27c3"
+        },
+        {
+          "path": "ragnarok/app/heimdall/demos/hardware-proof/dist/verify.js",
+          "sha256": "1cdb94b07e97a429ddb731052fdb35cda212b6f770898cade494194881c61c6d"
+        }
+      ]
+    }
+  ],
+  "greenlight": [
+    {
+      "name": "Greenlight scratch-repository regression suite",
+      "command": "bash test/run.sh",
+      "result": "passed",
+      "cases": 16,
+      "checked_at": "2026-11-04T09:14:27-08:00",
+      "scope": "Fake AI commands in temporary git repos; no real model or production project.",
+      "files": [
+        {
+          "path": "greenlight/greenlight",
+          "sha256": "bec1df39486d5181affe8cec183a2479e56d6f74055cb9050a025823e1d86d12"
+        },
+        {
+          "path": "greenlight/test/run.sh",
+          "sha256": "f5d249dcb32329216740eddf1072e810004628ba2db6f520c7e5c06afc0e602a"
+        }
+      ]
+    }
+  ]
+}

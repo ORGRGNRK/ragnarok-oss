@@ -1,0 +1,38 @@
+name: PipelineDebugger
+options:
+  bundleIdPrefix: co.rgnrk
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  PipelineDebugger:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+      - path: Resources
+      - path: ../heimdall/bin/heimdall-debugger.py
+        buildPhase: resources
+      - path: ../heimdall/bin/pipeline_debugger_controller.py
+        buildPhase: resources
+    info:
+      path: Resources/Info.plist
+      properties:
+        CFBundleDisplayName: Pipeline Debugger
+        CFBundleName: Pipeline Debugger
+        LSApplicationCategoryType: public.app-category.developer-tools
+    entitlements:
+      path: Resources/PipelineDebugger.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: co.rgnrk.PipelineDebugger
+        PRODUCT_NAME: Pipeline Debugger
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
+        COMBINE_HIDPI_IMAGES: YES

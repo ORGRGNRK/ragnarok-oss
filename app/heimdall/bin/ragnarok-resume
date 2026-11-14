@@ -1,0 +1,336 @@
+#!/usr/bin/env -S python3 -I -u
+"""ragnarok-resume — pick a project up from its switch packet and keep working, without the owner.
+
+  ragnarok-resume <folder> <claude|grok|codex> [--rounds N] [--steps K]   do the next K steps (default 2), then write a new packet
+  ragnarok-resume <folder> <ai> --packet-only                             just write a fresh packet (a "switch")
+
+Each round:
+  1. reads the project's active packet from Ragnarok HQ (bin/ragnarok-packet)
+  2. hands it to the AI through the proven loop: bin/heimdall-edit for Ragnarok itself, bin/ragnarok-heal for other
+     projects (staging copy -> AI -> build -> test -> commit; nothing changes unless it builds and passes)
+  3. writes the next packet (what was done, what's next, receipted in HQ); steps that need the owner stay in it
+  4. with --rounds N, repeats until N rounds, a failure, or only the owner's steps are left
+Steps the AI must leave for the owner: money, accounts/logins, deleting, sending anything outside, sudo, hardware keys,
+clicking in an app. Every round is logged to ~/.ragnarok/ragnarok-resume.jsonl.
+"""
+import datetime, hashlib, json, os, re, shutil, subprocess, sys, tempfile, urllib.request
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+HOME = os.path.expanduser("~")
+LOG = f"{HOME}/.ragnarok/ragnarok-resume.jsonl"
+AIS = ("claude", "grok", "codex")
+HUMAN = "money, accounts or logins, deleting anything, sending anything outside this Mac, sudo, hardware keys, or clicking in an app"
+
+
+def say(s):
+    print(s, flush=True)
+
+
+def fail(msg, code=1):
+    print(f"ragnarok-resume: {msg}", file=sys.stderr, flush=True)
+    sys.exit(code)
+
+
+def log(**rec):
+    rec = {"ts": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"), **rec}
+    os.makedirs(os.path.dirname(LOG), exist_ok=True)
+    fd = os.open(LOG, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    os.write(fd, (json.dumps(rec) + "\n").encode()); os.close(fd)
+
+
+def git(folder, *a):
+    r = subprocess.run(["git", "-C", folder, *a], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def packet_tool(*a, stdin=None):
+    r = subprocess.run([f"{HERE}/ragnarok-packet", *a], input=stdin, capture_output=True, text=True, timeout=120)
+    if r.returncode != 0:
+        fail((r.stderr.strip() or f"ragnarok-packet {a[0]} failed").splitlines()[-1].replace("ragnarok-packet: ", ""))
+    return json.loads(r.stdout or "{}")
+
+
+def is_main(folder):
+    main = os.path.realpath(os.path.join(HERE, "..")).lower()
+    legacy = os.path.realpath(f"{HOME}/Developer/heimdall").lower()
+    top = git(folder, "rev-parse", "--show-toplevel")
+    real_folder = os.path.realpath(folder).lower()
+    return real_folder in (main, legacy) or os.access(os.path.join(top or folder, "bin/heimdall-edit"), os.X_OK)
+
+
+def run_streaming(cmd, stdin_text, cwd):
+    """Runs cmd, printing its output live; returns exit code, last 60 lines, all output lines, exposed JSON stream."""
+    tail, alllines = [], []
+    trace = tempfile.NamedTemporaryFile(prefix="ragnarok-resume-trace-", suffix=".jsonl", delete=False)
+    trace.close()
+    env = dict(os.environ, RAGNAROK_HANDOFF_TRANSCRIPT=trace.name)
+    try:
+        p = subprocess.Popen(cmd, env=env, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                             errors="replace", bufsize=1)
+        p.stdin.write(stdin_text); p.stdin.close()
+        for line in p.stdout:
+            print(line, end="", flush=True)
+            tail = (tail + [line.rstrip("\n")])[-60:]
+            alllines.append(line.rstrip("\n"))
+        rc = p.wait()
+        with open(trace.name, errors="replace") as h:
+            raw_trace = h.read()
+        return rc, tail, alllines, raw_trace
+    finally:
+        os.unlink(trace.name)
+
+
+def packet_text(pk):
+    return (f"PACKET {pk.get('Packet_ID')} (written by {pk.get('AI_Actor')}, {pk.get('Created', '')[:16]})\n"
+            f"ORIGINAL REQUIREMENTS (preserve):\n{pk.get('Original_Requirements', 'Legacy packet: original requirements not captured.')}\n"
+            f"EVIDENCE:\n{pk.get('Evidence_JSON', '{}')}\n"
+            f"SOURCE CONTEXT: history id {pk.get('History_ID', 'none')} (retrieve with ragnarok-packet history ID if a detail is missing).\n"
+            f"STATE:\n{pk.get('Summary_State', '')}\n\nNEXT STEPS:\n{pk.get('Next_Steps', '')}")
+
+
+def evidence_snapshot(folder, outcome):
+    top = git(folder, "rev-parse", "--show-toplevel") or folder
+    paths = git(folder, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").splitlines()
+    files = []
+    for rel in paths:
+        path = os.path.realpath(os.path.join(top, rel))
+        if os.path.commonpath([path, os.path.realpath(folder)]) != os.path.realpath(folder):
+            continue
+        if os.path.isfile(path):
+            with open(path, "rb") as h:
+                files.append({"path": os.path.relpath(path, folder), "sha256": hashlib.sha256(h.read()).hexdigest()})
+    return {"files": files, "git_status": git(folder, "status", "--short"),
+            "runner_outcome": outcome, "claims_policy": "File hashes prove captured bytes only; runner success is limited to configured checks."}
+
+
+def check_packet_evidence(folder, pk):
+    if pk.get("Base_Commit") and pk["Base_Commit"] != git(folder, "rev-parse", "HEAD"):
+        fail("packet base commit is stale; save a fresh packet before resuming")
+    ev = json.loads(pk.get("Evidence_JSON") or "{}")
+    if "git_status" in ev and ev["git_status"] != git(folder, "status", "--short"):
+        fail("working tree differs from packet evidence; save a fresh packet before resuming")
+    for item in ev.get("files", []):
+        path = os.path.realpath(os.path.join(folder, item["path"]))
+        if os.path.commonpath([path, os.path.realpath(folder)]) != os.path.realpath(folder):
+            fail("packet evidence points outside the project")
+        try:
+            with open(path, "rb") as h:
+                digest = hashlib.sha256(h.read()).hexdigest()
+        except OSError:
+            fail("packet evidence file is missing")
+        if digest != item["sha256"]:
+            fail("packet evidence hash no longer matches: " + item["path"])
+
+
+def _resolve_ollama_url():
+    cands = []
+    env_url = os.environ.get("OLLAMA_URL", "").strip()
+    if env_url:
+        cands.append(env_url.rstrip("/"))
+    conf = os.path.join(HOME, ".ragnarok", "local.conf")
+    if os.path.isfile(conf):
+        for line in open(conf):
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                k, v = k.strip(), v.strip().strip("\"'")
+                if k == "OLLAMA_URL" and v:
+                    cands.append(v.rstrip("/"))
+                elif k in ("ALEXUS_HOST", "ALEXUS_TAILSCALE") and v:
+                    cands.append(f"http://{v}:11434")
+    for base in ("http://alexus.local:11434", "http://alexus:11434"):
+        if base not in cands:
+            cands.append(base)
+    for base in cands:
+        try:
+            req = urllib.request.Request(f"{base}/api/tags", headers={"User-Agent": "Ragnarok-Resume"})
+            with urllib.request.urlopen(req, timeout=2.0) as r:
+                if r.status == 200:
+                    return base
+        except Exception:
+            continue
+    return cands[0] if cands else ""
+
+
+def summarize(prompt):
+    provider = os.environ.get("RAGNAROK_PACKET_SUMMARIZER", "ollama")
+    if provider == "ollama":
+        url = _resolve_ollama_url()
+        if not url:
+            raise ValueError("Set OLLAMA_URL or local.conf before using the Ollama packet summarizer")
+        model = os.environ.get("RAGNAROK_PACKET_MODEL", "qwen2.5-coder:7b")
+        payload = {"model": model, "stream": False, "format": "json", "messages": [{"role": "user", "content": prompt}],
+                   "options": {"temperature": 0, "num_ctx": 16384, "num_predict": 4096}}
+        req = urllib.request.Request(url.rstrip("/") + "/api/chat", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=300) as response:
+            result = json.load(response)
+        return result["message"]["content"], "ollama:" + result.get("model", model), {k: result.get(k) for k in ("model", "prompt_eval_count", "eval_count", "total_duration")}
+    if provider != "claude":
+        raise ValueError("Unknown packet summarizer provider")
+    claude = shutil.which("claude")
+    if not claude:
+        raise RuntimeError("Claude is unavailable")
+    r = subprocess.run([claude, "-p", "--model", "haiku", "--tools", "", "--no-session-persistence", prompt],
+                       capture_output=True, text=True, timeout=180, cwd="/tmp", stdin=subprocess.DEVNULL)
+    if r.returncode:
+        raise RuntimeError("Claude summarizer failed; details withheld from packet logs")
+    return r.stdout.strip(), "claude haiku", {"model_requested": "haiku"}
+
+
+def write_packet(folder, slug, ai, old, outcome, history=None):
+    """Asks the configured text-only summarizer to write the next packet; falls back to a plain one if that fails."""
+    log_lines = git(folder, "log", "-12", "--format=%h %ad %s", "--date=short")
+    recent_stat = git(folder, "log", "-4", "--stat", "--format=--- %h %s")[-4000:]
+    status = git(folder, "status", "--short")[:1500]
+    prompt = f"""You write the hand-off ("switch") packet for the project {slug} so ANY AI can resume it later without the owner.
+Reply with ONLY a JSON object: {{"summary_state": "...", "next_steps": "...", "can_continue": true|false}}
+- summary_state: short bullets of the current state: what exists, what was built/changed/verified (paths, hosts, services).
+  Keep still-true facts from the old packet; drop what is finished or wrong. Mark anything unverified as UNVERIFIED.
+  DONE/LEFT lines are agent claims, not proof. Commit stats show changed files, not semantic correctness.
+  Only claim a check passed when its recorded runner result supports that exact check. Never infer security or end-to-end correctness from build success.
+- next_steps: numbered, exact actions, the first one doable immediately. Each step small enough for one short AI round
+  (one change, a few files). Split big items into several steps. If a round failed, make the failing part its own first step
+  (name the failing check and any saved .patch file). Lead with real work that moves the project
+  forward; no steps that only re-check or re-read things (the build and test run automatically after every round).
+  The next AI works in a staging copy that the loop builds, tests and commits itself, so never tell it to make
+  branches, commit, push or run the selftest; just say what to change. Put steps that need the owner ({HUMAN}) last,
+  each starting with "OWNER:".
+- can_continue: true only if at least one next step can be done by an AI inside {folder} without the owner.
+
+OLD PACKET:
+{packet_text(old) if old else "(none)"}
+
+WHAT JUST HAPPENED:
+{outcome}
+
+RECENT COMMITS:
+{log_lines or "(none)"}
+
+WHAT THE LAST COMMITS CHANGED (file statistics alone do not establish completion):
+{recent_stat or "(none)"}
+
+UNCOMMITTED FILES:
+{status or "(none)"}"""
+    reply, writer, model_meta = "", "unavailable", {}
+    try:
+        reply, writer, model_meta = summarize(prompt)
+    except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired):
+        pass
+    pk = None
+    m = re.search(r"\{.*\}", reply, re.S)
+    if m:
+        try:
+            pk = json.loads(m.group(0))
+        except ValueError:
+            pk = None
+    if not isinstance(pk, dict) or not pk.get("summary_state") or not pk.get("next_steps"):
+        when = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        pk = {"summary_state": ((old or {}).get("Summary_State", "") + f"\n- {when} {ai} via Ragnarok resume: {outcome.splitlines()[0]}").strip()
+                               + "\n(Packet written without an AI summary: the summarizer wasn't available.)",
+              "next_steps": (old or {}).get("Next_Steps") or "1. Look at the recent commits and decide the next step.",
+              "can_continue": False}
+        writer = "plain"
+    for k in ("summary_state", "next_steps"):
+        if not isinstance(pk[k], str):
+            pk[k] = json.dumps(pk[k], indent=1) if not isinstance(pk[k], list) else "\n".join(map(str, pk[k]))
+    requirements = (old or {}).get("Original_Requirements")
+    requirements_file = os.path.join(folder, ".ragnarok-requirements.json")
+    if not requirements and os.path.isfile(requirements_file):
+        with open(requirements_file) as h:
+            requirements = json.load(h)
+    if writer != "plain":
+        pk["summary_state"] = "AI SUMMARY — claims are UNVERIFIED unless supported by the attached check evidence.\n" + pk["summary_state"]
+    evidence = evidence_snapshot(folder, outcome)
+    evidence["runner_exit_code"] = history.get("exit_code") if isinstance(history, dict) else None
+    evidence["completion_claims"] = [{"text": line.strip(), "status": "agent-reported; unverified"}
+        for line in (history.get("output", "").splitlines() if isinstance(history, dict) else []) if line.strip().startswith("DONE:")]
+    pk["can_continue"] = pk.get("can_continue") is True
+    pk.update({"expected_packet_id": (old or {}).get("Packet_ID"),
+               "original_requirements": requirements,
+               "base_commit": git(folder, "rev-parse", "HEAD"),
+               "evidence": evidence,
+               "source_type": "resume-observable-context",
+               "history": {"previous_packet": old, "round": history, "outcome": outcome,
+                           "summarizer_prompt": prompt, "summarizer_reply": reply, "summarizer": writer, "model_metadata": model_meta,
+                           "scope": "Supplied prompts and observable runner output; not hidden reasoning or unexposed CLI chat."}})
+    saved = packet_tool("save", slug, f"{ai} via Ragnarok resume", stdin=json.dumps(pk))
+    say(f"\nnew packet {saved.get('packet_id')} · {saved.get('status')} · receipt {saved.get('receipt')} · written by {writer}")
+    return pk, saved
+
+
+def main(a):
+    if len(a) < 3 or a[1] in ("-h", "--help"):
+        print(__doc__.strip()); return
+    folder = os.path.abspath(a[1]); ai = a[2]
+    if not os.path.isdir(folder):
+        fail(f"no such folder: {folder}", 2)
+    if ai not in AIS:
+        fail(f"ai must be one of {', '.join(AIS)}", 2)
+    rounds, steps, packet_only = 1, 2, "--packet-only" in a
+    if "--steps" in a:   # small rounds: a failure throws away less, and results land more often
+        i = a.index("--steps")
+        if i + 1 >= len(a) or not a[i + 1].isdigit() or not 1 <= int(a[i + 1]) <= 10:
+            fail("--steps needs a number from 1 to 10", 2)
+        steps = int(a[i + 1])
+    if "--rounds" in a:
+        i = a.index("--rounds")
+        if i + 1 >= len(a) or not a[i + 1].isdigit() or not 1 <= int(a[i + 1]) <= 20:
+            fail("--rounds needs a number from 1 to 20", 2)
+        rounds = int(a[i + 1])
+    slug = subprocess.run([f"{HERE}/ragnarok-packet", "slug", folder], capture_output=True, text=True).stdout.strip()
+    old = packet_tool("get", slug)
+
+    if packet_only:
+        say(f"writing a fresh packet for {slug} from its git state" + (f" and {old.get('Packet_ID')}" if old else ""))
+        say("▸ stage: save")
+        write_packet(folder, slug, ai, old, "A switch was asked for (no new work this time).")
+        log(project=slug, folder=folder, ai=ai, step="packet-only", ok=True)
+        return
+    if not old:
+        fail(f"{slug} has no packet yet. Make one first: Save packet in the Hub (or ragnarok-resume {folder} {ai} --packet-only)", 2)
+
+    main_app = is_main(folder)
+    for n in range(1, rounds + 1):
+        say(f"=== round {n}/{rounds} · {slug} · {ai} · from {old.get('Packet_ID')} ===")
+        say("▸ stage: packet")   # the Hub's progress bar follows these lines
+        check_packet_evidence(folder, old)
+        before = git(folder, "rev-parse", "HEAD")
+        instr = f"""Resume this project from its hand-off packet and keep going without the owner.
+
+{packet_text(old)}
+
+Do ONLY the first {steps} next step(s) that don't need the owner, in order, then stop; the other steps are for later rounds.
+Small rounds on purpose: if the build or tests fail, only this round's work is lost. Skip any step that needs
+the owner ({HUMAN}), or that starts with "OWNER:" (or the older "CHRIS:"); leave those for them. Don't redo finished work. Keep it building and its
+tests passing. If the packet points to a saved failed change (a .patch file), read it and reuse what was right.
+At the very end of your reply, list each step you finished on its own line starting with "DONE:" and each step you
+didn't do on its own line starting with "LEFT:" (with why). These lines go into the next hand-off packet."""
+        cmd = [f"{HERE}/heimdall-edit", ai, "-"] if main_app else [f"{HERE}/ragnarok-heal", folder, ai, "-"]
+        rc, tail, alllines, raw_trace = run_streaming(cmd, instr, folder)
+        new = git(folder, "log", "--format=%h %s", f"{before}..HEAD") if before else ""
+        files = git(folder, "diff", "--stat", f"{before}..HEAD")[-3000:] if before and new else ""
+        ansi = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+        saved_patch = next((m.group(1) for l in alllines for m in [re.search(r"the failed change is saved in (\S+\.patch)", l)] if m), "")
+        report = [ansi.sub("", l).strip() for l in alllines if re.match(r"^\s*(\x1b\[[0-9;]*m)*\s*(DONE|LEFT):", ansi.sub("", l))]
+        outcome = (f"Round {n} by {ai}: " + ("built, tested and committed" if rc == 0 else f"FAILED (exit {rc}); nothing was changed")
+                   + ("\nThe AI's own report:\n" + "\n".join(report[:40]) if report else "\n(The AI gave no DONE/LEFT report.)")
+                   + (f"\nFiles changed in the new commit(s):\n{files}" if files else "")
+                   + (f"\nThe failed attempt's full diff is saved at {saved_patch}; the next round should read it and reuse the parts that were right, not start over." if saved_patch else "")
+                   + "\nLast output:\n" + "\n".join(tail[-60:]))
+        log(project=slug, folder=folder, ai=ai, step="round", round=n, ok=rc == 0, exit=rc, commits=new.splitlines()[:20])
+        say("▸ stage: save")
+        pk, saved = write_packet(folder, slug, ai, old, outcome, {"instruction": instr, "output": "\n".join(alllines), "exit_code": rc, "before_commit": before, "claude_exposed_stream_jsonl": raw_trace})
+        if rc != 0:
+            fail(f"round {n} failed (exit {rc}); the new packet says what happened", 1)
+        if not pk.get("can_continue"):
+            say("Only steps for the owner are left (or nothing to do). Stopping.")
+            break
+        old = packet_tool("get", slug)
+    say("done.")
+
+
+if __name__ == "__main__":
+    try:
+        main(sys.argv)
+    except KeyboardInterrupt:
+        fail("stopped", 130)

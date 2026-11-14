@@ -1,0 +1,8 @@
+# emblem.rgnrk.co: PUBLIC, no login. Serves index.html (the opening scene, petals and line spinning).
+# Deploy from this folder:  npx --prefix ~/Developer/proved-site wrangler deploy
+name = "emblem-page"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+workers_dev = false
+preview_urls = false
+routes = [{ pattern = "emblem.rgnrk.co", custom_domain = true }]

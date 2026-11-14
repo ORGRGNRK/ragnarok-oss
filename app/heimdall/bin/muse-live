@@ -1,0 +1,45 @@
+#!/bin/bash
+# muse-live — runs `muse exec --json ...` so you can watch it work: one line per thing it does
+# ("reading Hub.swift", "editing HubOps.swift", "running swift build"), then its full final reply.
+# Plain `muse exec` prints nothing useful until it finishes; --json alone floods the log with MSP records.
+# Usage: muse-live -p "prompt" [--model M]   (runs in the current folder; extra args pass through to muse exec)
+# Exit code: muse's (1 if it reported a failed terminal).
+set -o pipefail
+muse "$@" --json --yolo --disable-request-user-input | /usr/bin/python3 -I -u -c '
+import json, os, sys
+def short(p):
+    p = str(p or "")
+    return os.path.basename(p.rstrip("/")) or p
+def one(s, n=140):
+    s = " ".join(str(s or "").split())
+    return s if len(s) <= n else s[:n - 1] + "…"
+VERB = {"bash": "running", "read_file": "reading", "edit_file": "editing", "write_file": "writing",
+        "search": "searching", "write_todos": "planning", "read_skill": "reading a skill"}
+final, err, buf = "", False, ""
+for line in sys.stdin:
+    try:
+        d = json.loads(line)
+    except ValueError:
+        if line.strip(): print(line.rstrip(), flush=True)
+        continue
+    payload = d.get("payload") or {}
+    ev = payload.get("event") or {}
+    kind = ev.get("kind") or payload.get("kind")
+    if kind == "assistant_tool_calls_committed":
+        for tc in ev.get("tool_calls") or []:
+            try: i = json.loads(tc.get("args") or "{}")
+            except ValueError: i = {}
+            n = tc.get("name", "?")
+            v = VERB.get(n, "using " + n)
+            what = i.get("path") or i.get("file_path") or i.get("pattern") or i.get("command") or i.get("query") or i.get("description") or ""
+            what = short(what) if n in ("read_file", "edit_file", "write_file") else one(what, 100)
+            print(f"· {v} {what}".rstrip(), flush=True)
+    elif kind == "run_output_delta":
+        buf += payload.get("text") or ""
+    elif kind == "run_terminal":
+        final = payload.get("text") or buf
+        err = payload.get("terminal") not in (None, "completed")
+if final or buf:
+    print("\n" + (final or buf), flush=True)
+sys.exit(1 if err else 0)
+'

@@ -1,0 +1,36 @@
+{
+  "name": "secure-mcp-platform",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Generic, boot-locked Docker MCP platform with PostgreSQL inventory/leads/channels and hardware authentication (YubiKey + Apple Secure Enclave).",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "secure-mcp-platform": "dist/index.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "migrate": "npm run build --silent && node dist/platform/migrate.js",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start:http": "node dist/http.js",
+    "validate:install": "node deploy/scripts/validate-install-guide.mjs",
+    "mcp-check": "node scripts/mcp-check.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "pg": "8.23.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.3",
+    "@types/pg": "8.23.1",
+    "ajv": "8.20.0",
+    "typescript": "5.9.3",
+    "vitest": "5.0.5"
+  }
+}

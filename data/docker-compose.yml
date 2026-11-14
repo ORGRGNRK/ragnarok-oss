@@ -1,0 +1,108 @@
+# Ragnarok data layer: Postgres (the data + receipts), NocoDB (screen for humans), and the AI's tools
+# (the connector, built from ../connector; the service is still called "mcp").
+# Every setting comes from .env. Everything listens on 127.0.0.1 unless you change BIND_ADDR.
+services:
+  postgres:
+    # Postgres 16 + the pgvector extension (brain/ fix-memory search). Same major version as before.
+    image: pgvector/pgvector:0.8.7-pg16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # read once by db/init/00_roles.sh on the first start
+      MCP_DB_USER: ${MCP_DB_USER:?}
+      MCP_DB_PASSWORD: ${MCP_DB_PASSWORD:?}
+      MCP_RO_DB_USER: ${MCP_RO_DB_USER:?}
+      MCP_RO_DB_PASSWORD: ${MCP_RO_DB_PASSWORD:?}
+      UI_DB_USER: ${UI_DB_USER:?}
+      UI_DB_PASSWORD: ${UI_DB_PASSWORD:?}
+      NOCODB_META_DB: ${NOCODB_META_DB:-nocodb_meta}
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${POSTGRES_PORT:-5491}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  mcp:
+    build:
+      context: ../connector
+      target: runtime
+    image: ${COMPOSE_PROJECT_NAME:-ragnarok-data}-mcp:local
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB}
+      # only the low-privilege logins; the MCP server never gets the admin password
+      MCP_DB_USER: ${MCP_DB_USER}
+      MCP_DB_PASSWORD: ${MCP_DB_PASSWORD}
+      MCP_RO_DB_USER: ${MCP_RO_DB_USER}
+      MCP_RO_DB_PASSWORD: ${MCP_RO_DB_PASSWORD}
+      UI_DB_USER: ${UI_DB_USER}
+      MCP_TOKEN: ${MCP_TOKEN:-}
+      MCP_READ_TOKEN: ${MCP_READ_TOKEN:-}
+      KIT_SCOPE: ${KIT_SCOPE:-write}
+      ALLOWED_WRITE_ACTORS: ${ALLOWED_WRITE_ACTORS:-}
+      APPROVAL_TTL_HOURS: ${APPROVAL_TTL_HOURS:-24}
+      MCP_HTTP_PORT: "8787"
+      # business_search_items asks a LOCAL Ollama for embeddings (never a cloud service).
+      # If Ollama isn't running, only that one tool answers "upstream unavailable".
+      BUSINESS_EMBEDDER_URL: ${BUSINESS_EMBEDDER_URL:-http://host.docker.internal:11434}
+      BUSINESS_EMBEDDER_MODEL: ${BUSINESS_EMBEDDER_MODEL:-nomic-embed-text}
+      # brain_search_fixes / brain_record_fix embed with a LOCAL Ollama too (empty = BUSINESS_EMBEDDER_URL).
+      BRAIN_OLLAMA_URL: ${BRAIN_OLLAMA_URL:-}
+      BRAIN_EMBED_MODEL: ${BRAIN_EMBED_MODEL:-nomic-embed-text}
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${MCP_PORT:-8891}:8787"
+    volumes:
+      - ./client:/app/client:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8787/health >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Only for ./kit test: the connector image WITH its test tools (vitest), run once and removed.
+  mcp-test:
+    build:
+      context: ../connector
+      target: test
+    image: ${COMPOSE_PROJECT_NAME:-ragnarok-data}-mcp-test:local
+    profiles: ["test"]
+    environment:
+      DB_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ./client:/app/client:ro
+
+  nocodb:
+    image: nocodb/nocodb:2026.10.0
+    restart: unless-stopped
+    profiles: ["ui"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # NocoDB logs in with the low-privilege UI login (never the admin). Its own settings live in
+      # a separate database; the client's tables are added in its UI as a data source (see README).
+      NC_DB: pg://postgres:5432?u=${UI_DB_USER}&p=${UI_DB_PASSWORD}&d=${NOCODB_META_DB:-nocodb_meta}
+      NC_AUTH_JWT_SECRET: ${NC_AUTH_JWT_SECRET:?set NC_AUTH_JWT_SECRET in .env}
+      NC_DISABLE_TELE: "true"
+      NC_ALLOW_LOCAL_EXTERNAL_DBS: "true"
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${NOCODB_PORT:-8191}:8080"
+    volumes:
+      - ncdata:/usr/app/data
+
+volumes:
+  pgdata:
+  ncdata:

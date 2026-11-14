@@ -1,0 +1,471 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rgnrk.co/schemas/iphone-receipt/0.1",
+  "title": "Portable iPhone Command Execution Receipt",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "id",
+    "command",
+    "status",
+    "startedAt",
+    "inputs",
+    "driver",
+    "steps"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "0.1"
+    },
+    "id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "command": {
+      "type": "object",
+      "required": [
+        "id",
+        "schemaVersion"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "schemaVersion": {
+          "const": "0.1"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      },
+      "additionalProperties": false
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "running",
+        "succeeded",
+        "failed",
+        "stopped",
+        "unsupported"
+      ]
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "endedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "inputs": {
+      "description": "Runtime inputs with secret values replaced by the literal string [REDACTED].",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "driver": {
+      "type": "object",
+      "required": [
+        "id",
+        "actions",
+        "observations"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "actions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/driverAction"
+          }
+        },
+        "observations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/observationCapability"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/stepReceipt"
+      }
+    },
+    "error": {
+      "$ref": "#/$defs/error"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "reference"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "screenshot",
+              "log",
+              "other"
+            ]
+          },
+          "reference": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "mediaType": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "succeeded",
+              "failed",
+              "stopped",
+              "unsupported"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "endedAt"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "stopped",
+              "unsupported"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "error"
+        ]
+      }
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "driverAction": {
+      "enum": [
+        "openApp",
+        "tap",
+        "typeText",
+        "swipe",
+        "press"
+      ]
+    },
+    "observationCapability": {
+      "enum": [
+        "screenshot",
+        "screenText",
+        "app",
+        "target"
+      ]
+    },
+    "stepAction": {
+      "enum": [
+        "openApp",
+        "tap",
+        "typeText",
+        "swipe",
+        "press",
+        "capture",
+        "waitFor",
+        "assert",
+        "confirm",
+        "call"
+      ]
+    },
+    "error": {
+      "type": "object",
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "details": {}
+      },
+      "additionalProperties": false
+    },
+    "observation": {
+      "type": "object",
+      "required": [
+        "capturedAt"
+      ],
+      "properties": {
+        "capturedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "screenText": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "app": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "bundleId": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "screenshotRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "captureScale": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "resolvedTarget": {
+      "type": "object",
+      "required": [
+        "strategy",
+        "confidence",
+        "point"
+      ],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "point": {
+          "type": "object",
+          "required": [
+            "x",
+            "y"
+          ],
+          "properties": {
+            "x": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "y": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "clue": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "additionalProperties": false
+    },
+    "confirmation": {
+      "type": "object",
+      "required": [
+        "required",
+        "outcome"
+      ],
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "outcome": {
+          "enum": [
+            "not-required",
+            "approved",
+            "denied",
+            "unavailable",
+            "stale"
+          ]
+        },
+        "confirmedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "actor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "shown": {
+          "type": "object",
+          "required": [
+            "message",
+            "risk"
+          ],
+          "properties": {
+            "message": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "risk": {
+              "enum": [
+                "read",
+                "reversible",
+                "external",
+                "financial",
+                "destructive",
+                "credential"
+              ]
+            },
+            "screen": {
+              "$ref": "#/$defs/observation"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "verification": {
+      "type": "object",
+      "required": [
+        "passed"
+      ],
+      "properties": {
+        "passed": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 4000
+        }
+      },
+      "additionalProperties": false
+    },
+    "stepReceipt": {
+      "type": "object",
+      "required": [
+        "id",
+        "action",
+        "status",
+        "startedAt"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "action": {
+          "$ref": "#/$defs/stepAction"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "running",
+            "succeeded",
+            "failed",
+            "stopped",
+            "unsupported"
+          ]
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "endedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "before": {
+          "$ref": "#/$defs/observation"
+        },
+        "after": {
+          "$ref": "#/$defs/observation"
+        },
+        "resolvedTarget": {
+          "$ref": "#/$defs/resolvedTarget"
+        },
+        "confirmation": {
+          "$ref": "#/$defs/confirmation"
+        },
+        "verification": {
+          "$ref": "#/$defs/verification"
+        },
+        "error": {
+          "$ref": "#/$defs/error"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""
+ragnarok-boot-stamp — the CONFIRM half of the RAGNAROK boot stamp.
+
+The turn-envelope hook (ragnarok-turn-context.py) can see that the owner TYPED a
+boot door, because UserPromptSubmit hands it the raw prompt. What it cannot see
+is whether the boot SUCCEEDED — Airtable may be down, the Ruleset read may fail,
+and Session Boot Procedure v1.15 says plainly: "If Airtable fails: say so and
+stop. Never fake a boot."
+
+So the stamp has two halves on purpose:
+  REQUESTED  — written by the hook, path-enforced, cannot be forgotten
+  CONFIRMED  — written here, by the booted session, only after the reads landed
+
+A boot that is requested and never confirmed is exactly the silent failure the
+whole turn envelope exists to surface, so the envelope renders that state
+loudly instead of pretending a boot happened.
+
+Usage:
+  ragnarok-boot-stamp confirm --lane SYSTEM        # after a successful boot
+  ragnarok-boot-stamp confirm --lane PERSONAL --door /boot
+  ragnarok-boot-stamp show                         # what this session's stamp says
+  ragnarok-boot-stamp clear                        # drop this session's stamp
+
+Session defaults to $CLAUDE_CODE_SESSION_ID, which Claude Code exports into the
+Bash tool and which is the SAME id the hook receives as session_id. That shared
+key is what lets the two halves meet.
+"""
+import argparse
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+STATE_DIR = os.environ.get(
+    "RAGNAROK_BOOT_STATE", os.path.expanduser("~/.claude/boot-state")
+)
+LANES = ("PERSONAL", "BUSINESS", "SYSTEM")
+
+
+def path_for(session):
+    safe = "".join(c for c in str(session) if c.isalnum() or c in "-_")[:64]
+    if not safe:
+        safe = "unknown"
+    return os.path.join(STATE_DIR, safe + ".json")
+
+
+def load(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            d = json.load(fh)
+            return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def save(path, data):
+    os.makedirs(STATE_DIR, exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
+    os.replace(tmp, path)
+
+
+# ----------------------------------------------------------------- the egg
+# apt-get has a cow. aptitude has an elephant. This has the layers.
+#
+# Modelled on RAGNAROK's own shape rather than decorated with it: the ladder
+# DESCENDS. New World is what the system shows by default and what it is
+# allowed to be judged on; keep asking and it drops one layer at a time.
+# POST FALL renders as an em dash -- present, occupying its cell, saying
+# nothing. That is the layer drop kept intact rather than undone for a joke,
+# and it is the owner's own ruling (2026-08-28): descend to it, name that it is
+# there, tell none of it.
+#
+# NOTHING HERE IS STATE. No count, no age, no lane, no freshness -- an egg
+# that could be mistaken for a boot line would be exactly the confident-wrong
+# -answer failure this whole stamp exists to prevent. It is unmistakably a
+# joke, the way the cow is unmistakably not package output.
+MOO = [
+    "There are no Easter Eggs in this system.",
+    "There really are no Easter Eggs in this system.",
+    "Didn't I already tell you there are no Easter Eggs in this system?",
+    "Stop it!",
+    "Okay, okay, if I give you one, will you go away?",
+]
+
+DESCENT = """All right, you win.
+
+                          NEW WORLD
+                              │
+                         FOUNDATION
+                              │
+                          POST FALL
+                              │
+                              —
+"""
+
+ORIGIN = """
+                              .
+"""
+
+
+def moo(level):
+    """The descent. level = how many -v were stacked on."""
+    if level < len(MOO):
+        print(MOO[level])
+    elif level == len(MOO):
+        print(DESCENT, end="")
+    else:
+        print(ORIGIN, end="")
+    return 0
+
+
+def main():
+    # The egg is intercepted ahead of argparse on purpose: it must not appear
+    # in --help, and it must never be a documented action of this script.
+    argv = sys.argv[1:]
+    if "moo" in argv:
+        return moo(sum(a.count("v") for a in argv
+                       if a.startswith("-") and set(a[1:]) == {"v"}))
+
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("action", choices=["confirm", "show", "clear"])
+    ap.add_argument("--lane", help="PERSONAL | BUSINESS | SYSTEM")
+    ap.add_argument("--door", default="", help="the door that ran, e.g. /boot system")
+    ap.add_argument("--session", default=os.environ.get("CLAUDE_CODE_SESSION_ID", ""))
+    a = ap.parse_args()
+
+    if not a.session:
+        print("no session id: pass --session or run inside Claude Code "
+              "(CLAUDE_CODE_SESSION_ID)", file=sys.stderr)
+        return 1
+
+    path = path_for(a.session)
+
+    if a.action == "show":
+        d = load(path)
+        print(json.dumps(d, indent=2) if d else "no boot stamp for this session")
+        return 0
+
+    if a.action == "clear":
+        try:
+            os.remove(path)
+            print("cleared")
+        except FileNotFoundError:
+            print("nothing to clear")
+        return 0
+
+    lane = (a.lane or "").strip().upper()
+    if lane not in LANES:
+        # Never default a lane. Ruleset v4.7: absent provenance is untrusted,
+        # and a lane the boot did not actually set is exactly that.
+        print(f"--lane must be one of {', '.join(LANES)} (got {a.lane!r})",
+              file=sys.stderr)
+        return 2
+
+    d = load(path)
+    d["confirmed_epoch"] = datetime.now(timezone.utc).timestamp()
+    d["confirmed_lane"] = lane
+    if a.door:
+        d["confirmed_door"] = a.door
+    save(path, d)
+    print(f"BOOT CONFIRMED -- lane {lane}"
+          + (f" -- door {a.door}" if a.door else ""))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as e:
+        print(f"boot-stamp error: {e}", file=sys.stderr)
+        sys.exit(1)

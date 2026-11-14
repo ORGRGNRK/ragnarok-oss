@@ -1,0 +1,166 @@
+#!/bin/bash
+# ragnarok-bundle — pack everything Ragnarok needs into one private file you can reinstall from.
+#   bin/ragnarok-bundle [out-folder]          default ~/Ragnarok-Backups
+# Makes ragnarok-bundle-<date>.tar.gz (mode 600) holding:
+#   repos/<name>.bundle      full git history (all branches + tags) of heimdall, alexus-core, scripts, ygg-mcp-business, conveyor
+#   repos/<name>.uncommitted.patch / .untracked.tar   work not yet committed, if any (so nothing in progress is lost)
+#   apps/Ragnarok.app, apps/Heimdall-known-good.app
+#   launchagents/com.heimdall.corpus.plist           the nightly code-search rebuild
+#   data/ragnarok/                                    ~/.ragnarok (logs, receipts, access log; locks/temp left out)
+#   home-scripts/                                     ~/scripts (ragnarok-save, ragnarok-hq-mcp.sh, …)
+#   install.sh, README.txt, AI-INSTALL.md            how to put it back (AI-INSTALL.md: step list for an AI doing it)
+# NOT inside (by design; see README.txt): ssh keys, API keys, the Apple Development certificate, the 748 MB search index
+# (rebuilds), Homebrew/Xcode, and everything that lives on Alexus.
+# Locked to your hardware keys when ~/.ragnarok/bundle-keys/*.txt has their recipients (see UNLOCK.txt beside it).
+# The file has your history and logs in it: keep it private. It is written only to this Mac; nothing is uploaded.
+set -euo pipefail
+OUT="${1:-$HOME/Ragnarok-Backups}"
+STAMP="$(date +%Y%m%d-%H%M)"
+W="$(mktemp -d)/ragnarok-bundle-$STAMP"
+mkdir -p "$W"/{repos,apps,launchagents,data,home-scripts} "$OUT"
+REPOS=("$HOME/Developer/heimdall" "$HOME/Developer/alexus-core" "$HOME/Developer/scripts" "$HOME/Developer/ygg-mcp-business" "$HOME/conveyor")
+for r in "${REPOS[@]}"; do
+  n="$(basename "$r")"
+  [ -d "$r/.git" ] || [ -f "$r/.git" ] || { echo "skip $n (not a git repo)"; continue; }
+  git -C "$r" bundle create -q "$W/repos/$n.bundle" --all
+  echo "$(git -C "$r" rev-parse --abbrev-ref HEAD) $(git -C "$r" rev-parse --short HEAD)" > "$W/repos/$n.head"
+  if [ -n "$(git -C "$r" status --porcelain)" ]; then
+    git -C "$r" diff HEAD --binary > "$W/repos/$n.uncommitted.patch"
+    (cd "$r" && git ls-files --others --exclude-standard -z | tar --null -T - -cf "$W/repos/$n.untracked.tar" 2>/dev/null) || true
+    echo "  $n: uncommitted work saved too"
+  fi
+  echo "repo $n: $(cat "$W/repos/$n.head")"
+done
+cp -R "$HOME/Applications/Ragnarok.app" "$W/apps/Ragnarok.app"
+KG="$HOME/Library/Application Support/Heimdall-known-good/Heimdall.app"
+[ -d "$KG" ] && cp -R "$KG" "$W/apps/Heimdall-known-good.app"
+cp "$HOME/Library/LaunchAgents/com.heimdall.corpus.plist" "$W/launchagents/" 2>/dev/null || true
+rsync -a --exclude '*.lock' --exclude 'heal/' --exclude 'heal-locks/' --exclude '*.inflight' --exclude 'heimdall-api.json' \
+  "$HOME/.ragnarok/" "$W/data/ragnarok/"
+[ -d "$HOME/scripts" ] && rsync -a "$HOME/scripts/" "$W/home-scripts/"
+
+cat > "$W/install.sh" <<'INSTALL'
+#!/bin/bash
+# Put Ragnarok back on this Mac from this bundle. Never overwrites: anything already there is left alone.
+#   ./install.sh
+set -uo pipefail
+B="$(cd "$(dirname "$0")" && pwd)"
+say() { printf '%s\n' "$*"; }
+for b in "$B"/repos/*.bundle; do
+  n="$(basename "$b" .bundle)"
+  case "$n" in conveyor) dest="$HOME/conveyor" ;; *) dest="$HOME/Developer/$n" ;; esac
+  if [ -e "$dest" ]; then say "keep   $dest (already there)"; continue; fi
+  read -r br _ < "$B/repos/$n.head"
+  git clone -q -b "$br" "$b" "$dest" && git -C "$dest" remote rename origin bundle >/dev/null 2>&1
+  [ -f "$B/repos/$n.uncommitted.patch" ] && git -C "$dest" apply "$B/repos/$n.uncommitted.patch" 2>/dev/null
+  [ -f "$B/repos/$n.untracked.tar" ] && tar -xf "$B/repos/$n.untracked.tar" -C "$dest"
+  say "made   $dest ($br)"
+done
+# Alexus backup remote for heimdall (bin/heimdall-edit pushes there). Address from the bundled ~/.ragnarok/local.conf if any.
+ALEXUS_SSH="$(id -un)@alexus.local"
+LC="$HOME/Developer/heimdall/bin/local-config.sh"
+[ -r "$LC" ] && { RAGNAROK_LOCAL_CONF="$B/data/ragnarok/local.conf"; . "$LC"; unset RAGNAROK_LOCAL_CONF; }
+git -C "$HOME/Developer/heimdall" remote get-url alexus >/dev/null 2>&1 || \
+  git -C "$HOME/Developer/heimdall" remote add alexus "$ALEXUS_SSH:backups/heimdall.git"
+mkdir -p "$HOME/Applications" "$HOME/Library/Application Support/Heimdall-known-good"
+[ -e "$HOME/Applications/Ragnarok.app" ] && say "keep   ~/Applications/Ragnarok.app" || { cp -R "$B/apps/Ragnarok.app" "$HOME/Applications/"; say "made   ~/Applications/Ragnarok.app"; }
+KG="$HOME/Library/Application Support/Heimdall-known-good/Heimdall.app"
+[ -e "$KG" ] || { [ -d "$B/apps/Heimdall-known-good.app" ] && cp -R "$B/apps/Heimdall-known-good.app" "$KG" && say "made   known-good copy"; }
+mkdir -p "$HOME/.ragnarok" && chmod 700 "$HOME/.ragnarok"
+rsync -a --ignore-existing "$B/data/ragnarok/" "$HOME/.ragnarok/" && say "made   ~/.ragnarok (existing files kept)"
+mkdir -p "$HOME/scripts" && rsync -a --ignore-existing "$B/home-scripts/" "$HOME/scripts/" && say "made   ~/scripts (existing files kept)"
+# hidden launcher (restart on crash, rollback) — built from the repo
+(cd "$HOME/Developer/heimdall" && ./make-launcher.sh >/dev/null) && say "made   Ragnarok Launcher"
+P="$HOME/Library/LaunchAgents/com.heimdall.corpus.plist"
+if [ ! -e "$P" ] && [ -f "$B/launchagents/com.heimdall.corpus.plist" ]; then
+  mkdir -p "$HOME/Library/LaunchAgents"; cp "$B/launchagents/com.heimdall.corpus.plist" "$P"
+  say "made   $P — turn it on with: launchctl bootstrap gui/\$(id -u) \"$P\""
+fi
+say ""; say "Done. Open ~/Applications/Ragnarok.app. Still yours to do: see README.txt (keys, certificate, tools)."
+INSTALL
+chmod +x "$W/install.sh"
+
+cat > "$W/README.txt" <<README
+Ragnarok bundle, made $(date '+%Y-%m-%d %H:%M') on $(scutil --get ComputerName 2>/dev/null || hostname) as $(id -un).
+PRIVATE: holds your code history, logs and receipts. Don't share it.
+
+TO REINSTALL (or hand this folder to an AI and point it at AI-INSTALL.md)
+  tar -xzf $(basename "$W").tar.gz && cd $(basename "$W") && ./install.sh
+  It never overwrites anything that's already there.
+
+NOT IN THIS BUNDLE (do these yourself on a new Mac)
+  1. Tools: Xcode (or the Swift toolchain), Homebrew, then:  brew install libfido2 xcodegen python
+  2. ssh keys for Alexus: ~/.ssh/id_ed25519 (you) and ~/.ssh/id_claude, id_argon, id_grok, id_codex (each AI).
+     Copy them over yourself (they're secrets), or make new ones and add them on Alexus.
+  3. Apple Development certificate (Keychain) — needed for the Control Center tiles. Without it make-app.sh still
+     builds Ragnarok, ad-hoc signed, without the tiles. Get it back by signing into Xcode with your Apple ID.
+  4. Touch ID / YubiKey: Touch ID works on any Mac with a sensor; the YubiKey needs alexus-core's fido setup.
+  5. AI command-line tools: claude, grok, codex — install and sign in to each.
+  6. The terminal receipts hook: ~/.zshenv sources ygg-mcp-business/hooks/mac-receipts/receipts.zsh (repo included;
+     add the line back to ~/.zshenv).
+  7. Code-search index (748 MB) — rebuilds at 4:30 nightly once the LaunchAgent is on, or now with
+     ~/Developer/heimdall/recall/build-corpus.sh (needs Alexus for the embeddings).
+  8. Everything on Alexus (room, containers, MCP servers, the backups/heimdall.git copy) stays on Alexus.
+
+ALSO A BACKUP: every Ragnarok edit is pushed to Alexus (<ALEXUS_USER>@<ALEXUS_HOST>:backups/heimdall.git).
+
+WHAT'S INSIDE
+$(cd "$W" && find . -maxdepth 2 -not -path './data/ragnarok/*' -not -path './home-scripts/*' | sort | sed 's/^/  /')
+README
+
+cat > "$W/AI-INSTALL.md" <<'AIDOC'
+# For an AI installing Ragnarok from this bundle
+
+Work as the Mac user who will use Ragnarok. Say which account you ran each step as.
+Do every step you can. STOP and ask the person only at the steps marked HUMAN. Never use sudo yourself.
+Never print or copy secrets (ssh keys, tokens) into chat or logs.
+
+1. Check what's there: `sw_vers`, `command -v brew git swift codesign xcodegen fido2-token claude grok`.
+2. HUMAN if brew is missing: Homebrew's installer asks for the Mac password. Ask the person to run
+   `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"` themselves.
+3. `brew install libfido2 xcodegen python` (no password needed once brew exists).
+4. If this folder came by AirDrop/Drive/download: `xattr -dr com.apple.quarantine "$PWD"` (so macOS doesn't block the app).
+5. Run `./install.sh` from this folder. It never overwrites; read its output and report each "made"/"keep" line.
+6. Turn on the nightly code-search job: the exact `launchctl bootstrap ...` line install.sh printed.
+7. HUMAN: ssh keys. Ask the person where their keys are (~/.ssh/id_ed25519 for them; id_claude, id_argon, id_grok,
+   id_codex for the AIs). Copy them into ~/.ssh with `chmod 600`. Then test: `ssh -o BatchMode=yes <ALEXUS_USER>@<ALEXUS_HOST> true` (both from ~/.ragnarok/local.conf).
+8. Terminal receipts hook: if ~/.zshenv doesn't mention receipts.zsh, add
+   `source ~/Developer/ygg-mcp-business/hooks/mac-receipts/receipts.zsh` to ~/.zshenv (show the person the line first).
+9. HUMAN: Xcode / Apple ID. Only needed to REBUILD with the Control Center tiles (the copied app already works).
+   Ask the person to install Xcode and sign in to their Apple ID in Xcode → Settings → Accounts.
+10. HUMAN: sign in to the AI tools (claude, grok, codex). Each opens a browser login.
+11. Open `~/Applications/Ragnarok.app`. HUMAN: unlock with Touch ID or the YubiKey.
+12. Check: Hub tab lists projects; Services shows MCP servers; the footer shows Alexus containers (needs step 7).
+    `~/Developer/heimdall/.build` doesn't exist yet: first rebuild is `cd ~/Developer/heimdall && ./make-app.sh`.
+13. Report: what was done (with account), what's waiting on the person, anything that failed with its exact output.
+AIDOC
+
+# Lock it to the hardware keys in ~/.ragnarok/bundle-keys/*.txt (age + age-plugin-fido2-hmac). When keys exist the
+# bundle is ONLY written locked (tar streams straight into age; no unlocked copy touches the disk). --unlocked overrides.
+KEYS="$HOME/.ragnarok/bundle-keys"
+RCPT="$(grep -hoE 'age1[0-9a-z-]+' "$KEYS"/*.txt 2>/dev/null | sort -u)"
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:$PATH"
+if [ -n "$RCPT" ] && [ "${UNLOCKED:-}" != 1 ] && command -v age >/dev/null && command -v age-plugin-fido2-hmac >/dev/null; then
+  TAR="$OUT/$(basename "$W").tar.gz.age"
+  ARGS=(); while read -r r; do ARGS+=(-r "$r"); done <<< "$RCPT"
+  ( umask 077; tar -czf - -C "$(dirname "$W")" "$(basename "$W")" | age "${ARGS[@]}" -o "$TAR" ) || { rm -f "$TAR"; rm -rf "$(dirname "$W")"; echo "lock failed; nothing written" >&2; exit 1; }
+  cat > "$OUT/UNLOCK.txt" <<'UNLOCK'
+Ragnarok bundles ending in .tar.gz.age are locked to the owner's hardware keys (YubiKey and uTrust; either one opens them).
+To open one on a new Mac:
+  1. brew install age go libfido2
+  2. Build the key plugin (v0.5.0, commit e900059):
+       git clone --branch v0.5.0 https://github.com/olastor/age-plugin-fido2-hmac && cd age-plugin-fido2-hmac
+       CGO_CFLAGS=-I/opt/homebrew/include CGO_LDFLAGS=-L/opt/homebrew/lib make build && mkdir -p ~/.local/bin && cp age-plugin-fido2-hmac ~/.local/bin/
+  3. Plug in a key, then:   PATH=~/.local/bin:$PATH age -d -j fido2-hmac -o bundle.tar.gz ragnarok-bundle-XXXX.tar.gz.age
+     (touch the key; enter its PIN if it asks)
+  4. tar -xzf bundle.tar.gz && cd ragnarok-bundle-* && ./install.sh     (or have an AI follow AI-INSTALL.md inside)
+If both keys are lost, a locked bundle can't be opened.
+UNLOCK
+  echo "locked to $(echo "$RCPT" | wc -l | tr -d ' ') key(s)"
+else
+  TAR="$OUT/$(basename "$W").tar.gz"
+  ( umask 077; tar -czf "$TAR" -C "$(dirname "$W")" "$(basename "$W")" )
+  [ -n "$RCPT" ] || echo "note: no keys in $KEYS, so this bundle is NOT locked"
+fi
+chmod 600 "$TAR"; rm -rf "$(dirname "$W")"
+echo "bundle: $TAR ($(du -h "$TAR" | cut -f1))"

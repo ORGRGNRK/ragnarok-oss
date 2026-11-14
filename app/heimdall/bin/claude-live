@@ -1,0 +1,55 @@
+#!/bin/bash
+# claude-live — runs `claude -p ...` so you can watch it work: one line per thing it does ("reading Hub.swift",
+# "editing HubOps.swift", "running swift build"), then its full final reply (with the DONE:/LEFT: lines).
+# Plain `claude -p` prints nothing until it is completely finished, which looks like a hang in the Hub.
+# Usage: same arguments as `claude -p "..."`. Exit code: claude's (1 if it reported an error).
+set -o pipefail
+# A resume round may request the full exposed JSON stream before the display formatter.
+# The caller creates this private file; packet archival scrubs it before storage.
+capture_stream() {
+  if [ -n "${RAGNAROK_HANDOFF_TRANSCRIPT:-}" ]; then
+    (umask 077; touch "$RAGNAROK_HANDOFF_TRANSCRIPT"; chmod 600 "$RAGNAROK_HANDOFF_TRANSCRIPT") || return 1
+    tee "$RAGNAROK_HANDOFF_TRANSCRIPT"
+  else
+    cat
+  fi
+}
+claude "$@" --output-format stream-json --verbose | capture_stream | /usr/bin/python3 -I -u -c '
+import json, os, sys
+def short(p):
+    p = str(p or "")
+    return os.path.basename(p.rstrip("/")) or p
+def one(s, n=140):
+    s = " ".join(str(s or "").split())
+    return s if len(s) <= n else s[:n - 1] + "…"
+VERB = {"Read": "reading", "Edit": "editing", "MultiEdit": "editing", "Write": "writing", "Glob": "looking for files",
+        "Grep": "searching", "Bash": "running", "WebFetch": "fetching", "WebSearch": "searching the web", "TodoWrite": "planning"}
+final, err, pending = "", False, ""   # pending: the latest remark, shown once the AI moves on (the last one is the final reply)
+for line in sys.stdin:
+    try:
+        d = json.loads(line)
+    except ValueError:
+        if line.strip(): print(line.rstrip(), flush=True)
+        continue
+    t = d.get("type")
+    if t == "system" and d.get("subtype") == "init":
+        print("· AI started", flush=True)
+    elif t == "assistant":
+        for c in d.get("message", {}).get("content", []) or []:
+            if c.get("type") == "tool_use":
+                if pending: print("  “" + one(pending) + "”", flush=True); pending = ""
+                n, i = c.get("name", "?"), c.get("input") or {}
+                v = VERB.get(n, "using " + n)
+                what = i.get("file_path") or i.get("path") or i.get("pattern") or i.get("command") or i.get("url") or i.get("query") or ""
+                what = short(what) if n in ("Read", "Edit", "MultiEdit", "Write") else one(what, 100)
+                print(f"· {v} {what}".rstrip(), flush=True)
+            elif c.get("type") == "text" and c.get("text", "").strip():
+                if pending: print("  “" + one(pending) + "”", flush=True)
+                pending = c["text"]
+    elif t == "result":
+        final = d.get("result") or ""
+        err = bool(d.get("is_error")) or d.get("subtype") not in (None, "success")
+if final or pending:
+    print("\n" + (final or pending), flush=True)
+sys.exit(1 if err else 0)
+'

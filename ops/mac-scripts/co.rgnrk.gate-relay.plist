@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Runs gate-relay.py straight from the repo: Touch ID on this Mac for deletes by Claude on Alexus.
+     Load: launchctl bootstrap gui/501 ~/Developer/ragnarok/ops/mac-scripts/co.rgnrk.gate-relay.plist -->
+<plist version="1.0">
+<!-- Template: install with  sed "s|@HOME@|$HOME|g" THIS > ~/Library/LaunchAgents/NAME.plist  (launchd does not expand ~). -->
+<dict>
+  <key>Label</key><string>co.rgnrk.gate-relay</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string><string>-I</string>
+    <string>@HOME@/Developer/ragnarok/ops/mac-scripts/gate-relay.py</string><string>serve</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>@HOME@/.ragnarok/gate-relay.log</string>
+  <key>StandardErrorPath</key><string>@HOME@/.ragnarok/gate-relay.log</string>
+</dict>
+</plist>

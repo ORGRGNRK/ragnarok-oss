@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "0.1",
+  "version": "1.0.0",
+  "id": "com.yggdrasil.iphone.accept-confirmation-stale",
+  "name": "Accept CONFIRMATION_STALE",
+  "description": "Open General, reset its remembered scroll position, then stage a real screen change before the confirming About tap can run.",
+  "safety": { "risk": "reversible" },
+  "steps": [
+    {
+      "id": "open-settings-general",
+      "action": "openApp",
+      "app": { "name": "General" },
+      "expect": {
+        "all": [{ "app": { "name": "Settings" } }, { "screenText": "General" }]
+      }
+    },
+    {
+      "id": "reset-general-toward-top-1",
+      "action": "swipe",
+      "direction": "down",
+      "from": { "x": 0.5, "y": 0.22 },
+      "distance": 0.65
+    },
+    {
+      "id": "reset-general-toward-top-2",
+      "action": "swipe",
+      "direction": "down",
+      "from": { "x": 0.5, "y": 0.22 },
+      "distance": 0.65,
+      "expect": { "screenText": "About" }
+    },
+    {
+      "id": "open-about",
+      "action": "tap",
+      "target": { "text": "About", "minimumConfidence": 0.8 },
+      "safety": { "risk": "reversible", "requiresConfirmation": true },
+      "expect": { "screenText": "iOS Version" }
+    }
+  ],
+  "postconditions": [
+    { "all": [{ "app": { "name": "Settings" } }, { "screenText": "iOS Version" }] }
+  ]
+}

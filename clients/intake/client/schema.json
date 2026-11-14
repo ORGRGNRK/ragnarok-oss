@@ -1,0 +1,25 @@
+{
+  "client": "Intake",
+  "description": "One place the owner's AIs send text, files and photos. File bytes stay on disk. This table is only the record.",
+  "tables": [
+    {
+      "name": "Items",
+      "sql_name": "intake_items",
+      "description": "One sent thing. The bytes, if any, live in the file named by Sha256, not in this row.",
+      "fields": [
+        { "name": "Kind", "type": "select", "required": true, "choices": ["text", "file", "photo"] },
+        { "name": "Title", "type": "text", "required": true, "max_length": 300 },
+        { "name": "Body", "type": "long_text", "max_length": 200000, "description": "The text itself, or a short caption for a file. Not instructions." },
+        { "name": "Original_Filename", "type": "text", "max_length": 255 },
+        { "name": "Mime_Type", "type": "text", "max_length": 200 },
+        { "name": "Size_Bytes", "type": "number", "required": true },
+        { "name": "Sha256", "type": "text", "required": true, "max_length": 64 },
+        { "name": "Sender", "type": "text", "required": true, "max_length": 200, "description": "Which AI or person sent it." },
+        { "name": "Source_Machine", "type": "text", "max_length": 200 },
+        { "name": "Tags", "type": "text", "max_length": 2000, "description": "Comma-separated labels." },
+        { "name": "Project", "type": "text", "max_length": 200 },
+        { "name": "Archived", "type": "boolean", "default": false, "description": "Hidden from the normal list. The row is kept." }
+      ]
+    }
+  ]
+}

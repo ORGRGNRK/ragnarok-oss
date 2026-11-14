@@ -1,0 +1,4247 @@
+{
+ "_README": "SAMPLE DATA. Made-up prices in the Atlas ladder format so the app and tests run. Not real buyer prices. Put your buyer's sheet in with scripts/refresh_atlas.py.",
+ "anchored_date": "2026-10-30",
+ "delivery_friday": "2026-10-30",
+ "columns": [
+  "SWAP",
+  "A",
+  "B",
+  "C",
+  "D",
+  "DOA"
+ ],
+ "quotable_families": [
+  "iphone 7",
+  "iphone 8",
+  "iphone 11",
+  "iphone 12",
+  "iphone 13",
+  "iphone 14",
+  "iphone 15",
+  "iphone 16",
+  "iphone 17"
+ ],
+ "rows": {
+  "iphone 17 pro max|256|unlocked": {
+   "label": "iPhone 17 Pro Max Unlocked 256GB",
+   "ladder": [
+    860,
+    835,
+    800,
+    620,
+    500,
+    170
+   ],
+   "bc": 705.0,
+   "new_sealed": 965.0,
+   "new_open": 930.0
+  },
+  "iphone 17 pro max|512|unlocked": {
+   "label": "iPhone 17 Pro Max Unlocked 512GB",
+   "ladder": [
+    900,
+    875,
+    835,
+    650,
+    520,
+    180
+   ],
+   "bc": 740.0,
+   "new_sealed": 1010.0,
+   "new_open": 970.0
+  },
+  "iphone 17 pro max|1000|unlocked": {
+   "label": "iPhone 17 Pro Max Unlocked 1TB",
+   "ladder": [
+    820,
+    795,
+    765,
+    590,
+    475,
+    165
+   ],
+   "bc": 670.0,
+   "new_sealed": 920.0,
+   "new_open": 885.0
+  },
+  "iphone 17 pro max|1024|unlocked": {
+   "label": "iPhone 17 Pro Max Unlocked 1TB",
+   "ladder": [
+    940,
+    910,
+    875,
+    675,
+    545,
+    190
+   ],
+   "bc": 770.0,
+   "new_sealed": 1055.0,
+   "new_open": 1015.0
+  },
+  "iphone 17 pro max|2000|unlocked": {
+   "label": "iPhone 17 Pro Max Unlocked 2TB",
+   "ladder": [
+    820,
+    795,
+    765,
+    590,
+    475,
+    165
+   ],
+   "bc": 670.0,
+   "new_sealed": 920.0,
+   "new_open": 885.0
+  },
+  "iphone 17 pro max|2048|unlocked": {
+   "label": "iPhone 17 Pro Max Unlocked 2TB",
+   "ladder": [
+    980,
+    950,
+    910,
+    705,
+    570,
+    195
+   ],
+   "bc": 805.0,
+   "new_sealed": 1100.0,
+   "new_open": 1060.0
+  },
+  "iphone 17 pro max|256|carrier locked": {
+   "label": "iPhone 17 Pro Max Carrier Locked 256GB",
+   "ladder": [
+    690,
+    665,
+    640,
+    495,
+    400,
+    140
+   ],
+   "bc": 565.0,
+   "new_sealed": 770.0,
+   "new_open": 745.0
+  },
+  "iphone 17 pro max|512|carrier locked": {
+   "label": "iPhone 17 Pro Max Carrier Locked 512GB",
+   "ladder": [
+    720,
+    700,
+    670,
+    520,
+    420,
+    145
+   ],
+   "bc": 590.0,
+   "new_sealed": 805.0,
+   "new_open": 780.0
+  },
+  "iphone 17 pro max|1000|carrier locked": {
+   "label": "iPhone 17 Pro Max Carrier Locked 1TB",
+   "ladder": [
+    655,
+    635,
+    610,
+    470,
+    380,
+    130
+   ],
+   "bc": 540.0,
+   "new_sealed": 735.0,
+   "new_open": 710.0
+  },
+  "iphone 17 pro max|1024|carrier locked": {
+   "label": "iPhone 17 Pro Max Carrier Locked 1TB",
+   "ladder": [
+    750,
+    730,
+    700,
+    540,
+    435,
+    150
+   ],
+   "bc": 615.0,
+   "new_sealed": 840.0,
+   "new_open": 810.0
+  },
+  "iphone 17 pro max|2000|carrier locked": {
+   "label": "iPhone 17 Pro Max Carrier Locked 2TB",
+   "ladder": [
+    655,
+    635,
+    610,
+    470,
+    380,
+    130
+   ],
+   "bc": 540.0,
+   "new_sealed": 735.0,
+   "new_open": 710.0
+  },
+  "iphone 17 pro max|2048|carrier locked": {
+   "label": "iPhone 17 Pro Max Carrier Locked 2TB",
+   "ladder": [
+    785,
+    760,
+    730,
+    565,
+    455,
+    155
+   ],
+   "bc": 645.0,
+   "new_sealed": 880.0,
+   "new_open": 845.0
+  },
+  "iphone 17 pro|256|unlocked": {
+   "label": "iPhone 17 Pro Unlocked 256GB",
+   "ladder": [
+    820,
+    795,
+    765,
+    590,
+    475,
+    165
+   ],
+   "bc": 670.0,
+   "new_sealed": 920.0,
+   "new_open": 885.0
+  },
+  "iphone 17 pro|512|unlocked": {
+   "label": "iPhone 17 Pro Unlocked 512GB",
+   "ladder": [
+    860,
+    835,
+    800,
+    620,
+    500,
+    170
+   ],
+   "bc": 705.0,
+   "new_sealed": 965.0,
+   "new_open": 930.0
+  },
+  "iphone 17 pro|1000|unlocked": {
+   "label": "iPhone 17 Pro Unlocked 1TB",
+   "ladder": [
+    780,
+    755,
+    725,
+    560,
+    450,
+    155
+   ],
+   "bc": 640.0,
+   "new_sealed": 875.0,
+   "new_open": 840.0
+  },
+  "iphone 17 pro|1024|unlocked": {
+   "label": "iPhone 17 Pro Unlocked 1TB",
+   "ladder": [
+    900,
+    875,
+    835,
+    650,
+    520,
+    180
+   ],
+   "bc": 740.0,
+   "new_sealed": 1010.0,
+   "new_open": 970.0
+  },
+  "iphone 17 pro|256|carrier locked": {
+   "label": "iPhone 17 Pro Carrier Locked 256GB",
+   "ladder": [
+    655,
+    635,
+    610,
+    470,
+    380,
+    130
+   ],
+   "bc": 540.0,
+   "new_sealed": 735.0,
+   "new_open": 710.0
+  },
+  "iphone 17 pro|512|carrier locked": {
+   "label": "iPhone 17 Pro Carrier Locked 512GB",
+   "ladder": [
+    690,
+    665,
+    640,
+    495,
+    400,
+    140
+   ],
+   "bc": 565.0,
+   "new_sealed": 770.0,
+   "new_open": 745.0
+  },
+  "iphone 17 pro|1000|carrier locked": {
+   "label": "iPhone 17 Pro Carrier Locked 1TB",
+   "ladder": [
+    625,
+    605,
+    580,
+    450,
+    360,
+    125
+   ],
+   "bc": 510.0,
+   "new_sealed": 700.0,
+   "new_open": 675.0
+  },
+  "iphone 17 pro|1024|carrier locked": {
+   "label": "iPhone 17 Pro Carrier Locked 1TB",
+   "ladder": [
+    720,
+    700,
+    670,
+    520,
+    420,
+    145
+   ],
+   "bc": 590.0,
+   "new_sealed": 805.0,
+   "new_open": 780.0
+  },
+  "iphone 17 air|256|unlocked": {
+   "label": "iPhone 17 Air Unlocked 256GB",
+   "ladder": [
+    740,
+    720,
+    690,
+    535,
+    430,
+    150
+   ],
+   "bc": 605.0,
+   "new_sealed": 830.0,
+   "new_open": 800.0
+  },
+  "iphone 17 air|512|unlocked": {
+   "label": "iPhone 17 Air Unlocked 512GB",
+   "ladder": [
+    780,
+    755,
+    725,
+    560,
+    450,
+    155
+   ],
+   "bc": 640.0,
+   "new_sealed": 875.0,
+   "new_open": 840.0
+  },
+  "iphone 17 air|1000|unlocked": {
+   "label": "iPhone 17 Air Unlocked 1TB",
+   "ladder": [
+    700,
+    680,
+    650,
+    505,
+    405,
+    140
+   ],
+   "bc": 575.0,
+   "new_sealed": 785.0,
+   "new_open": 755.0
+  },
+  "iphone 17 air|1024|unlocked": {
+   "label": "iPhone 17 Air Unlocked 1TB",
+   "ladder": [
+    820,
+    795,
+    765,
+    590,
+    475,
+    165
+   ],
+   "bc": 670.0,
+   "new_sealed": 920.0,
+   "new_open": 885.0
+  },
+  "iphone 17 air|256|carrier locked": {
+   "label": "iPhone 17 Air Carrier Locked 256GB",
+   "ladder": [
+    590,
+    575,
+    550,
+    425,
+    345,
+    120
+   ],
+   "bc": 485.0,
+   "new_sealed": 665.0,
+   "new_open": 640.0
+  },
+  "iphone 17 air|512|carrier locked": {
+   "label": "iPhone 17 Air Carrier Locked 512GB",
+   "ladder": [
+    625,
+    605,
+    580,
+    450,
+    360,
+    125
+   ],
+   "bc": 510.0,
+   "new_sealed": 700.0,
+   "new_open": 675.0
+  },
+  "iphone 17 air|1000|carrier locked": {
+   "label": "iPhone 17 Air Carrier Locked 1TB",
+   "ladder": [
+    560,
+    545,
+    520,
+    405,
+    325,
+    110
+   ],
+   "bc": 460.0,
+   "new_sealed": 625.0,
+   "new_open": 605.0
+  },
+  "iphone 17 air|1024|carrier locked": {
+   "label": "iPhone 17 Air Carrier Locked 1TB",
+   "ladder": [
+    655,
+    635,
+    610,
+    470,
+    380,
+    130
+   ],
+   "bc": 540.0,
+   "new_sealed": 735.0,
+   "new_open": 710.0
+  },
+  "iphone 17|256|unlocked": {
+   "label": "iPhone 17 Unlocked 256GB",
+   "ladder": [
+    740,
+    720,
+    690,
+    535,
+    430,
+    150
+   ],
+   "bc": 605.0,
+   "new_sealed": 830.0,
+   "new_open": 800.0
+  },
+  "iphone 17|512|unlocked": {
+   "label": "iPhone 17 Unlocked 512GB",
+   "ladder": [
+    780,
+    755,
+    725,
+    560,
+    450,
+    155
+   ],
+   "bc": 640.0,
+   "new_sealed": 875.0,
+   "new_open": 840.0
+  },
+  "iphone 17|256|carrier locked": {
+   "label": "iPhone 17 Carrier Locked 256GB",
+   "ladder": [
+    590,
+    575,
+    550,
+    425,
+    345,
+    120
+   ],
+   "bc": 485.0,
+   "new_sealed": 665.0,
+   "new_open": 640.0
+  },
+  "iphone 17|512|carrier locked": {
+   "label": "iPhone 17 Carrier Locked 512GB",
+   "ladder": [
+    625,
+    605,
+    580,
+    450,
+    360,
+    125
+   ],
+   "bc": 510.0,
+   "new_sealed": 700.0,
+   "new_open": 675.0
+  },
+  "iphone 17e|256|unlocked": {
+   "label": "iPhone 17e Unlocked 256GB",
+   "ladder": [
+    740,
+    720,
+    690,
+    535,
+    430,
+    150
+   ],
+   "bc": 605.0,
+   "new_sealed": 830.0,
+   "new_open": 800.0
+  },
+  "iphone 17e|512|unlocked": {
+   "label": "iPhone 17e Unlocked 512GB",
+   "ladder": [
+    780,
+    755,
+    725,
+    560,
+    450,
+    155
+   ],
+   "bc": 640.0,
+   "new_sealed": 875.0,
+   "new_open": 840.0
+  },
+  "iphone 17e|256|carrier locked": {
+   "label": "iPhone 17e Carrier Locked 256GB",
+   "ladder": [
+    590,
+    575,
+    550,
+    425,
+    345,
+    120
+   ],
+   "bc": 485.0,
+   "new_sealed": 665.0,
+   "new_open": 640.0
+  },
+  "iphone 17e|512|carrier locked": {
+   "label": "iPhone 17e Carrier Locked 512GB",
+   "ladder": [
+    625,
+    605,
+    580,
+    450,
+    360,
+    125
+   ],
+   "bc": 510.0,
+   "new_sealed": 700.0,
+   "new_open": 675.0
+  },
+  "iphone 16 pro max|256|unlocked": {
+   "label": "iPhone 16 Pro Max Unlocked 256GB",
+   "ladder": [
+    790,
+    765,
+    735,
+    570,
+    460,
+    160
+   ],
+   "bc": 650.0,
+   "new_sealed": 885.0,
+   "new_open": 855.0
+  },
+  "iphone 16 pro max|512|unlocked": {
+   "label": "iPhone 16 Pro Max Unlocked 512GB",
+   "ladder": [
+    830,
+    805,
+    770,
+    600,
+    480,
+    165
+   ],
+   "bc": 680.0,
+   "new_sealed": 930.0,
+   "new_open": 895.0
+  },
+  "iphone 16 pro max|1000|unlocked": {
+   "label": "iPhone 16 Pro Max Unlocked 1TB",
+   "ladder": [
+    750,
+    730,
+    700,
+    540,
+    435,
+    150
+   ],
+   "bc": 615.0,
+   "new_sealed": 840.0,
+   "new_open": 810.0
+  },
+  "iphone 16 pro max|1024|unlocked": {
+   "label": "iPhone 16 Pro Max Unlocked 1TB",
+   "ladder": [
+    870,
+    845,
+    810,
+    625,
+    505,
+    175
+   ],
+   "bc": 715.0,
+   "new_sealed": 975.0,
+   "new_open": 940.0
+  },
+  "iphone 16 pro max|256|carrier locked": {
+   "label": "iPhone 16 Pro Max Carrier Locked 256GB",
+   "ladder": [
+    630,
+    615,
+    590,
+    455,
+    365,
+    125
+   ],
+   "bc": 520.0,
+   "new_sealed": 710.0,
+   "new_open": 685.0
+  },
+  "iphone 16 pro max|512|carrier locked": {
+   "label": "iPhone 16 Pro Max Carrier Locked 512GB",
+   "ladder": [
+    665,
+    645,
+    620,
+    480,
+    385,
+    135
+   ],
+   "bc": 545.0,
+   "new_sealed": 745.0,
+   "new_open": 715.0
+  },
+  "iphone 16 pro max|1000|carrier locked": {
+   "label": "iPhone 16 Pro Max Carrier Locked 1TB",
+   "ladder": [
+    600,
+    580,
+    560,
+    430,
+    350,
+    120
+   ],
+   "bc": 490.0,
+   "new_sealed": 670.0,
+   "new_open": 650.0
+  },
+  "iphone 16 pro max|1024|carrier locked": {
+   "label": "iPhone 16 Pro Max Carrier Locked 1TB",
+   "ladder": [
+    695,
+    675,
+    645,
+    500,
+    405,
+    140
+   ],
+   "bc": 570.0,
+   "new_sealed": 780.0,
+   "new_open": 750.0
+  },
+  "iphone 16 pro|128|unlocked": {
+   "label": "iPhone 16 Pro Unlocked 128GB",
+   "ladder": [
+    710,
+    690,
+    660,
+    510,
+    410,
+    140
+   ],
+   "bc": 580.0,
+   "new_sealed": 795.0,
+   "new_open": 765.0
+  },
+  "iphone 16 pro|256|unlocked": {
+   "label": "iPhone 16 Pro Unlocked 256GB",
+   "ladder": [
+    750,
+    730,
+    700,
+    540,
+    435,
+    150
+   ],
+   "bc": 615.0,
+   "new_sealed": 840.0,
+   "new_open": 810.0
+  },
+  "iphone 16 pro|512|unlocked": {
+   "label": "iPhone 16 Pro Unlocked 512GB",
+   "ladder": [
+    790,
+    765,
+    735,
+    570,
+    460,
+    160
+   ],
+   "bc": 650.0,
+   "new_sealed": 885.0,
+   "new_open": 855.0
+  },
+  "iphone 16 pro|1000|unlocked": {
+   "label": "iPhone 16 Pro Unlocked 1TB",
+   "ladder": [
+    710,
+    690,
+    660,
+    510,
+    410,
+    140
+   ],
+   "bc": 580.0,
+   "new_sealed": 795.0,
+   "new_open": 765.0
+  },
+  "iphone 16 pro|1024|unlocked": {
+   "label": "iPhone 16 Pro Unlocked 1TB",
+   "ladder": [
+    830,
+    805,
+    770,
+    600,
+    480,
+    165
+   ],
+   "bc": 680.0,
+   "new_sealed": 930.0,
+   "new_open": 895.0
+  },
+  "iphone 16 pro|128|carrier locked": {
+   "label": "iPhone 16 Pro Carrier Locked 128GB",
+   "ladder": [
+    570,
+    550,
+    530,
+    410,
+    330,
+    115
+   ],
+   "bc": 465.0,
+   "new_sealed": 635.0,
+   "new_open": 615.0
+  },
+  "iphone 16 pro|256|carrier locked": {
+   "label": "iPhone 16 Pro Carrier Locked 256GB",
+   "ladder": [
+    600,
+    580,
+    560,
+    430,
+    350,
+    120
+   ],
+   "bc": 490.0,
+   "new_sealed": 670.0,
+   "new_open": 650.0
+  },
+  "iphone 16 pro|512|carrier locked": {
+   "label": "iPhone 16 Pro Carrier Locked 512GB",
+   "ladder": [
+    630,
+    615,
+    590,
+    455,
+    365,
+    125
+   ],
+   "bc": 520.0,
+   "new_sealed": 710.0,
+   "new_open": 685.0
+  },
+  "iphone 16 pro|1000|carrier locked": {
+   "label": "iPhone 16 Pro Carrier Locked 1TB",
+   "ladder": [
+    570,
+    550,
+    530,
+    410,
+    330,
+    115
+   ],
+   "bc": 465.0,
+   "new_sealed": 635.0,
+   "new_open": 615.0
+  },
+  "iphone 16 pro|1024|carrier locked": {
+   "label": "iPhone 16 Pro Carrier Locked 1TB",
+   "ladder": [
+    665,
+    645,
+    620,
+    480,
+    385,
+    135
+   ],
+   "bc": 545.0,
+   "new_sealed": 745.0,
+   "new_open": 715.0
+  },
+  "iphone 16 plus|128|unlocked": {
+   "label": "iPhone 16 Plus Unlocked 128GB",
+   "ladder": [
+    660,
+    640,
+    615,
+    475,
+    385,
+    130
+   ],
+   "bc": 540.0,
+   "new_sealed": 740.0,
+   "new_open": 715.0
+  },
+  "iphone 16 plus|256|unlocked": {
+   "label": "iPhone 16 Plus Unlocked 256GB",
+   "ladder": [
+    700,
+    680,
+    650,
+    505,
+    405,
+    140
+   ],
+   "bc": 575.0,
+   "new_sealed": 785.0,
+   "new_open": 755.0
+  },
+  "iphone 16 plus|512|unlocked": {
+   "label": "iPhone 16 Plus Unlocked 512GB",
+   "ladder": [
+    740,
+    720,
+    690,
+    535,
+    430,
+    150
+   ],
+   "bc": 605.0,
+   "new_sealed": 830.0,
+   "new_open": 800.0
+  },
+  "iphone 16 plus|128|carrier locked": {
+   "label": "iPhone 16 Plus Carrier Locked 128GB",
+   "ladder": [
+    530,
+    510,
+    490,
+    380,
+    305,
+    105
+   ],
+   "bc": 435.0,
+   "new_sealed": 590.0,
+   "new_open": 570.0
+  },
+  "iphone 16 plus|256|carrier locked": {
+   "label": "iPhone 16 Plus Carrier Locked 256GB",
+   "ladder": [
+    560,
+    545,
+    520,
+    405,
+    325,
+    110
+   ],
+   "bc": 460.0,
+   "new_sealed": 625.0,
+   "new_open": 605.0
+  },
+  "iphone 16 plus|512|carrier locked": {
+   "label": "iPhone 16 Plus Carrier Locked 512GB",
+   "ladder": [
+    590,
+    575,
+    550,
+    425,
+    345,
+    120
+   ],
+   "bc": 485.0,
+   "new_sealed": 665.0,
+   "new_open": 640.0
+  },
+  "iphone 16|128|unlocked": {
+   "label": "iPhone 16 Unlocked 128GB",
+   "ladder": [
+    630,
+    610,
+    585,
+    455,
+    365,
+    125
+   ],
+   "bc": 515.0,
+   "new_sealed": 705.0,
+   "new_open": 680.0
+  },
+  "iphone 16|256|unlocked": {
+   "label": "iPhone 16 Unlocked 256GB",
+   "ladder": [
+    670,
+    650,
+    625,
+    480,
+    390,
+    135
+   ],
+   "bc": 550.0,
+   "new_sealed": 750.0,
+   "new_open": 725.0
+  },
+  "iphone 16|512|unlocked": {
+   "label": "iPhone 16 Unlocked 512GB",
+   "ladder": [
+    710,
+    690,
+    660,
+    510,
+    410,
+    140
+   ],
+   "bc": 580.0,
+   "new_sealed": 795.0,
+   "new_open": 765.0
+  },
+  "iphone 16|128|carrier locked": {
+   "label": "iPhone 16 Carrier Locked 128GB",
+   "ladder": [
+    505,
+    490,
+    470,
+    365,
+    290,
+    100
+   ],
+   "bc": 415.0,
+   "new_sealed": 565.0,
+   "new_open": 545.0
+  },
+  "iphone 16|256|carrier locked": {
+   "label": "iPhone 16 Carrier Locked 256GB",
+   "ladder": [
+    535,
+    520,
+    500,
+    385,
+    310,
+    105
+   ],
+   "bc": 440.0,
+   "new_sealed": 600.0,
+   "new_open": 580.0
+  },
+  "iphone 16|512|carrier locked": {
+   "label": "iPhone 16 Carrier Locked 512GB",
+   "ladder": [
+    570,
+    550,
+    530,
+    410,
+    330,
+    115
+   ],
+   "bc": 465.0,
+   "new_sealed": 635.0,
+   "new_open": 615.0
+  },
+  "iphone 16e|128|unlocked": {
+   "label": "iPhone 16e Unlocked 128GB",
+   "ladder": [
+    630,
+    610,
+    585,
+    455,
+    365,
+    125
+   ],
+   "bc": 515.0,
+   "new_sealed": 705.0,
+   "new_open": 680.0
+  },
+  "iphone 16e|256|unlocked": {
+   "label": "iPhone 16e Unlocked 256GB",
+   "ladder": [
+    670,
+    650,
+    625,
+    480,
+    390,
+    135
+   ],
+   "bc": 550.0,
+   "new_sealed": 750.0,
+   "new_open": 725.0
+  },
+  "iphone 16e|512|unlocked": {
+   "label": "iPhone 16e Unlocked 512GB",
+   "ladder": [
+    710,
+    690,
+    660,
+    510,
+    410,
+    140
+   ],
+   "bc": 580.0,
+   "new_sealed": 795.0,
+   "new_open": 765.0
+  },
+  "iphone 16e|128|carrier locked": {
+   "label": "iPhone 16e Carrier Locked 128GB",
+   "ladder": [
+    505,
+    490,
+    470,
+    365,
+    290,
+    100
+   ],
+   "bc": 415.0,
+   "new_sealed": 565.0,
+   "new_open": 545.0
+  },
+  "iphone 16e|256|carrier locked": {
+   "label": "iPhone 16e Carrier Locked 256GB",
+   "ladder": [
+    535,
+    520,
+    500,
+    385,
+    310,
+    105
+   ],
+   "bc": 440.0,
+   "new_sealed": 600.0,
+   "new_open": 580.0
+  },
+  "iphone 16e|512|carrier locked": {
+   "label": "iPhone 16e Carrier Locked 512GB",
+   "ladder": [
+    570,
+    550,
+    530,
+    410,
+    330,
+    115
+   ],
+   "bc": 465.0,
+   "new_sealed": 635.0,
+   "new_open": 615.0
+  },
+  "iphone 15 pro max|256|unlocked": {
+   "label": "iPhone 15 Pro Max Unlocked 256GB",
+   "ladder": [
+    720,
+    700,
+    670,
+    520,
+    420,
+    145
+   ],
+   "bc": 590.0,
+   "new_sealed": 805.0,
+   "new_open": 780.0
+  },
+  "iphone 15 pro max|512|unlocked": {
+   "label": "iPhone 15 Pro Max Unlocked 512GB",
+   "ladder": [
+    760,
+    735,
+    705,
+    545,
+    440,
+    150
+   ],
+   "bc": 625.0,
+   "new_sealed": 850.0,
+   "new_open": 820.0
+  },
+  "iphone 15 pro max|1000|unlocked": {
+   "label": "iPhone 15 Pro Max Unlocked 1TB",
+   "ladder": [
+    680,
+    660,
+    630,
+    490,
+    395,
+    135
+   ],
+   "bc": 560.0,
+   "new_sealed": 760.0,
+   "new_open": 735.0
+  },
+  "iphone 15 pro max|1024|unlocked": {
+   "label": "iPhone 15 Pro Max Unlocked 1TB",
+   "ladder": [
+    800,
+    775,
+    745,
+    575,
+    465,
+    160
+   ],
+   "bc": 655.0,
+   "new_sealed": 895.0,
+   "new_open": 865.0
+  },
+  "iphone 15 pro max|256|carrier locked": {
+   "label": "iPhone 15 Pro Max Carrier Locked 256GB",
+   "ladder": [
+    575,
+    560,
+    535,
+    415,
+    335,
+    115
+   ],
+   "bc": 470.0,
+   "new_sealed": 645.0,
+   "new_open": 620.0
+  },
+  "iphone 15 pro max|512|carrier locked": {
+   "label": "iPhone 15 Pro Max Carrier Locked 512GB",
+   "ladder": [
+    610,
+    590,
+    565,
+    440,
+    355,
+    120
+   ],
+   "bc": 500.0,
+   "new_sealed": 680.0,
+   "new_open": 655.0
+  },
+  "iphone 15 pro max|1000|carrier locked": {
+   "label": "iPhone 15 Pro Max Carrier Locked 1TB",
+   "ladder": [
+    545,
+    530,
+    505,
+    390,
+    315,
+    110
+   ],
+   "bc": 445.0,
+   "new_sealed": 610.0,
+   "new_open": 590.0
+  },
+  "iphone 15 pro max|1024|carrier locked": {
+   "label": "iPhone 15 Pro Max Carrier Locked 1TB",
+   "ladder": [
+    640,
+    620,
+    595,
+    460,
+    370,
+    130
+   ],
+   "bc": 525.0,
+   "new_sealed": 715.0,
+   "new_open": 690.0
+  },
+  "iphone 15 pro|128|unlocked": {
+   "label": "iPhone 15 Pro Unlocked 128GB",
+   "ladder": [
+    640,
+    620,
+    595,
+    460,
+    370,
+    130
+   ],
+   "bc": 525.0,
+   "new_sealed": 715.0,
+   "new_open": 690.0
+  },
+  "iphone 15 pro|256|unlocked": {
+   "label": "iPhone 15 Pro Unlocked 256GB",
+   "ladder": [
+    680,
+    660,
+    630,
+    490,
+    395,
+    135
+   ],
+   "bc": 560.0,
+   "new_sealed": 760.0,
+   "new_open": 735.0
+  },
+  "iphone 15 pro|512|unlocked": {
+   "label": "iPhone 15 Pro Unlocked 512GB",
+   "ladder": [
+    720,
+    700,
+    670,
+    520,
+    420,
+    145
+   ],
+   "bc": 590.0,
+   "new_sealed": 805.0,
+   "new_open": 780.0
+  },
+  "iphone 15 pro|1000|unlocked": {
+   "label": "iPhone 15 Pro Unlocked 1TB",
+   "ladder": [
+    640,
+    620,
+    595,
+    460,
+    370,
+    130
+   ],
+   "bc": 525.0,
+   "new_sealed": 715.0,
+   "new_open": 690.0
+  },
+  "iphone 15 pro|1024|unlocked": {
+   "label": "iPhone 15 Pro Unlocked 1TB",
+   "ladder": [
+    760,
+    735,
+    705,
+    545,
+    440,
+    150
+   ],
+   "bc": 625.0,
+   "new_sealed": 850.0,
+   "new_open": 820.0
+  },
+  "iphone 15 pro|128|carrier locked": {
+   "label": "iPhone 15 Pro Carrier Locked 128GB",
+   "ladder": [
+    510,
+    495,
+    475,
+    370,
+    295,
+    100
+   ],
+   "bc": 420.0,
+   "new_sealed": 575.0,
+   "new_open": 555.0
+  },
+  "iphone 15 pro|256|carrier locked": {
+   "label": "iPhone 15 Pro Carrier Locked 256GB",
+   "ladder": [
+    545,
+    530,
+    505,
+    390,
+    315,
+    110
+   ],
+   "bc": 445.0,
+   "new_sealed": 610.0,
+   "new_open": 590.0
+  },
+  "iphone 15 pro|512|carrier locked": {
+   "label": "iPhone 15 Pro Carrier Locked 512GB",
+   "ladder": [
+    575,
+    560,
+    535,
+    415,
+    335,
+    115
+   ],
+   "bc": 470.0,
+   "new_sealed": 645.0,
+   "new_open": 620.0
+  },
+  "iphone 15 pro|1000|carrier locked": {
+   "label": "iPhone 15 Pro Carrier Locked 1TB",
+   "ladder": [
+    510,
+    495,
+    475,
+    370,
+    295,
+    100
+   ],
+   "bc": 420.0,
+   "new_sealed": 575.0,
+   "new_open": 555.0
+  },
+  "iphone 15 pro|1024|carrier locked": {
+   "label": "iPhone 15 Pro Carrier Locked 1TB",
+   "ladder": [
+    610,
+    590,
+    565,
+    440,
+    355,
+    120
+   ],
+   "bc": 500.0,
+   "new_sealed": 680.0,
+   "new_open": 655.0
+  },
+  "iphone 15 plus|128|unlocked": {
+   "label": "iPhone 15 Plus Unlocked 128GB",
+   "ladder": [
+    590,
+    570,
+    550,
+    425,
+    340,
+    120
+   ],
+   "bc": 485.0,
+   "new_sealed": 660.0,
+   "new_open": 635.0
+  },
+  "iphone 15 plus|256|unlocked": {
+   "label": "iPhone 15 Plus Unlocked 256GB",
+   "ladder": [
+    630,
+    610,
+    585,
+    455,
+    365,
+    125
+   ],
+   "bc": 515.0,
+   "new_sealed": 705.0,
+   "new_open": 680.0
+  },
+  "iphone 15 plus|512|unlocked": {
+   "label": "iPhone 15 Plus Unlocked 512GB",
+   "ladder": [
+    670,
+    650,
+    625,
+    480,
+    390,
+    135
+   ],
+   "bc": 550.0,
+   "new_sealed": 750.0,
+   "new_open": 725.0
+  },
+  "iphone 15 plus|128|carrier locked": {
+   "label": "iPhone 15 Plus Carrier Locked 128GB",
+   "ladder": [
+    470,
+    460,
+    440,
+    340,
+    275,
+    95
+   ],
+   "bc": 385.0,
+   "new_sealed": 530.0,
+   "new_open": 510.0
+  },
+  "iphone 15 plus|256|carrier locked": {
+   "label": "iPhone 15 Plus Carrier Locked 256GB",
+   "ladder": [
+    505,
+    490,
+    470,
+    365,
+    290,
+    100
+   ],
+   "bc": 415.0,
+   "new_sealed": 565.0,
+   "new_open": 545.0
+  },
+  "iphone 15 plus|512|carrier locked": {
+   "label": "iPhone 15 Plus Carrier Locked 512GB",
+   "ladder": [
+    535,
+    520,
+    500,
+    385,
+    310,
+    105
+   ],
+   "bc": 440.0,
+   "new_sealed": 600.0,
+   "new_open": 580.0
+  },
+  "iphone 15|128|unlocked": {
+   "label": "iPhone 15 Unlocked 128GB",
+   "ladder": [
+    560,
+    545,
+    520,
+    405,
+    325,
+    110
+   ],
+   "bc": 460.0,
+   "new_sealed": 625.0,
+   "new_open": 605.0
+  },
+  "iphone 15|256|unlocked": {
+   "label": "iPhone 15 Unlocked 256GB",
+   "ladder": [
+    600,
+    580,
+    560,
+    430,
+    350,
+    120
+   ],
+   "bc": 490.0,
+   "new_sealed": 670.0,
+   "new_open": 650.0
+  },
+  "iphone 15|512|unlocked": {
+   "label": "iPhone 15 Unlocked 512GB",
+   "ladder": [
+    640,
+    620,
+    595,
+    460,
+    370,
+    130
+   ],
+   "bc": 525.0,
+   "new_sealed": 715.0,
+   "new_open": 690.0
+  },
+  "iphone 15|128|carrier locked": {
+   "label": "iPhone 15 Carrier Locked 128GB",
+   "ladder": [
+    450,
+    435,
+    415,
+    325,
+    260,
+    90
+   ],
+   "bc": 365.0,
+   "new_sealed": 500.0,
+   "new_open": 485.0
+  },
+  "iphone 15|256|carrier locked": {
+   "label": "iPhone 15 Carrier Locked 256GB",
+   "ladder": [
+    480,
+    465,
+    445,
+    345,
+    280,
+    95
+   ],
+   "bc": 395.0,
+   "new_sealed": 540.0,
+   "new_open": 520.0
+  },
+  "iphone 15|512|carrier locked": {
+   "label": "iPhone 15 Carrier Locked 512GB",
+   "ladder": [
+    510,
+    495,
+    475,
+    370,
+    295,
+    100
+   ],
+   "bc": 420.0,
+   "new_sealed": 575.0,
+   "new_open": 555.0
+  },
+  "iphone 14 pro max|128|unlocked": {
+   "label": "iPhone 14 Pro Max Unlocked 128GB",
+   "ladder": [
+    610,
+    590,
+    565,
+    440,
+    355,
+    120
+   ],
+   "bc": 500.0,
+   "new_sealed": 685.0,
+   "new_open": 660.0
+  },
+  "iphone 14 pro max|256|unlocked": {
+   "label": "iPhone 14 Pro Max Unlocked 256GB",
+   "ladder": [
+    650,
+    630,
+    605,
+    470,
+    375,
+    130
+   ],
+   "bc": 535.0,
+   "new_sealed": 730.0,
+   "new_open": 700.0
+  },
+  "iphone 14 pro max|512|unlocked": {
+   "label": "iPhone 14 Pro Max Unlocked 512GB",
+   "ladder": [
+    690,
+    670,
+    640,
+    495,
+    400,
+    140
+   ],
+   "bc": 565.0,
+   "new_sealed": 775.0,
+   "new_open": 745.0
+  },
+  "iphone 14 pro max|1000|unlocked": {
+   "label": "iPhone 14 Pro Max Unlocked 1TB",
+   "ladder": [
+    610,
+    590,
+    565,
+    440,
+    355,
+    120
+   ],
+   "bc": 500.0,
+   "new_sealed": 685.0,
+   "new_open": 660.0
+  },
+  "iphone 14 pro max|1024|unlocked": {
+   "label": "iPhone 14 Pro Max Unlocked 1TB",
+   "ladder": [
+    730,
+    710,
+    680,
+    525,
+    425,
+    145
+   ],
+   "bc": 600.0,
+   "new_sealed": 820.0,
+   "new_open": 790.0
+  },
+  "iphone 14 pro max|128|carrier locked": {
+   "label": "iPhone 14 Pro Max Carrier Locked 128GB",
+   "ladder": [
+    490,
+    475,
+    455,
+    350,
+    285,
+    100
+   ],
+   "bc": 400.0,
+   "new_sealed": 545.0,
+   "new_open": 525.0
+  },
+  "iphone 14 pro max|256|carrier locked": {
+   "label": "iPhone 14 Pro Max Carrier Locked 256GB",
+   "ladder": [
+    520,
+    505,
+    485,
+    375,
+    300,
+    105
+   ],
+   "bc": 425.0,
+   "new_sealed": 580.0,
+   "new_open": 560.0
+  },
+  "iphone 14 pro max|512|carrier locked": {
+   "label": "iPhone 14 Pro Max Carrier Locked 512GB",
+   "ladder": [
+    550,
+    535,
+    515,
+    395,
+    320,
+    110
+   ],
+   "bc": 455.0,
+   "new_sealed": 620.0,
+   "new_open": 595.0
+  },
+  "iphone 14 pro max|1000|carrier locked": {
+   "label": "iPhone 14 Pro Max Carrier Locked 1TB",
+   "ladder": [
+    490,
+    475,
+    455,
+    350,
+    285,
+    100
+   ],
+   "bc": 400.0,
+   "new_sealed": 545.0,
+   "new_open": 525.0
+  },
+  "iphone 14 pro max|1024|carrier locked": {
+   "label": "iPhone 14 Pro Max Carrier Locked 1TB",
+   "ladder": [
+    585,
+    565,
+    545,
+    420,
+    340,
+    115
+   ],
+   "bc": 480.0,
+   "new_sealed": 655.0,
+   "new_open": 630.0
+  },
+  "iphone 14 pro|128|unlocked": {
+   "label": "iPhone 14 Pro Unlocked 128GB",
+   "ladder": [
+    570,
+    555,
+    530,
+    410,
+    330,
+    115
+   ],
+   "bc": 465.0,
+   "new_sealed": 640.0,
+   "new_open": 615.0
+  },
+  "iphone 14 pro|256|unlocked": {
+   "label": "iPhone 14 Pro Unlocked 256GB",
+   "ladder": [
+    610,
+    590,
+    565,
+    440,
+    355,
+    120
+   ],
+   "bc": 500.0,
+   "new_sealed": 685.0,
+   "new_open": 660.0
+  },
+  "iphone 14 pro|512|unlocked": {
+   "label": "iPhone 14 Pro Unlocked 512GB",
+   "ladder": [
+    650,
+    630,
+    605,
+    470,
+    375,
+    130
+   ],
+   "bc": 535.0,
+   "new_sealed": 730.0,
+   "new_open": 700.0
+  },
+  "iphone 14 pro|1000|unlocked": {
+   "label": "iPhone 14 Pro Unlocked 1TB",
+   "ladder": [
+    570,
+    555,
+    530,
+    410,
+    330,
+    115
+   ],
+   "bc": 465.0,
+   "new_sealed": 640.0,
+   "new_open": 615.0
+  },
+  "iphone 14 pro|1024|unlocked": {
+   "label": "iPhone 14 Pro Unlocked 1TB",
+   "ladder": [
+    690,
+    670,
+    640,
+    495,
+    400,
+    140
+   ],
+   "bc": 565.0,
+   "new_sealed": 775.0,
+   "new_open": 745.0
+  },
+  "iphone 14 pro|128|carrier locked": {
+   "label": "iPhone 14 Pro Carrier Locked 128GB",
+   "ladder": [
+    455,
+    440,
+    425,
+    330,
+    265,
+    90
+   ],
+   "bc": 375.0,
+   "new_sealed": 510.0,
+   "new_open": 490.0
+  },
+  "iphone 14 pro|256|carrier locked": {
+   "label": "iPhone 14 Pro Carrier Locked 256GB",
+   "ladder": [
+    490,
+    475,
+    455,
+    350,
+    285,
+    100
+   ],
+   "bc": 400.0,
+   "new_sealed": 545.0,
+   "new_open": 525.0
+  },
+  "iphone 14 pro|512|carrier locked": {
+   "label": "iPhone 14 Pro Carrier Locked 512GB",
+   "ladder": [
+    520,
+    505,
+    485,
+    375,
+    300,
+    105
+   ],
+   "bc": 425.0,
+   "new_sealed": 580.0,
+   "new_open": 560.0
+  },
+  "iphone 14 pro|1000|carrier locked": {
+   "label": "iPhone 14 Pro Carrier Locked 1TB",
+   "ladder": [
+    455,
+    440,
+    425,
+    330,
+    265,
+    90
+   ],
+   "bc": 375.0,
+   "new_sealed": 510.0,
+   "new_open": 490.0
+  },
+  "iphone 14 pro|1024|carrier locked": {
+   "label": "iPhone 14 Pro Carrier Locked 1TB",
+   "ladder": [
+    550,
+    535,
+    515,
+    395,
+    320,
+    110
+   ],
+   "bc": 455.0,
+   "new_sealed": 620.0,
+   "new_open": 595.0
+  },
+  "iphone 14 plus|128|unlocked": {
+   "label": "iPhone 14 Plus Unlocked 128GB",
+   "ladder": [
+    520,
+    505,
+    485,
+    375,
+    300,
+    105
+   ],
+   "bc": 425.0,
+   "new_sealed": 580.0,
+   "new_open": 560.0
+  },
+  "iphone 14 plus|256|unlocked": {
+   "label": "iPhone 14 Plus Unlocked 256GB",
+   "ladder": [
+    560,
+    545,
+    520,
+    405,
+    325,
+    110
+   ],
+   "bc": 460.0,
+   "new_sealed": 625.0,
+   "new_open": 605.0
+  },
+  "iphone 14 plus|512|unlocked": {
+   "label": "iPhone 14 Plus Unlocked 512GB",
+   "ladder": [
+    600,
+    580,
+    560,
+    430,
+    350,
+    120
+   ],
+   "bc": 490.0,
+   "new_sealed": 670.0,
+   "new_open": 650.0
+  },
+  "iphone 14 plus|128|carrier locked": {
+   "label": "iPhone 14 Plus Carrier Locked 128GB",
+   "ladder": [
+    415,
+    405,
+    385,
+    300,
+    240,
+    85
+   ],
+   "bc": 340.0,
+   "new_sealed": 465.0,
+   "new_open": 450.0
+  },
+  "iphone 14 plus|256|carrier locked": {
+   "label": "iPhone 14 Plus Carrier Locked 256GB",
+   "ladder": [
+    450,
+    435,
+    415,
+    325,
+    260,
+    90
+   ],
+   "bc": 365.0,
+   "new_sealed": 500.0,
+   "new_open": 485.0
+  },
+  "iphone 14 plus|512|carrier locked": {
+   "label": "iPhone 14 Plus Carrier Locked 512GB",
+   "ladder": [
+    480,
+    465,
+    445,
+    345,
+    280,
+    95
+   ],
+   "bc": 395.0,
+   "new_sealed": 540.0,
+   "new_open": 520.0
+  },
+  "iphone 14|128|unlocked": {
+   "label": "iPhone 14 Unlocked 128GB",
+   "ladder": [
+    490,
+    475,
+    455,
+    355,
+    285,
+    100
+   ],
+   "bc": 400.0,
+   "new_sealed": 550.0,
+   "new_open": 530.0
+  },
+  "iphone 14|256|unlocked": {
+   "label": "iPhone 14 Unlocked 256GB",
+   "ladder": [
+    530,
+    515,
+    495,
+    380,
+    305,
+    105
+   ],
+   "bc": 435.0,
+   "new_sealed": 595.0,
+   "new_open": 570.0
+  },
+  "iphone 14|512|unlocked": {
+   "label": "iPhone 14 Unlocked 512GB",
+   "ladder": [
+    570,
+    555,
+    530,
+    410,
+    330,
+    115
+   ],
+   "bc": 465.0,
+   "new_sealed": 640.0,
+   "new_open": 615.0
+  },
+  "iphone 14|128|carrier locked": {
+   "label": "iPhone 14 Carrier Locked 128GB",
+   "ladder": [
+    390,
+    380,
+    365,
+    280,
+    225,
+    80
+   ],
+   "bc": 320.0,
+   "new_sealed": 440.0,
+   "new_open": 425.0
+  },
+  "iphone 14|256|carrier locked": {
+   "label": "iPhone 14 Carrier Locked 256GB",
+   "ladder": [
+    425,
+    410,
+    395,
+    305,
+    245,
+    85
+   ],
+   "bc": 350.0,
+   "new_sealed": 475.0,
+   "new_open": 460.0
+  },
+  "iphone 14|512|carrier locked": {
+   "label": "iPhone 14 Carrier Locked 512GB",
+   "ladder": [
+    455,
+    440,
+    425,
+    330,
+    265,
+    90
+   ],
+   "bc": 375.0,
+   "new_sealed": 510.0,
+   "new_open": 490.0
+  },
+  "iphone 13 pro max|128|unlocked": {
+   "label": "iPhone 13 Pro Max Unlocked 128GB",
+   "ladder": [
+    540,
+    525,
+    500,
+    390,
+    315,
+    110
+   ],
+   "bc": 445.0,
+   "new_sealed": 605.0,
+   "new_open": 585.0
+  },
+  "iphone 13 pro max|256|unlocked": {
+   "label": "iPhone 13 Pro Max Unlocked 256GB",
+   "ladder": [
+    580,
+    565,
+    540,
+    420,
+    335,
+    115
+   ],
+   "bc": 475.0,
+   "new_sealed": 650.0,
+   "new_open": 625.0
+  },
+  "iphone 13 pro max|512|unlocked": {
+   "label": "iPhone 13 Pro Max Unlocked 512GB",
+   "ladder": [
+    620,
+    600,
+    575,
+    445,
+    360,
+    125
+   ],
+   "bc": 510.0,
+   "new_sealed": 695.0,
+   "new_open": 670.0
+  },
+  "iphone 13 pro max|1000|unlocked": {
+   "label": "iPhone 13 Pro Max Unlocked 1TB",
+   "ladder": [
+    540,
+    525,
+    500,
+    390,
+    315,
+    110
+   ],
+   "bc": 445.0,
+   "new_sealed": 605.0,
+   "new_open": 585.0
+  },
+  "iphone 13 pro max|1024|unlocked": {
+   "label": "iPhone 13 Pro Max Unlocked 1TB",
+   "ladder": [
+    660,
+    640,
+    615,
+    475,
+    385,
+    130
+   ],
+   "bc": 540.0,
+   "new_sealed": 740.0,
+   "new_open": 715.0
+  },
+  "iphone 13 pro max|128|carrier locked": {
+   "label": "iPhone 13 Pro Max Carrier Locked 128GB",
+   "ladder": [
+    430,
+    420,
+    400,
+    310,
+    250,
+    85
+   ],
+   "bc": 355.0,
+   "new_sealed": 485.0,
+   "new_open": 465.0
+  },
+  "iphone 13 pro max|256|carrier locked": {
+   "label": "iPhone 13 Pro Max Carrier Locked 256GB",
+   "ladder": [
+    465,
+    450,
+    430,
+    335,
+    270,
+    95
+   ],
+   "bc": 380.0,
+   "new_sealed": 520.0,
+   "new_open": 500.0
+  },
+  "iphone 13 pro max|512|carrier locked": {
+   "label": "iPhone 13 Pro Max Carrier Locked 512GB",
+   "ladder": [
+    495,
+    480,
+    460,
+    355,
+    290,
+    100
+   ],
+   "bc": 405.0,
+   "new_sealed": 555.0,
+   "new_open": 535.0
+  },
+  "iphone 13 pro max|1000|carrier locked": {
+   "label": "iPhone 13 Pro Max Carrier Locked 1TB",
+   "ladder": [
+    430,
+    420,
+    400,
+    310,
+    250,
+    85
+   ],
+   "bc": 355.0,
+   "new_sealed": 485.0,
+   "new_open": 465.0
+  },
+  "iphone 13 pro max|1024|carrier locked": {
+   "label": "iPhone 13 Pro Max Carrier Locked 1TB",
+   "ladder": [
+    530,
+    510,
+    490,
+    380,
+    305,
+    105
+   ],
+   "bc": 435.0,
+   "new_sealed": 590.0,
+   "new_open": 570.0
+  },
+  "iphone 13 pro|128|unlocked": {
+   "label": "iPhone 13 Pro Unlocked 128GB",
+   "ladder": [
+    500,
+    485,
+    465,
+    360,
+    290,
+    100
+   ],
+   "bc": 410.0,
+   "new_sealed": 560.0,
+   "new_open": 540.0
+  },
+  "iphone 13 pro|256|unlocked": {
+   "label": "iPhone 13 Pro Unlocked 256GB",
+   "ladder": [
+    540,
+    525,
+    500,
+    390,
+    315,
+    110
+   ],
+   "bc": 445.0,
+   "new_sealed": 605.0,
+   "new_open": 585.0
+  },
+  "iphone 13 pro|512|unlocked": {
+   "label": "iPhone 13 Pro Unlocked 512GB",
+   "ladder": [
+    580,
+    565,
+    540,
+    420,
+    335,
+    115
+   ],
+   "bc": 475.0,
+   "new_sealed": 650.0,
+   "new_open": 625.0
+  },
+  "iphone 13 pro|1000|unlocked": {
+   "label": "iPhone 13 Pro Unlocked 1TB",
+   "ladder": [
+    500,
+    485,
+    465,
+    360,
+    290,
+    100
+   ],
+   "bc": 410.0,
+   "new_sealed": 560.0,
+   "new_open": 540.0
+  },
+  "iphone 13 pro|1024|unlocked": {
+   "label": "iPhone 13 Pro Unlocked 1TB",
+   "ladder": [
+    620,
+    600,
+    575,
+    445,
+    360,
+    125
+   ],
+   "bc": 510.0,
+   "new_sealed": 695.0,
+   "new_open": 670.0
+  },
+  "iphone 13 pro|128|carrier locked": {
+   "label": "iPhone 13 Pro Carrier Locked 128GB",
+   "ladder": [
+    400,
+    390,
+    370,
+    290,
+    230,
+    80
+   ],
+   "bc": 330.0,
+   "new_sealed": 450.0,
+   "new_open": 430.0
+  },
+  "iphone 13 pro|256|carrier locked": {
+   "label": "iPhone 13 Pro Carrier Locked 256GB",
+   "ladder": [
+    430,
+    420,
+    400,
+    310,
+    250,
+    85
+   ],
+   "bc": 355.0,
+   "new_sealed": 485.0,
+   "new_open": 465.0
+  },
+  "iphone 13 pro|512|carrier locked": {
+   "label": "iPhone 13 Pro Carrier Locked 512GB",
+   "ladder": [
+    465,
+    450,
+    430,
+    335,
+    270,
+    95
+   ],
+   "bc": 380.0,
+   "new_sealed": 520.0,
+   "new_open": 500.0
+  },
+  "iphone 13 pro|1000|carrier locked": {
+   "label": "iPhone 13 Pro Carrier Locked 1TB",
+   "ladder": [
+    400,
+    390,
+    370,
+    290,
+    230,
+    80
+   ],
+   "bc": 330.0,
+   "new_sealed": 450.0,
+   "new_open": 430.0
+  },
+  "iphone 13 pro|1024|carrier locked": {
+   "label": "iPhone 13 Pro Carrier Locked 1TB",
+   "ladder": [
+    495,
+    480,
+    460,
+    355,
+    290,
+    100
+   ],
+   "bc": 405.0,
+   "new_sealed": 555.0,
+   "new_open": 535.0
+  },
+  "iphone 13|128|unlocked": {
+   "label": "iPhone 13 Unlocked 128GB",
+   "ladder": [
+    420,
+    405,
+    390,
+    300,
+    245,
+    85
+   ],
+   "bc": 345.0,
+   "new_sealed": 470.0,
+   "new_open": 455.0
+  },
+  "iphone 13|256|unlocked": {
+   "label": "iPhone 13 Unlocked 256GB",
+   "ladder": [
+    460,
+    445,
+    430,
+    330,
+    265,
+    90
+   ],
+   "bc": 375.0,
+   "new_sealed": 515.0,
+   "new_open": 495.0
+  },
+  "iphone 13|512|unlocked": {
+   "label": "iPhone 13 Unlocked 512GB",
+   "ladder": [
+    500,
+    485,
+    465,
+    360,
+    290,
+    100
+   ],
+   "bc": 410.0,
+   "new_sealed": 560.0,
+   "new_open": 540.0
+  },
+  "iphone 13|128|carrier locked": {
+   "label": "iPhone 13 Carrier Locked 128GB",
+   "ladder": [
+    335,
+    325,
+    310,
+    240,
+    195,
+    65
+   ],
+   "bc": 275.0,
+   "new_sealed": 375.0,
+   "new_open": 365.0
+  },
+  "iphone 13|256|carrier locked": {
+   "label": "iPhone 13 Carrier Locked 256GB",
+   "ladder": [
+    370,
+    355,
+    340,
+    265,
+    215,
+    75
+   ],
+   "bc": 300.0,
+   "new_sealed": 410.0,
+   "new_open": 395.0
+  },
+  "iphone 13|512|carrier locked": {
+   "label": "iPhone 13 Carrier Locked 512GB",
+   "ladder": [
+    400,
+    390,
+    370,
+    290,
+    230,
+    80
+   ],
+   "bc": 330.0,
+   "new_sealed": 450.0,
+   "new_open": 430.0
+  },
+  "iphone 13 mini|128|unlocked": {
+   "label": "iPhone 13 Mini Unlocked 128GB",
+   "ladder": [
+    380,
+    370,
+    355,
+    275,
+    220,
+    75
+   ],
+   "bc": 310.0,
+   "new_sealed": 425.0,
+   "new_open": 410.0
+  },
+  "iphone 13 mini|256|unlocked": {
+   "label": "iPhone 13 Mini Unlocked 256GB",
+   "ladder": [
+    420,
+    405,
+    390,
+    300,
+    245,
+    85
+   ],
+   "bc": 345.0,
+   "new_sealed": 470.0,
+   "new_open": 455.0
+  },
+  "iphone 13 mini|512|unlocked": {
+   "label": "iPhone 13 Mini Unlocked 512GB",
+   "ladder": [
+    460,
+    445,
+    430,
+    330,
+    265,
+    90
+   ],
+   "bc": 375.0,
+   "new_sealed": 515.0,
+   "new_open": 495.0
+  },
+  "iphone 13 mini|128|carrier locked": {
+   "label": "iPhone 13 Mini Carrier Locked 128GB",
+   "ladder": [
+    305,
+    295,
+    285,
+    220,
+    175,
+    60
+   ],
+   "bc": 250.0,
+   "new_sealed": 340.0,
+   "new_open": 330.0
+  },
+  "iphone 13 mini|256|carrier locked": {
+   "label": "iPhone 13 Mini Carrier Locked 256GB",
+   "ladder": [
+    335,
+    325,
+    310,
+    240,
+    195,
+    65
+   ],
+   "bc": 275.0,
+   "new_sealed": 375.0,
+   "new_open": 365.0
+  },
+  "iphone 13 mini|512|carrier locked": {
+   "label": "iPhone 13 Mini Carrier Locked 512GB",
+   "ladder": [
+    370,
+    355,
+    340,
+    265,
+    215,
+    75
+   ],
+   "bc": 300.0,
+   "new_sealed": 410.0,
+   "new_open": 395.0
+  },
+  "iphone se (3rd gen)|64|unlocked": {
+   "label": "iPhone SE (3rd Gen) Unlocked 64GB",
+   "ladder": [
+    25,
+    25,
+    25,
+    20,
+    15,
+    5
+   ],
+   "bc": 20.0,
+   "new_sealed": 30.0,
+   "new_open": 25.0
+  },
+  "iphone se (3rd gen)|128|unlocked": {
+   "label": "iPhone SE (3rd Gen) Unlocked 128GB",
+   "ladder": [
+    25,
+    25,
+    25,
+    20,
+    15,
+    5
+   ],
+   "bc": 20.0,
+   "new_sealed": 30.0,
+   "new_open": 25.0
+  },
+  "iphone se (3rd gen)|256|unlocked": {
+   "label": "iPhone SE (3rd Gen) Unlocked 256GB",
+   "ladder": [
+    30,
+    30,
+    30,
+    20,
+    15,
+    5
+   ],
+   "bc": 25.0,
+   "new_sealed": 35.0,
+   "new_open": 30.0
+  },
+  "iphone se (3rd gen)|64|carrier locked": {
+   "label": "iPhone SE (3rd Gen) Carrier Locked 64GB",
+   "ladder": [
+    25,
+    25,
+    25,
+    20,
+    15,
+    5
+   ],
+   "bc": 20.0,
+   "new_sealed": 30.0,
+   "new_open": 25.0
+  },
+  "iphone se (3rd gen)|128|carrier locked": {
+   "label": "iPhone SE (3rd Gen) Carrier Locked 128GB",
+   "ladder": [
+    25,
+    25,
+    25,
+    20,
+    15,
+    5
+   ],
+   "bc": 20.0,
+   "new_sealed": 30.0,
+   "new_open": 25.0
+  },
+  "iphone se (3rd gen)|256|carrier locked": {
+   "label": "iPhone SE (3rd Gen) Carrier Locked 256GB",
+   "ladder": [
+    25,
+    25,
+    25,
+    20,
+    15,
+    5
+   ],
+   "bc": 20.0,
+   "new_sealed": 30.0,
+   "new_open": 25.0
+  },
+  "iphone 12 pro max|128|unlocked": {
+   "label": "iPhone 12 Pro Max Unlocked 128GB",
+   "ladder": [
+    470,
+    455,
+    435,
+    340,
+    275,
+    95
+   ],
+   "bc": 385.0,
+   "new_sealed": 525.0,
+   "new_open": 510.0
+  },
+  "iphone 12 pro max|256|unlocked": {
+   "label": "iPhone 12 Pro Max Unlocked 256GB",
+   "ladder": [
+    510,
+    495,
+    475,
+    365,
+    295,
+    100
+   ],
+   "bc": 420.0,
+   "new_sealed": 570.0,
+   "new_open": 550.0
+  },
+  "iphone 12 pro max|512|unlocked": {
+   "label": "iPhone 12 Pro Max Unlocked 512GB",
+   "ladder": [
+    550,
+    535,
+    510,
+    395,
+    320,
+    110
+   ],
+   "bc": 450.0,
+   "new_sealed": 615.0,
+   "new_open": 595.0
+  },
+  "iphone 12 pro max|128|carrier locked": {
+   "label": "iPhone 12 Pro Max Carrier Locked 128GB",
+   "ladder": [
+    375,
+    365,
+    350,
+    270,
+    220,
+    75
+   ],
+   "bc": 310.0,
+   "new_sealed": 420.0,
+   "new_open": 405.0
+  },
+  "iphone 12 pro max|256|carrier locked": {
+   "label": "iPhone 12 Pro Max Carrier Locked 256GB",
+   "ladder": [
+    410,
+    395,
+    380,
+    295,
+    235,
+    80
+   ],
+   "bc": 335.0,
+   "new_sealed": 455.0,
+   "new_open": 440.0
+  },
+  "iphone 12 pro max|512|carrier locked": {
+   "label": "iPhone 12 Pro Max Carrier Locked 512GB",
+   "ladder": [
+    440,
+    425,
+    410,
+    315,
+    255,
+    90
+   ],
+   "bc": 360.0,
+   "new_sealed": 495.0,
+   "new_open": 475.0
+  },
+  "iphone 12 pro|128|unlocked": {
+   "label": "iPhone 12 Pro Unlocked 128GB",
+   "ladder": [
+    430,
+    415,
+    400,
+    310,
+    250,
+    85
+   ],
+   "bc": 355.0,
+   "new_sealed": 480.0,
+   "new_open": 465.0
+  },
+  "iphone 12 pro|256|unlocked": {
+   "label": "iPhone 12 Pro Unlocked 256GB",
+   "ladder": [
+    470,
+    455,
+    435,
+    340,
+    275,
+    95
+   ],
+   "bc": 385.0,
+   "new_sealed": 525.0,
+   "new_open": 510.0
+  },
+  "iphone 12 pro|512|unlocked": {
+   "label": "iPhone 12 Pro Unlocked 512GB",
+   "ladder": [
+    510,
+    495,
+    475,
+    365,
+    295,
+    100
+   ],
+   "bc": 420.0,
+   "new_sealed": 570.0,
+   "new_open": 550.0
+  },
+  "iphone 12 pro|128|carrier locked": {
+   "label": "iPhone 12 Pro Carrier Locked 128GB",
+   "ladder": [
+    345,
+    335,
+    320,
+    250,
+    200,
+    70
+   ],
+   "bc": 280.0,
+   "new_sealed": 385.0,
+   "new_open": 370.0
+  },
+  "iphone 12 pro|256|carrier locked": {
+   "label": "iPhone 12 Pro Carrier Locked 256GB",
+   "ladder": [
+    375,
+    365,
+    350,
+    270,
+    220,
+    75
+   ],
+   "bc": 310.0,
+   "new_sealed": 420.0,
+   "new_open": 405.0
+  },
+  "iphone 12 pro|512|carrier locked": {
+   "label": "iPhone 12 Pro Carrier Locked 512GB",
+   "ladder": [
+    410,
+    395,
+    380,
+    295,
+    235,
+    80
+   ],
+   "bc": 335.0,
+   "new_sealed": 455.0,
+   "new_open": 440.0
+  },
+  "iphone 12|64|unlocked": {
+   "label": "iPhone 12 Unlocked 64GB",
+   "ladder": [
+    320,
+    310,
+    300,
+    230,
+    185,
+    65
+   ],
+   "bc": 260.0,
+   "new_sealed": 360.0,
+   "new_open": 345.0
+  },
+  "iphone 12|128|unlocked": {
+   "label": "iPhone 12 Unlocked 128GB",
+   "ladder": [
+    350,
+    340,
+    325,
+    250,
+    205,
+    70
+   ],
+   "bc": 285.0,
+   "new_sealed": 390.0,
+   "new_open": 380.0
+  },
+  "iphone 12|256|unlocked": {
+   "label": "iPhone 12 Unlocked 256GB",
+   "ladder": [
+    390,
+    380,
+    365,
+    280,
+    225,
+    80
+   ],
+   "bc": 320.0,
+   "new_sealed": 435.0,
+   "new_open": 420.0
+  },
+  "iphone 12|64|carrier locked": {
+   "label": "iPhone 12 Carrier Locked 64GB",
+   "ladder": [
+    255,
+    250,
+    240,
+    185,
+    150,
+    50
+   ],
+   "bc": 210.0,
+   "new_sealed": 285.0,
+   "new_open": 275.0
+  },
+  "iphone 12|128|carrier locked": {
+   "label": "iPhone 12 Carrier Locked 128GB",
+   "ladder": [
+    280,
+    270,
+    260,
+    200,
+    160,
+    55
+   ],
+   "bc": 230.0,
+   "new_sealed": 315.0,
+   "new_open": 300.0
+  },
+  "iphone 12|256|carrier locked": {
+   "label": "iPhone 12 Carrier Locked 256GB",
+   "ladder": [
+    310,
+    305,
+    290,
+    225,
+    180,
+    60
+   ],
+   "bc": 255.0,
+   "new_sealed": 350.0,
+   "new_open": 335.0
+  },
+  "iphone 12 mini|64|unlocked": {
+   "label": "iPhone 12 Mini Unlocked 64GB",
+   "ladder": [
+    280,
+    270,
+    260,
+    200,
+    160,
+    55
+   ],
+   "bc": 230.0,
+   "new_sealed": 315.0,
+   "new_open": 300.0
+  },
+  "iphone 12 mini|128|unlocked": {
+   "label": "iPhone 12 Mini Unlocked 128GB",
+   "ladder": [
+    310,
+    300,
+    290,
+    225,
+    180,
+    60
+   ],
+   "bc": 255.0,
+   "new_sealed": 345.0,
+   "new_open": 335.0
+  },
+  "iphone 12 mini|256|unlocked": {
+   "label": "iPhone 12 Mini Unlocked 256GB",
+   "ladder": [
+    350,
+    340,
+    325,
+    250,
+    205,
+    70
+   ],
+   "bc": 285.0,
+   "new_sealed": 390.0,
+   "new_open": 380.0
+  },
+  "iphone 12 mini|64|carrier locked": {
+   "label": "iPhone 12 Mini Carrier Locked 64GB",
+   "ladder": [
+    225,
+    215,
+    210,
+    160,
+    130,
+    45
+   ],
+   "bc": 185.0,
+   "new_sealed": 250.0,
+   "new_open": 240.0
+  },
+  "iphone 12 mini|128|carrier locked": {
+   "label": "iPhone 12 Mini Carrier Locked 128GB",
+   "ladder": [
+    250,
+    240,
+    230,
+    180,
+    145,
+    50
+   ],
+   "bc": 205.0,
+   "new_sealed": 280.0,
+   "new_open": 270.0
+  },
+  "iphone 12 mini|256|carrier locked": {
+   "label": "iPhone 12 Mini Carrier Locked 256GB",
+   "ladder": [
+    280,
+    270,
+    260,
+    200,
+    160,
+    55
+   ],
+   "bc": 230.0,
+   "new_sealed": 315.0,
+   "new_open": 300.0
+  },
+  "iphone 11 pro max|64|unlocked": {
+   "label": "iPhone 11 Pro Max Unlocked 64GB",
+   "ladder": [
+    370,
+    360,
+    345,
+    265,
+    215,
+    75
+   ],
+   "bc": 305.0,
+   "new_sealed": 415.0,
+   "new_open": 400.0
+  },
+  "iphone 11 pro max|256|unlocked": {
+   "label": "iPhone 11 Pro Max Unlocked 256GB",
+   "ladder": [
+    440,
+    425,
+    410,
+    315,
+    255,
+    90
+   ],
+   "bc": 360.0,
+   "new_sealed": 495.0,
+   "new_open": 475.0
+  },
+  "iphone 11 pro max|512|unlocked": {
+   "label": "iPhone 11 Pro Max Unlocked 512GB",
+   "ladder": [
+    480,
+    465,
+    445,
+    345,
+    280,
+    95
+   ],
+   "bc": 395.0,
+   "new_sealed": 540.0,
+   "new_open": 520.0
+  },
+  "iphone 11 pro max|64|carrier locked": {
+   "label": "iPhone 11 Pro Max Carrier Locked 64GB",
+   "ladder": [
+    295,
+    285,
+    275,
+    215,
+    170,
+    60
+   ],
+   "bc": 245.0,
+   "new_sealed": 330.0,
+   "new_open": 320.0
+  },
+  "iphone 11 pro max|256|carrier locked": {
+   "label": "iPhone 11 Pro Max Carrier Locked 256GB",
+   "ladder": [
+    350,
+    340,
+    325,
+    255,
+    205,
+    70
+   ],
+   "bc": 290.0,
+   "new_sealed": 395.0,
+   "new_open": 380.0
+  },
+  "iphone 11 pro max|512|carrier locked": {
+   "label": "iPhone 11 Pro Max Carrier Locked 512GB",
+   "ladder": [
+    385,
+    370,
+    355,
+    275,
+    225,
+    75
+   ],
+   "bc": 315.0,
+   "new_sealed": 430.0,
+   "new_open": 415.0
+  },
+  "iphone 11 pro|64|unlocked": {
+   "label": "iPhone 11 Pro Unlocked 64GB",
+   "ladder": [
+    330,
+    320,
+    305,
+    240,
+    190,
+    65
+   ],
+   "bc": 270.0,
+   "new_sealed": 370.0,
+   "new_open": 355.0
+  },
+  "iphone 11 pro|256|unlocked": {
+   "label": "iPhone 11 Pro Unlocked 256GB",
+   "ladder": [
+    400,
+    390,
+    370,
+    290,
+    230,
+    80
+   ],
+   "bc": 330.0,
+   "new_sealed": 450.0,
+   "new_open": 430.0
+  },
+  "iphone 11 pro|512|unlocked": {
+   "label": "iPhone 11 Pro Unlocked 512GB",
+   "ladder": [
+    440,
+    425,
+    410,
+    315,
+    255,
+    90
+   ],
+   "bc": 360.0,
+   "new_sealed": 495.0,
+   "new_open": 475.0
+  },
+  "iphone 11 pro|64|carrier locked": {
+   "label": "iPhone 11 Pro Carrier Locked 64GB",
+   "ladder": [
+    265,
+    255,
+    245,
+    190,
+    155,
+    55
+   ],
+   "bc": 215.0,
+   "new_sealed": 295.0,
+   "new_open": 285.0
+  },
+  "iphone 11 pro|256|carrier locked": {
+   "label": "iPhone 11 Pro Carrier Locked 256GB",
+   "ladder": [
+    320,
+    310,
+    300,
+    230,
+    185,
+    65
+   ],
+   "bc": 260.0,
+   "new_sealed": 360.0,
+   "new_open": 345.0
+  },
+  "iphone 11 pro|512|carrier locked": {
+   "label": "iPhone 11 Pro Carrier Locked 512GB",
+   "ladder": [
+    350,
+    340,
+    325,
+    255,
+    205,
+    70
+   ],
+   "bc": 290.0,
+   "new_sealed": 395.0,
+   "new_open": 380.0
+  },
+  "iphone 11|64|unlocked": {
+   "label": "iPhone 11 Unlocked 64GB",
+   "ladder": [
+    250,
+    240,
+    230,
+    180,
+    145,
+    50
+   ],
+   "bc": 205.0,
+   "new_sealed": 280.0,
+   "new_open": 270.0
+  },
+  "iphone 11|128|unlocked": {
+   "label": "iPhone 11 Unlocked 128GB",
+   "ladder": [
+    280,
+    270,
+    260,
+    200,
+    160,
+    55
+   ],
+   "bc": 230.0,
+   "new_sealed": 315.0,
+   "new_open": 300.0
+  },
+  "iphone 11|256|unlocked": {
+   "label": "iPhone 11 Unlocked 256GB",
+   "ladder": [
+    320,
+    310,
+    300,
+    230,
+    185,
+    65
+   ],
+   "bc": 260.0,
+   "new_sealed": 360.0,
+   "new_open": 345.0
+  },
+  "iphone 11|64|carrier locked": {
+   "label": "iPhone 11 Carrier Locked 64GB",
+   "ladder": [
+    200,
+    195,
+    185,
+    145,
+    115,
+    40
+   ],
+   "bc": 165.0,
+   "new_sealed": 225.0,
+   "new_open": 215.0
+  },
+  "iphone 11|128|carrier locked": {
+   "label": "iPhone 11 Carrier Locked 128GB",
+   "ladder": [
+    225,
+    215,
+    210,
+    160,
+    130,
+    45
+   ],
+   "bc": 185.0,
+   "new_sealed": 250.0,
+   "new_open": 240.0
+  },
+  "iphone 11|256|carrier locked": {
+   "label": "iPhone 11 Carrier Locked 256GB",
+   "ladder": [
+    255,
+    250,
+    240,
+    185,
+    150,
+    50
+   ],
+   "bc": 210.0,
+   "new_sealed": 285.0,
+   "new_open": 275.0
+  },
+  "iphone se (2020)|64|unlocked": {
+   "label": "iPhone SE (2020) Unlocked 64GB",
+   "ladder": [
+    420,
+    405,
+    390,
+    300,
+    245,
+    85
+   ],
+   "bc": 345.0,
+   "new_sealed": 470.0,
+   "new_open": 455.0
+  },
+  "iphone se (2020)|128|unlocked": {
+   "label": "iPhone SE (2020) Unlocked 128GB",
+   "ladder": [
+    450,
+    435,
+    420,
+    325,
+    260,
+    90
+   ],
+   "bc": 370.0,
+   "new_sealed": 505.0,
+   "new_open": 485.0
+  },
+  "iphone se (2020)|256|unlocked": {
+   "label": "iPhone SE (2020) Unlocked 256GB",
+   "ladder": [
+    490,
+    475,
+    455,
+    355,
+    285,
+    100
+   ],
+   "bc": 400.0,
+   "new_sealed": 550.0,
+   "new_open": 530.0
+  },
+  "iphone se (2020)|64|carrier locked": {
+   "label": "iPhone SE (2020) Carrier Locked 64GB",
+   "ladder": [
+    335,
+    325,
+    310,
+    240,
+    195,
+    65
+   ],
+   "bc": 275.0,
+   "new_sealed": 375.0,
+   "new_open": 365.0
+  },
+  "iphone se (2020)|128|carrier locked": {
+   "label": "iPhone SE (2020) Carrier Locked 128GB",
+   "ladder": [
+    360,
+    350,
+    335,
+    260,
+    210,
+    70
+   ],
+   "bc": 295.0,
+   "new_sealed": 405.0,
+   "new_open": 390.0
+  },
+  "iphone se (2020)|256|carrier locked": {
+   "label": "iPhone SE (2020) Carrier Locked 256GB",
+   "ladder": [
+    390,
+    380,
+    365,
+    280,
+    225,
+    80
+   ],
+   "bc": 320.0,
+   "new_sealed": 440.0,
+   "new_open": 425.0
+  },
+  "iphone xs max|64|unlocked": {
+   "label": "iPhone XS Max Unlocked 64GB",
+   "ladder": [
+    370,
+    360,
+    345,
+    265,
+    215,
+    75
+   ],
+   "bc": 305.0,
+   "new_sealed": 415.0,
+   "new_open": 400.0
+  },
+  "iphone xs max|256|unlocked": {
+   "label": "iPhone XS Max Unlocked 256GB",
+   "ladder": [
+    440,
+    425,
+    410,
+    315,
+    255,
+    90
+   ],
+   "bc": 360.0,
+   "new_sealed": 495.0,
+   "new_open": 475.0
+  },
+  "iphone xs max|512|unlocked": {
+   "label": "iPhone XS Max Unlocked 512GB",
+   "ladder": [
+    480,
+    465,
+    445,
+    345,
+    280,
+    95
+   ],
+   "bc": 395.0,
+   "new_sealed": 540.0,
+   "new_open": 520.0
+  },
+  "iphone xs max|64|carrier locked": {
+   "label": "iPhone XS Max Carrier Locked 64GB",
+   "ladder": [
+    295,
+    285,
+    275,
+    215,
+    170,
+    60
+   ],
+   "bc": 245.0,
+   "new_sealed": 330.0,
+   "new_open": 320.0
+  },
+  "iphone xs max|256|carrier locked": {
+   "label": "iPhone XS Max Carrier Locked 256GB",
+   "ladder": [
+    350,
+    340,
+    325,
+    255,
+    205,
+    70
+   ],
+   "bc": 290.0,
+   "new_sealed": 395.0,
+   "new_open": 380.0
+  },
+  "iphone xs max|512|carrier locked": {
+   "label": "iPhone XS Max Carrier Locked 512GB",
+   "ladder": [
+    385,
+    370,
+    355,
+    275,
+    225,
+    75
+   ],
+   "bc": 315.0,
+   "new_sealed": 430.0,
+   "new_open": 415.0
+  },
+  "iphone xs|64|unlocked": {
+   "label": "iPhone XS Unlocked 64GB",
+   "ladder": [
+    250,
+    240,
+    230,
+    180,
+    145,
+    50
+   ],
+   "bc": 205.0,
+   "new_sealed": 280.0,
+   "new_open": 270.0
+  },
+  "iphone xs|256|unlocked": {
+   "label": "iPhone XS Unlocked 256GB",
+   "ladder": [
+    320,
+    310,
+    300,
+    230,
+    185,
+    65
+   ],
+   "bc": 260.0,
+   "new_sealed": 360.0,
+   "new_open": 345.0
+  },
+  "iphone xs|512|unlocked": {
+   "label": "iPhone XS Unlocked 512GB",
+   "ladder": [
+    360,
+    350,
+    335,
+    260,
+    210,
+    70
+   ],
+   "bc": 295.0,
+   "new_sealed": 405.0,
+   "new_open": 390.0
+  },
+  "iphone xs|64|carrier locked": {
+   "label": "iPhone XS Carrier Locked 64GB",
+   "ladder": [
+    200,
+    195,
+    185,
+    145,
+    115,
+    40
+   ],
+   "bc": 165.0,
+   "new_sealed": 225.0,
+   "new_open": 215.0
+  },
+  "iphone xs|256|carrier locked": {
+   "label": "iPhone XS Carrier Locked 256GB",
+   "ladder": [
+    255,
+    250,
+    240,
+    185,
+    150,
+    50
+   ],
+   "bc": 210.0,
+   "new_sealed": 285.0,
+   "new_open": 275.0
+  },
+  "iphone xs|512|carrier locked": {
+   "label": "iPhone XS Carrier Locked 512GB",
+   "ladder": [
+    290,
+    280,
+    270,
+    205,
+    165,
+    60
+   ],
+   "bc": 235.0,
+   "new_sealed": 325.0,
+   "new_open": 310.0
+  },
+  "iphone xr|64|unlocked": {
+   "label": "iPhone XR Unlocked 64GB",
+   "ladder": [
+    250,
+    240,
+    230,
+    180,
+    145,
+    50
+   ],
+   "bc": 205.0,
+   "new_sealed": 280.0,
+   "new_open": 270.0
+  },
+  "iphone xr|128|unlocked": {
+   "label": "iPhone XR Unlocked 128GB",
+   "ladder": [
+    280,
+    270,
+    260,
+    200,
+    160,
+    55
+   ],
+   "bc": 230.0,
+   "new_sealed": 315.0,
+   "new_open": 300.0
+  },
+  "iphone xr|256|unlocked": {
+   "label": "iPhone XR Unlocked 256GB",
+   "ladder": [
+    320,
+    310,
+    300,
+    230,
+    185,
+    65
+   ],
+   "bc": 260.0,
+   "new_sealed": 360.0,
+   "new_open": 345.0
+  },
+  "iphone xr|64|carrier locked": {
+   "label": "iPhone XR Carrier Locked 64GB",
+   "ladder": [
+    200,
+    195,
+    185,
+    145,
+    115,
+    40
+   ],
+   "bc": 165.0,
+   "new_sealed": 225.0,
+   "new_open": 215.0
+  },
+  "iphone xr|128|carrier locked": {
+   "label": "iPhone XR Carrier Locked 128GB",
+   "ladder": [
+    225,
+    215,
+    210,
+    160,
+    130,
+    45
+   ],
+   "bc": 185.0,
+   "new_sealed": 250.0,
+   "new_open": 240.0
+  },
+  "iphone xr|256|carrier locked": {
+   "label": "iPhone XR Carrier Locked 256GB",
+   "ladder": [
+    255,
+    250,
+    240,
+    185,
+    150,
+    50
+   ],
+   "bc": 210.0,
+   "new_sealed": 285.0,
+   "new_open": 275.0
+  },
+  "iphone x|64|unlocked": {
+   "label": "iPhone X Unlocked 64GB",
+   "ladder": [
+    250,
+    240,
+    230,
+    180,
+    145,
+    50
+   ],
+   "bc": 205.0,
+   "new_sealed": 280.0,
+   "new_open": 270.0
+  },
+  "iphone x|256|unlocked": {
+   "label": "iPhone X Unlocked 256GB",
+   "ladder": [
+    320,
+    310,
+    300,
+    230,
+    185,
+    65
+   ],
+   "bc": 260.0,
+   "new_sealed": 360.0,
+   "new_open": 345.0
+  },
+  "iphone x|64|carrier locked": {
+   "label": "iPhone X Carrier Locked 64GB",
+   "ladder": [
+    200,
+    195,
+    185,
+    145,
+    115,
+    40
+   ],
+   "bc": 165.0,
+   "new_sealed": 225.0,
+   "new_open": 215.0
+  },
+  "iphone x|256|carrier locked": {
+   "label": "iPhone X Carrier Locked 256GB",
+   "ladder": [
+    255,
+    250,
+    240,
+    185,
+    150,
+    50
+   ],
+   "bc": 210.0,
+   "new_sealed": 285.0,
+   "new_open": 275.0
+  },
+  "iphone 8 plus|64|unlocked": {
+   "label": "iPhone 8+ Unlocked 64GB",
+   "ladder": [
+    70,
+    70,
+    65,
+    50,
+    40,
+    15
+   ],
+   "bc": 55.0,
+   "new_sealed": 80.0,
+   "new_open": 75.0
+  },
+  "iphone 8 plus|128|unlocked": {
+   "label": "iPhone 8+ Unlocked 128GB",
+   "ladder": [
+    100,
+    95,
+    95,
+    70,
+    60,
+    20
+   ],
+   "bc": 80.0,
+   "new_sealed": 110.0,
+   "new_open": 110.0
+  },
+  "iphone 8 plus|256|unlocked": {
+   "label": "iPhone 8+ Unlocked 256GB",
+   "ladder": [
+    140,
+    135,
+    130,
+    100,
+    80,
+    30
+   ],
+   "bc": 115.0,
+   "new_sealed": 155.0,
+   "new_open": 150.0
+  },
+  "iphone 8 plus|64|carrier locked": {
+   "label": "iPhone 8+ Carrier Locked 64GB",
+   "ladder": [
+    55,
+    55,
+    50,
+    40,
+    30,
+    10
+   ],
+   "bc": 45.0,
+   "new_sealed": 65.0,
+   "new_open": 60.0
+  },
+  "iphone 8 plus|128|carrier locked": {
+   "label": "iPhone 8+ Carrier Locked 128GB",
+   "ladder": [
+    80,
+    80,
+    75,
+    60,
+    45,
+    15
+   ],
+   "bc": 65.0,
+   "new_sealed": 90.0,
+   "new_open": 85.0
+  },
+  "iphone 8 plus|256|carrier locked": {
+   "label": "iPhone 8+ Carrier Locked 256GB",
+   "ladder": [
+    110,
+    110,
+    105,
+    80,
+    65,
+    20
+   ],
+   "bc": 90.0,
+   "new_sealed": 125.0,
+   "new_open": 120.0
+  },
+  "iphone 8|64|unlocked": {
+   "label": "iPhone 8 Unlocked 64GB",
+   "ladder": [
+    40,
+    40,
+    35,
+    30,
+    25,
+    10
+   ],
+   "bc": 35.0,
+   "new_sealed": 45.0,
+   "new_open": 45.0
+  },
+  "iphone 8|128|unlocked": {
+   "label": "iPhone 8 Unlocked 128GB",
+   "ladder": [
+    70,
+    70,
+    65,
+    50,
+    40,
+    15
+   ],
+   "bc": 55.0,
+   "new_sealed": 80.0,
+   "new_open": 75.0
+  },
+  "iphone 8|256|unlocked": {
+   "label": "iPhone 8 Unlocked 256GB",
+   "ladder": [
+    110,
+    105,
+    100,
+    80,
+    65,
+    20
+   ],
+   "bc": 90.0,
+   "new_sealed": 125.0,
+   "new_open": 120.0
+  },
+  "iphone 8|64|carrier locked": {
+   "label": "iPhone 8 Carrier Locked 64GB",
+   "ladder": [
+    30,
+    30,
+    30,
+    25,
+    20,
+    5
+   ],
+   "bc": 25.0,
+   "new_sealed": 35.0,
+   "new_open": 35.0
+  },
+  "iphone 8|128|carrier locked": {
+   "label": "iPhone 8 Carrier Locked 128GB",
+   "ladder": [
+    55,
+    55,
+    50,
+    40,
+    30,
+    10
+   ],
+   "bc": 45.0,
+   "new_sealed": 65.0,
+   "new_open": 60.0
+  },
+  "iphone 8|256|carrier locked": {
+   "label": "iPhone 8 Carrier Locked 256GB",
+   "ladder": [
+    90,
+    85,
+    80,
+    65,
+    50,
+    20
+   ],
+   "bc": 70.0,
+   "new_sealed": 100.0,
+   "new_open": 95.0
+  },
+  "iphone 7 plus|32|unlocked": {
+   "label": "iPhone 7+ Unlocked 32GB",
+   "ladder": [
+    60,
+    60,
+    55,
+    45,
+    35,
+    10
+   ],
+   "bc": 50.0,
+   "new_sealed": 65.0,
+   "new_open": 65.0
+  },
+  "iphone 7 plus|128|unlocked": {
+   "label": "iPhone 7+ Unlocked 128GB",
+   "ladder": [
+    60,
+    60,
+    55,
+    45,
+    35,
+    10
+   ],
+   "bc": 50.0,
+   "new_sealed": 65.0,
+   "new_open": 65.0
+  },
+  "iphone 7 plus|256|unlocked": {
+   "label": "iPhone 7+ Unlocked 256GB",
+   "ladder": [
+    100,
+    95,
+    95,
+    70,
+    60,
+    20
+   ],
+   "bc": 80.0,
+   "new_sealed": 110.0,
+   "new_open": 110.0
+  },
+  "iphone 7 plus|32|carrier locked": {
+   "label": "iPhone 7+ Carrier Locked 32GB",
+   "ladder": [
+    50,
+    45,
+    45,
+    35,
+    30,
+    10
+   ],
+   "bc": 40.0,
+   "new_sealed": 55.0,
+   "new_open": 50.0
+  },
+  "iphone 7 plus|128|carrier locked": {
+   "label": "iPhone 7+ Carrier Locked 128GB",
+   "ladder": [
+    50,
+    45,
+    45,
+    35,
+    30,
+    10
+   ],
+   "bc": 40.0,
+   "new_sealed": 55.0,
+   "new_open": 50.0
+  },
+  "iphone 7 plus|256|carrier locked": {
+   "label": "iPhone 7+ Carrier Locked 256GB",
+   "ladder": [
+    80,
+    80,
+    75,
+    60,
+    45,
+    15
+   ],
+   "bc": 65.0,
+   "new_sealed": 90.0,
+   "new_open": 85.0
+  },
+  "iphone 7|32|unlocked": {
+   "label": "iPhone 7 Unlocked 32GB",
+   "ladder": [
+    30,
+    30,
+    30,
+    20,
+    15,
+    5
+   ],
+   "bc": 25.0,
+   "new_sealed": 35.0,
+   "new_open": 30.0
+  },
+  "iphone 7|128|unlocked": {
+   "label": "iPhone 7 Unlocked 128GB",
+   "ladder": [
+    30,
+    30,
+    30,
+    20,
+    15,
+    5
+   ],
+   "bc": 25.0,
+   "new_sealed": 35.0,
+   "new_open": 30.0
+  },
+  "iphone 7|256|unlocked": {
+   "label": "iPhone 7 Unlocked 256GB",
+   "ladder": [
+    70,
+    70,
+    65,
+    50,
+    40,
+    15
+   ],
+   "bc": 55.0
+  },
+  "iphone 7|32|carrier locked": {
+   "label": "iPhone 7 Carrier Locked 32GB",
+   "ladder": [
+    25,
+    25,
+    25,
+    20,
+    15,
+    5
+   ],
+   "bc": 20.0,
+   "new_sealed": 30.0,
+   "new_open": 25.0
+  },
+  "iphone 7|128|carrier locked": {
+   "label": "iPhone 7 Carrier Locked 128GB",
+   "ladder": [
+    25,
+    25,
+    25,
+    20,
+    15,
+    5
+   ],
+   "bc": 20.0,
+   "new_sealed": 30.0,
+   "new_open": 25.0
+  },
+  "iphone 7|256|carrier locked": {
+   "label": "iPhone 7 Carrier Locked 256GB",
+   "ladder": [
+    55,
+    55,
+    50,
+    40,
+    30,
+    10
+   ],
+   "bc": 45.0,
+   "new_sealed": 65.0,
+   "new_open": 60.0
+  }
+ },
+ "deduction_notes_by_model": {
+  "iPhone Duo Unlocked": [
+   "Damage(s) - ASK"
+  ],
+  "iPhone Duo Carrier Locked": [
+   "Damage(s) - ASK"
+  ],
+  "i18 Pro Max Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "Repair Message(s) - ASK"
+  ],
+  "i18 Pro Max Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "Repair Message(s) - ASK"
+  ],
+  "i18 Pro Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "Repair Message(s) - ASK"
+  ],
+  "i18 Pro Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "Repair Message(s) - ASK"
+  ],
+  "i17 Pro Max Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "Repair Message(s) - ASK"
+  ],
+  "i17 Pro Max Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "Repair Message(s) - ASK"
+  ],
+  "i17 Pro Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "Repair Message(s) - ASK"
+  ],
+  "i17 Pro Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "Repair Message(s) - ASK"
+  ],
+  "i17 Air Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "Repair Message(s) - ASK"
+  ],
+  "i17 Air Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "Repair Message(s) - ASK"
+  ],
+  "i17 Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "Repair Message(s) - ASK"
+  ],
+  "i17 Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "Repair Message(s) - ASK"
+  ],
+  "i17e Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "Repair Message(s) - ASK"
+  ],
+  "i17e Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "Repair Message(s) - ASK"
+  ],
+  "i16 Pro Max Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i16 Pro Max Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i16 Pro Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i16 Pro Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i16 Plus Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i16 Plus Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i16 Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i16 Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i16e Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i16e Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i15 Pro Max Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i15 Pro Max Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i15 Pro Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i15 Pro Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i15 Plus Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i15 Plus Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i15 Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i15 Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i14 Pro Max Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i14 Pro Max Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i14 Pro Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i14 Pro Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i14 Plus Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i14 Plus Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i14 Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i14 Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i13 Pro Max Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i13 Pro Max Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i13 Pro Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i13 Pro Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i13 Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i13 Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i13 Mini Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i13 Mini Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "SE (3rd Gen) Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "SE (3rd Gen) Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i12 Pro Max Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i12 Pro Max Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i12 Pro Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i12 Pro Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i12 Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i12 Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i12 Mini Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i12 Mini Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i11 Pro Max Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i11 Pro Max Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i11 Pro Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i11 Pro Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i11 Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i11 Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "SE (2020) Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "SE (2020) Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "XS Max Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "XS Max Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "XS Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "XS Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "XR Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "XR Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "X Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "X Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "8+ Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "8+ Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i8 Unlocked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i8 Carrier Locked": [
+   "(Cracked Back - $100 off)",
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "7+ Unlocked": [
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "7+ Carrier Locked": [
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i7 Unlocked": [
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ],
+  "i7 Carrier Locked": [
+   "(Cracked Lens - $50 off)",
+   "\"Service\" Battery - $50 off",
+   "Repair Message(s) - ASK"
+  ]
+ },
+ "deduction_flags": {
+  "verbatim": "Cracked Back = $75 off / Cracked Lens = $75 off / Bad Face ID = Parts / Bad Back Camera = ASK - - - HEAVY SCRATCHING / DEGRADED BATTERY % / Repair Message(s) = EXTRA DEDUCTION",
+  "battery_under_80": "Atlas's rules block lists 'DEGRADED BATTERY % = EXTRA DEDUCTION' with NO printed threshold on the 2026-09-04 tab. The '<80%' figure carried by older versions of this file is NOT stated on the current sheet -- the 80 in server.py is our own trigger, not Atlas's. Treat a degraded battery as an unquantified deduction riding on top of the grade column.",
+  "bad_esn": "CARRIED FORWARD from the 2026-07-29 read and NOT re-verified on the 2026-09-04 tab -- treat as unconfirmed. Accepted if NOT stolen. 'Unlocked Relocks / KG Lock - NO TIME LIMIT': if status flips after sale, SELLER is liable for deduction or return. Disclosure, not a floor adjustment.",
+  "cracked_back": "$75 off on the USED tab. The Parts/iC tab carries its own SMALLER per-model cracked-back deductions (16 Pro Max -$75, 12 Pro Max -$75). Two different tabs, two different numbers -- do not mix them.",
+  "cracked_lens": "-$75.",
+  "bad_face_id": "Routes to Parts, not a grade deduction.",
+  "dead_cannot_verify_imei": "Assume iCloud ON, DOA-parts pricing.",
+  "aftermarket_screen": "'Aftermarket (AM) Screen = Bad LCD', and Bad LCD caps the unit at Grade D. This is the rule that caps INV-2026-017.",
+  "shipping": "FREE FedEx labels at min 5 devices. Deductions/returns fully at Atlas's discretion. No stolen/fraudulent items."
+ },
+ "not_on_current_ladder": [
+  {
+   "match": "macbook",
+   "note": "No published ladder row for used MacBooks in this sample."
+  }
+ ]
+}

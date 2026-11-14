@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "0.1",
+  "id": "com.yggdrasil.iphone.requires-swipe",
+  "name": "Swipe to the next page",
+  "safety": { "risk": "reversible" },
+  "steps": [
+    {
+      "id": "next-page",
+      "action": "swipe",
+      "direction": "left",
+      "distance": 0.75
+    }
+  ]
+}

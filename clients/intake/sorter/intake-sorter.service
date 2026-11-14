@@ -1,0 +1,11 @@
+# Intake sorter: label new Intake photos with the local vision model. Runs on Alexus as a user unit.
+# Installed with: systemctl --user link <this file> (a link into the repo checkout, not a copy)
+[Unit]
+Description=Intake sorter (label new photos with the local vision model)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/Developer/ragnarok/clients/intake/sorter/intake-sorter.py
+Nice=10
+TimeoutStartSec=30min

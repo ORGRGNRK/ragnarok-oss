@@ -1,0 +1,4023 @@
+{
+  "schema": "ragnarok-work-atlas:v1",
+  "captured_at": "2026-11-04T09:58:43-08:00",
+  "account": "",
+  "source_root": "~/Developer",
+  "coverage": {
+    "visible_top_level_entries": 55,
+    "top_level_directories": 19,
+    "top_level_aliases": 18,
+    "top_level_regular_files": 18,
+    "hidden_entries_not_opened": 2,
+    "withheld_directory_count": 5,
+    "loose_scripts": 8,
+    "archives_and_logs_not_opened": 9,
+    "scope": "Visible entries of ~/Developer and selected Ragnarok subprojects. Aliases mapped; hidden paths, private records, raw logs, archives and dependency/build trees excluded from content review.",
+    "server_archive": {
+      "status": "Inventoried read-only \u2014 runtime Unverified",
+      "scope": "All 18 top-level Seagate entries listed; four source-oriented archive groups traversed to depth five (34 directories); member headers inspected in 31 selected consolidated project packages. Data exports, secret material, system images and transcript contents were excluded.",
+      "finding": "The Seagate is mounted read-only (ro, norecovery). Its consolidation snapshot contains historical project packages, including versions related by name to current work and packages not present in the current Developer inventory. The catalog separates these from current source. Similar names do not establish byte-for-byte equivalence.",
+      "contents_read": "Archive member metadata only; no project was executed and no payload was extracted to disk.",
+      "next_step": "Choose an archived project for a separate source review and isolated functional test before treating it as runnable or commercially ready.",
+      "top_level_entries": 18,
+      "selected_packages": 31,
+      "mount_verified_read_only": true
+    },
+    "local_catalog_entries": 46,
+    "archive_catalog_entries": 31,
+    "verification_suites": 3,
+    "verification_cases": 70
+  },
+  "projects": [
+    {
+      "id": "ragnarok",
+      "title": "Ragnarok",
+      "path": "ragnarok",
+      "category": "Systems",
+      "description": "Layered personal AI workspace: apps, connectors, data, agents, runners and operations.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 631,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".ts",
+          "files": 182
+        },
+        {
+          "extension": ".swift",
+          "files": 174
+        },
+        {
+          "extension": ".sh",
+          "files": 117
+        },
+        {
+          "extension": ".py",
+          "files": 100
+        },
+        {
+          "extension": ".mjs",
+          "files": 24
+        }
+      ],
+      "document": {
+        "path": "ragnarok/README.md",
+        "sha256": "e874e4356fa27de4f6763fe8267200b6fb795d98d240e4a23cedf596bb3ae31a",
+        "total_lines": 33,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/agents/alexus-core/bin/__init__.py",
+          "sha256": "95cdb7f35691d948fc0107cde13ad9c3ea075b91f29ec23c6a96e298cfc9aeb4",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/alexus-core/bin/imessage_bridge.py",
+          "sha256": "5d321d410947d9e4879f5c62cd6f0c97c496157f9a81a7bf1d5f57e5ee6c631c",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/alexus-core/bin/mail_bridge.py",
+          "sha256": "24c49d27de402184a95d2ddd3287dff2cb2961c18aa9288823057b7bcc120477",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/alexus-core/bin/ragnarok_bridge.py",
+          "sha256": "2904e2d65336fc0db0fe9ba282b7ddbb13dfd9ff72a4bb66c9472a3b1a7c438a",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/alexus-core/tests/adversarial_eval.py",
+          "sha256": "71722d993c20b1ffc032c9e3b12f5bc62ca16826dd92c90003e57c622624f86a",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/alexus-core/tests/calibrate_margin.py",
+          "sha256": "362c3c6e44d06d912d58cd95e3011e78e67eb6369902e961661070c34a8bac12",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/alexus-core/tests/reproduce_socket_test.py",
+          "sha256": "f0fa288c97066c529824678a0ad0f840ffe12f5d3aa386ad231c1dc247f4e89a",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/alexus-core/tests/stress_test.py",
+          "sha256": "b6c49eaf85f69d9923a3829a6617fba2a50e996c239e59addc74637d3157bdda",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-app",
+      "title": "Application layer",
+      "path": "ragnarok/app",
+      "category": "Apps",
+      "description": "The macOS interfaces collected under Ragnarok.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 128,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".swift",
+          "files": 95
+        },
+        {
+          "extension": ".py",
+          "files": 14
+        },
+        {
+          "extension": ".sh",
+          "files": 13
+        },
+        {
+          "extension": ".css",
+          "files": 6
+        }
+      ],
+      "document": {
+        "path": "ragnarok/app/README.md",
+        "sha256": "6fd5c1dfa0040b5202703bb4726699818a13561ad77025cbc4e5829c316dcae3",
+        "total_lines": 14,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/app/heimdall/Controls/make-symbol.py",
+          "sha256": "69f3b5d0c0b89bced455be73840a7fd8d7f89b2717b9508d007997d2e507591d",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/app/heimdall/bin/alexus-chat-bridge.py",
+          "sha256": "90360de8d7b179bd7420baa0909176c89f9452927927f0372570bffe0c78247a",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/app/heimdall/bin/heimdall-api-edit.py",
+          "sha256": "cca8c661ed453456562d27c02defb3bb5cc8366e510585b78b76ad8801979de7",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/app/heimdall/checks/control-intents-check.py",
+          "sha256": "943a1ec91e21c72dba083b33723ab462b6a48242e7d094f86da3a8dc919e0c8e",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/app/heimdall/checks/doctor-check.py",
+          "sha256": "05033dc3bd9cce9221a226049d729f487f8661dee55aced8df1f13f53ca7ee11",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/app/heimdall/checks/logging-audit-check.py",
+          "sha256": "a9641731f4d87c1c31065978f954f60e52e2e4658892c0c8d09454d44560c013",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/app/heimdall/checks/packet-context-check.py",
+          "sha256": "4cdc57f403f6145410192d057186e39ee62b779a4ea93e832784316bce70d9de",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/app/heimdall/checks/packet-storage-check.py",
+          "sha256": "1bb21e434183e711d039c0719cc54f8271cfa7c3da81c9d7a2569f159d74de10",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-app-heimdall",
+      "title": "Heimdall / Ragnarok app",
+      "path": "ragnarok/app/heimdall",
+      "category": "Apps",
+      "description": "A macOS workspace for AI activity, shell activity, project controls and task handoffs.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [
+        "heimdall"
+      ],
+      "source_files_observed": 78,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".swift",
+          "files": 48
+        },
+        {
+          "extension": ".py",
+          "files": 14
+        },
+        {
+          "extension": ".sh",
+          "files": 10
+        },
+        {
+          "extension": ".css",
+          "files": 6
+        }
+      ],
+      "document": {
+        "path": "ragnarok/app/heimdall/Package.swift",
+        "sha256": "6be9ed90d3f813b83c76ab8625c8d1d2d7ec6f974c7464d853079e9a2754b8b4",
+        "total_lines": 17,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/app/heimdall/Controls/make-symbol.py",
+          "sha256": "69f3b5d0c0b89bced455be73840a7fd8d7f89b2717b9508d007997d2e507591d",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/app/heimdall/bin/alexus-chat-bridge.py",
+          "sha256": "90360de8d7b179bd7420baa0909176c89f9452927927f0372570bffe0c78247a",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/app/heimdall/bin/heimdall-api-edit.py",
+          "sha256": "cca8c661ed453456562d27c02defb3bb5cc8366e510585b78b76ad8801979de7",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/app/heimdall/checks/control-intents-check.py",
+          "sha256": "943a1ec91e21c72dba083b33723ab462b6a48242e7d094f86da3a8dc919e0c8e",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/app/heimdall/checks/doctor-check.py",
+          "sha256": "05033dc3bd9cce9221a226049d729f487f8661dee55aced8df1f13f53ca7ee11",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/app/heimdall/checks/logging-audit-check.py",
+          "sha256": "a9641731f4d87c1c31065978f954f60e52e2e4658892c0c8d09454d44560c013",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/app/heimdall/checks/packet-context-check.py",
+          "sha256": "4cdc57f403f6145410192d057186e39ee62b779a4ea93e832784316bce70d9de",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/app/heimdall/checks/packet-storage-check.py",
+          "sha256": "1bb21e434183e711d039c0719cc54f8271cfa7c3da81c9d7a2569f159d74de10",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [
+        {
+          "name": "Doctor fixture/integration suite",
+          "command": "python3 checks/doctor-check.py",
+          "result": "passed",
+          "cases": 34,
+          "checked_at": "2026-11-04T09:14:27-08:00",
+          "scope": "Fake AI and scratch git; production repairs and app UI not tested.",
+          "files": [
+            {
+              "path": "ragnarok/app/heimdall/bin/ragnarok-doctor",
+              "sha256": "c46b6b592b799ae53029eb96a482873fb794d5990e67b4c59337495774f7d8c7"
+            },
+            {
+              "path": "ragnarok/app/heimdall/checks/doctor-check.py",
+              "sha256": "05033dc3bd9cce9221a226049d729f487f8661dee55aced8df1f13f53ca7ee11"
+            }
+          ],
+          "source_matches": true
+        }
+      ],
+      "runtime": "Unverified",
+      "status": "Selected checks passed",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Build the exact source snapshot and run its app self-test and UI checks. The Doctor fixture suite does not verify the rest of the app."
+    },
+    {
+      "id": "ragnarok-app-heimdall-demos-hardware-proof",
+      "title": "Proof Lab",
+      "path": "ragnarok/app/heimdall/demos/hardware-proof",
+      "category": "AI assurance",
+      "description": "A bounded rule-proposal demo with frozen checks, exportable receipts and hardware approval paths.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 4,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".py",
+          "files": 3
+        },
+        {
+          "extension": ".swift",
+          "files": 1
+        }
+      ],
+      "document": {
+        "path": "ragnarok/app/heimdall/demos/hardware-proof/README.md",
+        "sha256": "d38966ddd03fbee095f8bd44c592eaf5889aa6eb331c8201c118d62139558d3a",
+        "total_lines": 48,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/app/heimdall/demos/hardware-proof/prepare.py",
+          "sha256": "6f2170c06d173f3f3a24d8fa2b79c26979b223cdd083a28e2ded740d4c6c1833",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/app/heimdall/demos/hardware-proof/proof.py",
+          "sha256": "f5c29950aff95fffb7205f2190e977e77dc62a35958c23ab0a5d48f2ebdb935b",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/app/heimdall/demos/hardware-proof/verify_test.py",
+          "sha256": "790e1777b473b784a37c8317e4bad740665d39131e2244d8fccbdd79fc8c27c3",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [
+        {
+          "name": "Proof Lab offline suite",
+          "command": "python3 verify_test.py",
+          "result": "passed",
+          "cases": 20,
+          "checked_at": "2026-11-04T09:41:50-08:00",
+          "scope": "Software-key fixtures and local HTTP tests; no live OpenAI call or physical hardware proof.",
+          "files": [
+            {
+              "path": "ragnarok/app/heimdall/demos/hardware-proof/proof.py",
+              "sha256": "f5c29950aff95fffb7205f2190e977e77dc62a35958c23ab0a5d48f2ebdb935b"
+            },
+            {
+              "path": "ragnarok/app/heimdall/demos/hardware-proof/verify_test.py",
+              "sha256": "790e1777b473b784a37c8317e4bad740665d39131e2244d8fccbdd79fc8c27c3"
+            },
+            {
+              "path": "ragnarok/app/heimdall/demos/hardware-proof/dist/verify.js",
+              "sha256": "1cdb94b07e97a429ddb731052fdb35cda212b6f770898cade494194881c61c6d"
+            }
+          ],
+          "source_matches": true
+        }
+      ],
+      "runtime": "Unverified",
+      "status": "Selected checks passed",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Complete an actual OpenAI API run with physical YubiKey and Enclave approvals, then verify the export against independently pinned keys.",
+      "demo_url": "https://demo.rgnrk.co/"
+    },
+    {
+      "id": "ragnarok-app-belt-ui",
+      "title": "Belt UI",
+      "path": "ragnarok/app/belt-ui",
+      "category": "Apps",
+      "description": "Swift package and source tree for a conveyor-board interface.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 8,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".swift",
+          "files": 6
+        },
+        {
+          "extension": ".sh",
+          "files": 2
+        }
+      ],
+      "document": {
+        "path": "ragnarok/app/belt-ui/Package.swift",
+        "sha256": "0b58a02e89486345ed7ef51b02a836fec14cf0fbd393c12b418bae9cfb2b3392",
+        "total_lines": 10,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-app-cli-tools",
+      "title": "CLI Tools",
+      "path": "ragnarok/app/cli-tools",
+      "category": "Apps",
+      "description": "A documented macOS pipeline for looking up, checking and explicitly running CLI commands.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [
+        "CLITools"
+      ],
+      "source_files_observed": 14,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".swift",
+          "files": 14
+        }
+      ],
+      "document": {
+        "path": "ragnarok/app/cli-tools/README.md",
+        "sha256": "22c79ff6d467bbda07c1699a70ef5cfcaecea50f3b2d00291b1797218a442323",
+        "total_lines": 75,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-app-local-ai",
+      "title": "LocalAI",
+      "path": "ragnarok/app/local-ai",
+      "category": "Apps",
+      "description": "A documented local macOS chat app using on-device MLX models.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [
+        "local-ai-app"
+      ],
+      "source_files_observed": 28,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".swift",
+          "files": 27
+        },
+        {
+          "extension": ".sh",
+          "files": 1
+        }
+      ],
+      "document": {
+        "path": "ragnarok/app/local-ai/README.md",
+        "sha256": "932374c8f4a7be02c3c1d5092fac813cd59664527d8d47062c38e304c5ddb2a3",
+        "total_lines": 181,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-brain",
+      "title": "Brain / advisor",
+      "path": "ragnarok/brain",
+      "category": "AI assurance",
+      "description": "Documented fix memory, topic cartridges and model-routing components.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 19,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".py",
+          "files": 16
+        },
+        {
+          "extension": ".sh",
+          "files": 3
+        }
+      ],
+      "document": {
+        "path": "ragnarok/brain/README.md",
+        "sha256": "c1fa24c44eab2e917d630c850a2cb6dc3fdf1546da3d261bee4dcdf47e6d2891",
+        "total_lines": 124,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/brain/router.py",
+          "sha256": "bf32d41fcbb3c6c5f24f36c8b66b0da89c60c8759d61440fea80bb9462f92212",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/brain/fix-memory/examples/demo_median/stats.py",
+          "sha256": "f3692d55176c8699243e79e5d8aa56e09b06d2667e6bbb7c3d99df911f5ce3fd",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/brain/fix-memory/examples/demo_median/test_stats.py",
+          "sha256": "27a616cc9e5b4e7cd2d6ef6f65206ac1c3a72f0dedef3d3623037b5cfe9194a7",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/brain/fix-memory/fixloop/__init__.py",
+          "sha256": "0478a9c3c51abddd1fa2f269c9b96095859d718597ab1af21cff11087d2bdcfa",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/brain/fix-memory/fixloop/cli.py",
+          "sha256": "0c551e59afa33250e7c1294cee16155294df27f0bc1f4faf3aff77cb36d54c50",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/brain/fix-memory/fixloop/config.py",
+          "sha256": "e39c45242928610b68a12279939af8d8ae19530dde7e1794daa8dd67027a26ea",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/brain/fix-memory/fixloop/db.py",
+          "sha256": "7eb2345454b188a81348fd775deae959fbeed4394878fcfd2905c3be14799af7",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/brain/fix-memory/fixloop/loop.py",
+          "sha256": "7119b78f08798107db75f205128a2cfd6df184ebe6e061ca723fd1e1c63161a9",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-brain-fix-memory",
+      "title": "Fix memory",
+      "path": "ragnarok/brain/fix-memory",
+      "category": "AI assurance",
+      "description": "A documented loop that proposes fixes in disposable test environments and records reusable results.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [
+        "fix-memory"
+      ],
+      "source_files_observed": 15,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".py",
+          "files": 13
+        },
+        {
+          "extension": ".sh",
+          "files": 2
+        }
+      ],
+      "document": {
+        "path": "ragnarok/brain/fix-memory/README.md",
+        "sha256": "a3c749a083d67b750f474a14b6cc4ef8119044dcf84df5d7cf3f0f229a69f85f",
+        "total_lines": 193,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/brain/fix-memory/examples/demo_median/stats.py",
+          "sha256": "f3692d55176c8699243e79e5d8aa56e09b06d2667e6bbb7c3d99df911f5ce3fd",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/brain/fix-memory/examples/demo_median/test_stats.py",
+          "sha256": "27a616cc9e5b4e7cd2d6ef6f65206ac1c3a72f0dedef3d3623037b5cfe9194a7",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/brain/fix-memory/fixloop/__init__.py",
+          "sha256": "0478a9c3c51abddd1fa2f269c9b96095859d718597ab1af21cff11087d2bdcfa",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/brain/fix-memory/fixloop/cli.py",
+          "sha256": "0c551e59afa33250e7c1294cee16155294df27f0bc1f4faf3aff77cb36d54c50",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/brain/fix-memory/fixloop/config.py",
+          "sha256": "e39c45242928610b68a12279939af8d8ae19530dde7e1794daa8dd67027a26ea",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/brain/fix-memory/fixloop/db.py",
+          "sha256": "7eb2345454b188a81348fd775deae959fbeed4394878fcfd2905c3be14799af7",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/brain/fix-memory/fixloop/loop.py",
+          "sha256": "7119b78f08798107db75f205128a2cfd6df184ebe6e061ca723fd1e1c63161a9",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/brain/fix-memory/fixloop/mcp_server.py",
+          "sha256": "17f78d928d2b04bc6c780edad67123e53d346afa8337258ca89a2483c1724c37",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-brain-cartridges",
+      "title": "Domain cartridges",
+      "path": "ragnarok/brain/cartridges",
+      "category": "AI assurance",
+      "description": "Topic-rule JSON files. The brain README explicitly labels these rules Unverified.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 0,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-brain-lookup",
+      "title": "Lookup",
+      "path": "ragnarok/brain/lookup",
+      "category": "AI assurance",
+      "description": "A Python lookup component; behavior has not been tested in this inventory.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 1,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".py",
+          "files": 1
+        }
+      ],
+      "document": null,
+      "syntax_checks": [
+        {
+          "path": "ragnarok/brain/lookup/lookup.py",
+          "sha256": "b90135f2632b4659a0657be5685dcb1c6f3326a5c4b89ea8d447c85e31418cef",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-connector",
+      "title": "Ragnarok connector",
+      "path": "ragnarok/connector",
+      "category": "Data & MCP",
+      "description": "A documented TypeScript MCP doorway to project data and change receipts.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 194,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".ts",
+          "files": 118
+        },
+        {
+          "extension": ".sh",
+          "files": 35
+        },
+        {
+          "extension": ".mjs",
+          "files": 21
+        },
+        {
+          "extension": ".sql",
+          "files": 12
+        },
+        {
+          "extension": ".py",
+          "files": 6
+        }
+      ],
+      "document": {
+        "path": "ragnarok/connector/README.md",
+        "sha256": "4317a4d26862bbb69926f1fca576430e55cf86f90c99773ca11e18d685f0b5a6",
+        "total_lines": 137,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/connector/platform-deployment/security-test-suites/security_test.py",
+          "sha256": "1082fe2d8df06765edf1757d077a0221a36b3baabba0c470b88101df57fc322b",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/connector/platform-deployment/security-test-suites/security_test_reimagined.py",
+          "sha256": "453647232b002891f4e4aebac011f730765e735af8eb502116050756d7ed7790",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/connector/ygg-business/security_test.py",
+          "sha256": "1082fe2d8df06765edf1757d077a0221a36b3baabba0c470b88101df57fc322b",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/connector/ygg-business/security_test_reimagined.py",
+          "sha256": "453647232b002891f4e4aebac011f730765e735af8eb502116050756d7ed7790",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/connector/ygg-business/harness/security_test.py",
+          "sha256": "1082fe2d8df06765edf1757d077a0221a36b3baabba0c470b88101df57fc322b",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/connector/ygg-business/harness/security_test_reimagined.py",
+          "sha256": "453647232b002891f4e4aebac011f730765e735af8eb502116050756d7ed7790",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-connector-ygg-business",
+      "title": "Business MCP platform",
+      "path": "ragnarok/connector/ygg-business",
+      "category": "Data & MCP",
+      "description": "A documented business-data platform with receipts and hardware-gate claims that require independent validation.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [
+        "ygg-mcp-business"
+      ],
+      "source_files_observed": 77,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".ts",
+          "files": 38
+        },
+        {
+          "extension": ".sh",
+          "files": 17
+        },
+        {
+          "extension": ".mjs",
+          "files": 11
+        },
+        {
+          "extension": ".sql",
+          "files": 6
+        },
+        {
+          "extension": ".py",
+          "files": 4
+        }
+      ],
+      "document": {
+        "path": "ragnarok/connector/ygg-business/README.md",
+        "sha256": "bd4fde7825972dc4082f0736bbe727ff29b0ab6697f4f0a992b0621e76e13e24",
+        "total_lines": 103,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/connector/ygg-business/security_test.py",
+          "sha256": "1082fe2d8df06765edf1757d077a0221a36b3baabba0c470b88101df57fc322b",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/connector/ygg-business/security_test_reimagined.py",
+          "sha256": "453647232b002891f4e4aebac011f730765e735af8eb502116050756d7ed7790",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/connector/ygg-business/harness/security_test.py",
+          "sha256": "1082fe2d8df06765edf1757d077a0221a36b3baabba0c470b88101df57fc322b",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/connector/ygg-business/harness/security_test_reimagined.py",
+          "sha256": "453647232b002891f4e4aebac011f730765e735af8eb502116050756d7ed7790",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-connector-platform-deployment",
+      "title": "Platform deployment template",
+      "path": "ragnarok/connector/platform-deployment",
+      "category": "Data & MCP",
+      "description": "A deployment-source variant of the business MCP platform.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [
+        "ragnarok-platform-deployment"
+      ],
+      "source_files_observed": 74,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".ts",
+          "files": 38
+        },
+        {
+          "extension": ".sh",
+          "files": 17
+        },
+        {
+          "extension": ".mjs",
+          "files": 10
+        },
+        {
+          "extension": ".sql",
+          "files": 6
+        },
+        {
+          "extension": ".py",
+          "files": 2
+        }
+      ],
+      "document": {
+        "path": "ragnarok/connector/platform-deployment/README.md",
+        "sha256": "a9472fb47ede1fc74982a6d88c843f9bb568da35ddba0d79492c04449bf715dc",
+        "total_lines": 108,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/connector/platform-deployment/security-test-suites/security_test.py",
+          "sha256": "1082fe2d8df06765edf1757d077a0221a36b3baabba0c470b88101df57fc322b",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/connector/platform-deployment/security-test-suites/security_test_reimagined.py",
+          "sha256": "453647232b002891f4e4aebac011f730765e735af8eb502116050756d7ed7790",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-connector-bridges-muse",
+      "title": "Muse bridge",
+      "path": "ragnarok/connector/bridges/muse",
+      "category": "Data & MCP",
+      "description": "A documented local adapter between a model API and MCP tools.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [
+        "muse-mcp-bridge"
+      ],
+      "source_files_observed": 4,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".ts",
+          "files": 3
+        },
+        {
+          "extension": ".sh",
+          "files": 1
+        }
+      ],
+      "document": {
+        "path": "ragnarok/connector/bridges/muse/README.md",
+        "sha256": "10d8413819a5b72af42dac079200089c19ffecdb611e03203733db6a894e1085",
+        "total_lines": 32,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-data",
+      "title": "Data & receipt layer",
+      "path": "ragnarok/data",
+      "category": "Data & MCP",
+      "description": "Database schemas and scripts for the shared data and receipt layer.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 15,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".sh",
+          "files": 7
+        },
+        {
+          "extension": ".sql",
+          "files": 6
+        },
+        {
+          "extension": ".py",
+          "files": 2
+        }
+      ],
+      "document": {
+        "path": "ragnarok/data/README.md",
+        "sha256": "ce5eec06e0b212cf2eaf867bccda667fbec3f60a158980755b629935aa999101",
+        "total_lines": 111,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/data/scripts/business-sync.py",
+          "sha256": "bf4a89f4f5507138bb55ae4d137c7a5623701da1803f4a540a4ee47406a567b8",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/data/scripts/memory.py",
+          "sha256": "27a64f18fe018407a0982c83233d9c92bcef43ddc6541ed3cfc1ba7a15a3b3f2",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-runner",
+      "title": "Task runner",
+      "path": "ragnarok/runner",
+      "category": "AI assurance",
+      "description": "Documented task execution, checking and human-approval components.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 16,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".sh",
+          "files": 12
+        },
+        {
+          "extension": ".py",
+          "files": 4
+        }
+      ],
+      "document": {
+        "path": "ragnarok/runner/README.md",
+        "sha256": "5ad44ba30701bb3612f203d6a21543f450f537c59854e0b555c6fa9c5d841ee7",
+        "total_lines": 101,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/runner/conveyor/task-schema/validate.py",
+          "sha256": "3a0a32b4bf3a2e665b2aaa06c4b376c91139e86969bf436610445ac15930d410",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/runner/conveyor/task-schema/tools/json_schema_to_grammar.py",
+          "sha256": "cc9cb829c4c3ebe8a4c0f4e5c54aa2c4512eea3a919b4162cfc8cad57e538860",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/runner/conveyor/tests/test_taskjson.py",
+          "sha256": "63245a3529899d78926bb990426543693cbe41121fa02f337be10794a3a8a7e4",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/runner/ragnarok/model-door.py",
+          "sha256": "1dfab25d15d486e643c398bbfb5e4efb6b3d63dae6b930a9cf515dc81f3d656c",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-runner-conveyor",
+      "title": "Conveyor",
+      "path": "ragnarok/runner/conveyor",
+      "category": "AI assurance",
+      "description": "Checklist-driven AI work with a separate verification and critique workflow, as documented.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 14,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".sh",
+          "files": 11
+        },
+        {
+          "extension": ".py",
+          "files": 3
+        }
+      ],
+      "document": {
+        "path": "ragnarok/runner/conveyor/README.md",
+        "sha256": "f56599c37774d7bcf881a25be9bc2db1feb66f43a9d907294fdff62e887ae424",
+        "total_lines": 201,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/runner/conveyor/task-schema/validate.py",
+          "sha256": "3a0a32b4bf3a2e665b2aaa06c4b376c91139e86969bf436610445ac15930d410",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/runner/conveyor/task-schema/tools/json_schema_to_grammar.py",
+          "sha256": "cc9cb829c4c3ebe8a4c0f4e5c54aa2c4512eea3a919b4162cfc8cad57e538860",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/runner/conveyor/tests/test_taskjson.py",
+          "sha256": "63245a3529899d78926bb990426543693cbe41121fa02f337be10794a3a8a7e4",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-runner-ragnarok",
+      "title": "Container belt",
+      "path": "ragnarok/runner/ragnarok",
+      "category": "AI assurance",
+      "description": "Container and model-door source files for the Ragnarok task runner.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 1,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".py",
+          "files": 1
+        }
+      ],
+      "document": null,
+      "syntax_checks": [
+        {
+          "path": "ragnarok/runner/ragnarok/model-door.py",
+          "sha256": "1dfab25d15d486e643c398bbfb5e4efb6b3d63dae6b930a9cf515dc81f3d656c",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-agents-alexus-core",
+      "title": "Alexus Core",
+      "path": "ragnarok/agents/alexus-core",
+      "category": "Agents",
+      "description": "A documented model harness with routing, domain cartridges and verification components. Performance claims were not benchmarked.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [
+        "alexus-core"
+      ],
+      "source_files_observed": 27,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".py",
+          "files": 19
+        },
+        {
+          "extension": ".sh",
+          "files": 7
+        },
+        {
+          "extension": ".swift",
+          "files": 1
+        }
+      ],
+      "document": {
+        "path": "ragnarok/agents/alexus-core/README.md",
+        "sha256": "7cd68d1cb41dc16f1d774b771bb0bf9f62d0552699b3004a85fd437199e3be0d",
+        "total_lines": 151,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/agents/alexus-core/bin/__init__.py",
+          "sha256": "95cdb7f35691d948fc0107cde13ad9c3ea075b91f29ec23c6a96e298cfc9aeb4",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/alexus-core/bin/imessage_bridge.py",
+          "sha256": "5d321d410947d9e4879f5c62cd6f0c97c496157f9a81a7bf1d5f57e5ee6c631c",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/alexus-core/bin/mail_bridge.py",
+          "sha256": "24c49d27de402184a95d2ddd3287dff2cb2961c18aa9288823057b7bcc120477",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/alexus-core/bin/ragnarok_bridge.py",
+          "sha256": "2904e2d65336fc0db0fe9ba282b7ddbb13dfd9ff72a4bb66c9472a3b1a7c438a",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/alexus-core/tests/adversarial_eval.py",
+          "sha256": "71722d993c20b1ffc032c9e3b12f5bc62ca16826dd92c90003e57c622624f86a",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/alexus-core/tests/calibrate_margin.py",
+          "sha256": "362c3c6e44d06d912d58cd95e3011e78e67eb6369902e961661070c34a8bac12",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/alexus-core/tests/reproduce_socket_test.py",
+          "sha256": "f0fa288c97066c529824678a0ad0f840ffe12f5d3aa386ad231c1dc247f4e89a",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/alexus-core/tests/stress_test.py",
+          "sha256": "b6c49eaf85f69d9923a3829a6617fba2a50e996c239e59addc74637d3157bdda",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-agents-doc-pipe",
+      "title": "Document pipe",
+      "path": "ragnarok/agents/doc-pipe",
+      "category": "Agents",
+      "description": "A documented document-intake workflow with extraction, consistency checks and human review.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [
+        "ragnarok-pipe"
+      ],
+      "source_files_observed": 15,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".py",
+          "files": 8
+        },
+        {
+          "extension": ".sh",
+          "files": 5
+        },
+        {
+          "extension": ".html",
+          "files": 1
+        },
+        {
+          "extension": ".sql",
+          "files": 1
+        }
+      ],
+      "document": {
+        "path": "ragnarok/agents/doc-pipe/README.md",
+        "sha256": "8d1d2516632e3aa4a4c1bd1d14c6004ca6b2b305fb918457c452fb1df5f282c1",
+        "total_lines": 75,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/agents/doc-pipe/app/__init__.py",
+          "sha256": "983c1967ada8f9ba44101c4ed0f4f1e7c6c7acf26e4d7de1d8315ed106deb575",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/doc-pipe/app/checks.py",
+          "sha256": "27c0512894345a6d69cd6414aa791a95512eb651d2684c0f24e76f25e3ac7cd4",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/doc-pipe/app/extract.py",
+          "sha256": "7dcd09da47252ede391e7ffe7c81d0cecf561972006c0435626c74a1726c6e31",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/doc-pipe/app/inbox.py",
+          "sha256": "693419488127d78871e5a633830c59711c7b8621eb38b6449cb385309ec4529f",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/doc-pipe/app/main.py",
+          "sha256": "e76b370701265fb95324f48a64ddbea143612db603e7fb6703dd9e3011c76d10",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/doc-pipe/tests/test_dates_dupes.py",
+          "sha256": "d3531f8ef867ffa379083d102cf8458ee2795d495ae55a37cba3b0bacbab8f2d",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/doc-pipe/tests/test_inbox.py",
+          "sha256": "90c479398fa3bc3a8f01b300457c42ba81d5f55999cad4a8438ea4b9af5e298f",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/agents/doc-pipe/tests/test_upload_many.py",
+          "sha256": "1f58bf452f33bcceb20c97504e7c3fd536bc10f9c6b1ff74ef0aa4be1ff8b9cf",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-agents-iphone-agent",
+      "title": "iPhone Commands",
+      "path": "ragnarok/agents/iphone-agent",
+      "category": "Agents",
+      "description": "A documented portable command protocol and policy-aware iPhone-mirroring runner.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [
+        "iphone-agent"
+      ],
+      "source_files_observed": 51,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".ts",
+          "files": 44
+        },
+        {
+          "extension": ".swift",
+          "files": 3
+        },
+        {
+          "extension": ".js",
+          "files": 1
+        },
+        {
+          "extension": ".html",
+          "files": 1
+        },
+        {
+          "extension": ".css",
+          "files": 1
+        }
+      ],
+      "document": {
+        "path": "ragnarok/agents/iphone-agent/README.md",
+        "sha256": "f54482285ddf05be47c49f5a7621900a5c27163c16619b4aee623434d3d45054",
+        "total_lines": 160,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-agents-phone-grader",
+      "title": "PhoneGrader",
+      "path": "ragnarok/agents/phone-grader",
+      "category": "Apps",
+      "description": "A documented phone assessment, pricing, listing and resale-tracking application.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [
+        "phone-grader-app"
+      ],
+      "source_files_observed": 77,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".swift",
+          "files": 73
+        },
+        {
+          "extension": ".mjs",
+          "files": 2
+        },
+        {
+          "extension": ".sh",
+          "files": 1
+        },
+        {
+          "extension": ".py",
+          "files": 1
+        }
+      ],
+      "document": {
+        "path": "ragnarok/agents/phone-grader/README.md",
+        "sha256": "a12aa82c0483fd2a164a97b94cc8ff8726a6a011be99d0c3f8659c85790c323c",
+        "total_lines": 107,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/agents/phone-grader/scripts/refresh_atlas.py",
+          "sha256": "fb9334e2cf258a2a1e9b010b28cb42378559d261e2841e4ad606d957e9b31474",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-agents-upwork-alert",
+      "title": "Upwork Alert",
+      "path": "ragnarok/agents/upwork-alert",
+      "category": "Agents",
+      "description": "A documented mail-to-local-summary notification workflow.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [
+        "upwork-alert"
+      ],
+      "source_files_observed": 3,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".sh",
+          "files": 2
+        },
+        {
+          "extension": ".applescript",
+          "files": 1
+        }
+      ],
+      "document": {
+        "path": "ragnarok/agents/upwork-alert/README.md",
+        "sha256": "9d70057d4e62b5e91a474a63575069ddd365277a709c4db9e987c63ecc5ade62",
+        "total_lines": 21,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-clients-kit",
+      "title": "Client kit",
+      "path": "ragnarok/clients/kit",
+      "category": "Business workflows",
+      "description": "A documented self-hosted client-data template with MCP access and receipts.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [
+        "ragnarok-client-kit"
+      ],
+      "source_files_observed": 21,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".ts",
+          "files": 9
+        },
+        {
+          "extension": ".sh",
+          "files": 8
+        },
+        {
+          "extension": ".py",
+          "files": 3
+        },
+        {
+          "extension": ".sql",
+          "files": 1
+        }
+      ],
+      "document": {
+        "path": "ragnarok/clients/kit/README.md",
+        "sha256": "dd469ce60bc2ac39151dab459c97c1379375b0c453f99b456d785b72b90c0c67",
+        "total_lines": 297,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/clients/kit/money/money.py",
+          "sha256": "4dec5d509c7eeaceebfc28809147ae014baeb049c03aa9f03d81fe08f2ad78c7",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/clients/kit/money/test_money.py",
+          "sha256": "1e81f824c0401daff9e7298a5d566b26c3e938e0d2108e5f3c7991e19665c887",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/clients/kit/money/demo/make-demo.py",
+          "sha256": "0793d483f2215ebd276a1c0aaf0f67845c1b0390edd7bc01607ba1d13cc49c63",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-clients-repair-shop",
+      "title": "Repair-shop workflow",
+      "path": "ragnarok/clients/repair-shop",
+      "category": "Business workflows",
+      "description": "A documented inventory, repair and sales workflow with a synthetic demo shop.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [
+        "ragnarok-repair-shop"
+      ],
+      "source_files_observed": 33,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".sh",
+          "files": 14
+        },
+        {
+          "extension": ".ts",
+          "files": 11
+        },
+        {
+          "extension": ".sql",
+          "files": 4
+        },
+        {
+          "extension": ".py",
+          "files": 4
+        }
+      ],
+      "document": {
+        "path": "ragnarok/clients/repair-shop/README.md",
+        "sha256": "ec35e4287aeedd9e6a6f1ddf66271701c8d731379670b27dda98e238e7382f5b",
+        "total_lines": 256,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/clients/repair-shop/demo-data/generate.py",
+          "sha256": "277bd904e952c4578bd3ea45938cde209ab11aa6e03c9f4cd35a485b0dfd8e95",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/clients/repair-shop/receipting/ingest/api.py",
+          "sha256": "8a3d87f8e3d4a7ff69d32ed38ba56c1f6fbfdd02bace52936283266875d0a5ef",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/clients/repair-shop/receipting/ingest/ingest.py",
+          "sha256": "66098e38eb404e8e7c3c6c6dc463c13f54f7e7fa4aec03bcf0602165dcd71618",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/clients/repair-shop/receipting/lib/receipt.py",
+          "sha256": "915b8757718a35a5f0346f2c8f498b61231f47c1ac9fe826b60515a3216a7661",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-clients-phoenix-audio",
+      "title": "Audio client configuration",
+      "path": "ragnarok/clients/phoenix-audio",
+      "category": "Business workflows",
+      "description": "A client-kit configuration. Client records and private settings were not opened or published.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [
+        "phoenix-audio"
+      ],
+      "source_files_observed": 0,
+      "source_count_capped": false,
+      "languages": [],
+      "document": {
+        "path": "ragnarok/clients/phoenix-audio/README.md",
+        "sha256": "e0333f801acd225837b9f831162d8238af9e8d5ed55cfaa860d8e838a7121899",
+        "total_lines": 8,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-clients-verde-coffee",
+      "title": "Coffee client configuration",
+      "path": "ragnarok/clients/verde-coffee",
+      "category": "Business workflows",
+      "description": "A client-kit configuration. This inventory does not establish a commercial customer relationship.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [
+        "verde-coffee"
+      ],
+      "source_files_observed": 0,
+      "source_count_capped": false,
+      "languages": [],
+      "document": {
+        "path": "ragnarok/clients/verde-coffee/README.md",
+        "sha256": "9bebba82b9c9d181b5d40b8b449b7c8941702bce6d14a7024b633735910ac8dd",
+        "total_lines": 8,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-clients-ragnarok-hq",
+      "title": "Ragnarok HQ configuration",
+      "path": "ragnarok/clients/ragnarok-hq",
+      "category": "Business workflows",
+      "description": "A documented workspace configuration with switch/resume packet history.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [
+        "ragnarok-hq-fixes"
+      ],
+      "source_files_observed": 1,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".sql",
+          "files": 1
+        }
+      ],
+      "document": {
+        "path": "ragnarok/clients/ragnarok-hq/README.md",
+        "sha256": "65acf5f98869f608c1f88ad9cc862b6faf34587ac0b2104ef0938b1386a91c90",
+        "total_lines": 30,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-ops-alexus",
+      "title": "Alexus setup scripts",
+      "path": "ragnarok/ops/alexus",
+      "category": "Operations",
+      "description": "Server setup and maintenance script inventory; no deployment scripts were run.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 8,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".sh",
+          "files": 8
+        }
+      ],
+      "document": {
+        "path": "ragnarok/ops/alexus/README.md",
+        "sha256": "9cd2ec0f143df6081e2c4888966f173025f86a537c6f63a2aaf8ba9c216c8ec2",
+        "total_lines": 16,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-ops-mac-scripts",
+      "title": "Mac operations scripts",
+      "path": "ragnarok/ops/mac-scripts",
+      "category": "Operations",
+      "description": "Mac maintenance and workflow scripts. Operational execution remains Unverified.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 20,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".py",
+          "files": 13
+        },
+        {
+          "extension": ".sh",
+          "files": 7
+        }
+      ],
+      "document": {
+        "path": "ragnarok/ops/mac-scripts/README.md",
+        "sha256": "92ec110ded55364c00d9ee662dd3bfd64ad073f91d528863cefee1f1043cd520",
+        "total_lines": 16,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/ops/mac-scripts/drift-check.py",
+          "sha256": "a4ed5804de988641a91fa84a124f1dad81c65371eabd245cdbfc4fcf661b0853",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/ops/mac-scripts/evidence-audit.py",
+          "sha256": "c72ad3f1d7c654c06e6b581454774bb92d26edf50bf3d3f5d4f0551800cd710f",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/ops/mac-scripts/evidence-rules.py",
+          "sha256": "cff8c3bed6962cc31b02714f188195233eb164ba7d5f36db4ade89cfa30d238f",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/ops/mac-scripts/gdrive-archive-sync.py",
+          "sha256": "e9988baf55343c98835c1224564f238aa90d3b27b0c5c3e644d0115ee19fb60f",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/ops/mac-scripts/log-ship.py",
+          "sha256": "95105598bf1c4140c597f922bdc7ba2761e79d228e4fdc1b8cdc36433b81a7f6",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/ops/mac-scripts/off-jon.py",
+          "sha256": "b1e59860c71fc3d14894f61bd98160a675a36575f1a4864897ce9ad245bfe03b",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/ops/mac-scripts/premise-check.py",
+          "sha256": "7d4f4a7869de072878c170163b8437f6130bca4152c1657ea1d7020c52cbbc11",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/ops/mac-scripts/ragnarok-change-hook.py",
+          "sha256": "e7731d45bef0bcc75289acc80df8206f8446f6fe5e73f4c8073abaf2c1f8835b",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-ops-script-catalog",
+      "title": "Script catalog",
+      "path": "ragnarok/ops/script-catalog",
+      "category": "Operations",
+      "description": "A documented extraction, redaction and provenance catalog for scripts.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [
+        "script-catalog"
+      ],
+      "source_files_observed": 14,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".py",
+          "files": 10
+        },
+        {
+          "extension": ".sql",
+          "files": 4
+        }
+      ],
+      "document": {
+        "path": "ragnarok/ops/script-catalog/README.md",
+        "sha256": "4f9ea4bdc901fa93af844cced3eaadd09da3d4a35b5d861e8165ec3dc4b0fdc8",
+        "total_lines": 58,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/ops/script-catalog/chain.py",
+          "sha256": "fbb3441b3e36d9bceea72756f6eea1859dfbebc3ebb9b9185fdb5601462224e8",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/ops/script-catalog/extract.py",
+          "sha256": "9387967f7135c58f5f16a9a91690e78cac4f54411f6139feeb0878349fb9a5f7",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/ops/script-catalog/facts.py",
+          "sha256": "8d2da090d1ad005869eb8b2f593f3736344ee31943a04894301957833f401c68",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/ops/script-catalog/load.py",
+          "sha256": "94aad3161cf97422712e25f99edd71785ba58e34ee617655c464436dfb293776",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/ops/script-catalog/migrate.py",
+          "sha256": "fff9c90b41d75972ce2383a1121f0ec78e3b1937f9139e800677106914c576d1",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/ops/script-catalog/pg.py",
+          "sha256": "97d8df99a85323b24fefb13de0d2d669a3c3f54f4189d9b02d55b348a2d6baa6",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/ops/script-catalog/redact.py",
+          "sha256": "58acea7db01c7f5cd3f369783eaef23162d383e3c24872ff539d030d248a1437",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/ops/script-catalog/summarize.py",
+          "sha256": "2a57eed82722ab1526d7b260bf4634655b5fabdfab4f11ba98d6f0f892f18e20",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-ops-tools",
+      "title": "Operations tools",
+      "path": "ragnarok/ops/tools",
+      "category": "Operations",
+      "description": "Documented history scanning, transcript-unpacking and machine-checking tools.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 4,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".py",
+          "files": 2
+        },
+        {
+          "extension": ".sh",
+          "files": 2
+        }
+      ],
+      "document": {
+        "path": "ragnarok/ops/tools/README.md",
+        "sha256": "808e9d087ac802feacbb45bbbbdaa319c2aec9c89ec5e55780861a1c9d251028",
+        "total_lines": 34,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok/ops/tools/box-check/check.py",
+          "sha256": "7b97307d731b956f44dd8de8c561e041302e674c2c6348d89398ba2024537624",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok/ops/tools/box-check/tests/box-fixtures.py",
+          "sha256": "c2552e1d85125b48fc8e30848a0a2b3e9b2a8f48443bd8f261274289a158bec9",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "greenlight",
+      "title": "Greenlight",
+      "path": "greenlight",
+      "category": "AI assurance",
+      "description": "A documented staging-copy workflow that keeps an AI change only after build and test checks.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 1,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".sh",
+          "files": 1
+        }
+      ],
+      "document": {
+        "path": "greenlight/README.md",
+        "sha256": "c65e024eee3f53fb3e9ac3827737a25823e5d495f4a943cd37688ede1655f640",
+        "total_lines": 88,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [],
+      "checks": [
+        {
+          "name": "Greenlight scratch-repository regression suite",
+          "command": "bash test/run.sh",
+          "result": "passed",
+          "cases": 16,
+          "checked_at": "2026-11-04T09:14:27-08:00",
+          "scope": "Fake AI commands in temporary git repos; no real model or production project.",
+          "files": [
+            {
+              "path": "greenlight/greenlight",
+              "sha256": "bec1df39486d5181affe8cec183a2479e56d6f74055cb9050a025823e1d86d12"
+            },
+            {
+              "path": "greenlight/test/run.sh",
+              "sha256": "f5d249dcb32329216740eddf1072e810004628ba2db6f520c7e5c06afc0e602a"
+            }
+          ],
+          "source_matches": true
+        }
+      ],
+      "runtime": "Unverified",
+      "status": "Selected checks passed",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a real agent CLI on a disposable representative repository, then repeat setup on a clean machine."
+    },
+    {
+      "id": "convo-embeddings",
+      "title": "Conversation search",
+      "path": "convo-embeddings",
+      "category": "Research",
+      "description": "Documented local embedding and search scripts. Conversation contents and the index were not read.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 2,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".py",
+          "files": 2
+        }
+      ],
+      "document": {
+        "path": "convo-embeddings/README.md",
+        "sha256": "de4a88103021dc2c6f3603c6ea96c9c823fdb3bb983db21dafc502f7e6ad1571",
+        "total_lines": 10,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "convo-embeddings/build.py",
+          "sha256": "eae21662a3e805d6b187a0da0ff581e15cdebb363071e98f2e0ee40b383730aa",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "convo-embeddings/search.py",
+          "sha256": "ac6a7129b291e0ba8d20d839327d15d7fb6701af781c8c6b516678aa2c8d80cb",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "phone-grader-portfolio",
+      "title": "PhoneGrader portfolio edition",
+      "path": "phone-grader-portfolio",
+      "category": "Snapshots",
+      "description": "A public-oriented PhoneGrader variant whose README specifies made-up sample prices.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 74,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".swift",
+          "files": 71
+        },
+        {
+          "extension": ".mjs",
+          "files": 2
+        },
+        {
+          "extension": ".sh",
+          "files": 1
+        }
+      ],
+      "document": {
+        "path": "phone-grader-portfolio/README.md",
+        "sha256": "a0c78d5bf2b933401d9002bccb30ca75483e5a40df18943edadf666cb0bbdd41",
+        "total_lines": 58,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "phone-grader-scrub",
+      "title": "PhoneGrader scrub tools",
+      "path": "phone-grader-scrub",
+      "category": "Snapshots",
+      "description": "A source-preparation folder with scrubbing and sample-data scripts; it is not a full app checkout.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 5,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".py",
+          "files": 3
+        },
+        {
+          "extension": ".swift",
+          "files": 1
+        },
+        {
+          "extension": ".sh",
+          "files": 1
+        }
+      ],
+      "document": {
+        "path": "phone-grader-scrub/README.md",
+        "sha256": "a0c78d5bf2b933401d9002bccb30ca75483e5a40df18943edadf666cb0bbdd41",
+        "total_lines": 58,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "phone-grader-scrub/make_sample_data.py",
+          "sha256": "98b538aa4ddf470bd3f1d7c785feca943896a8687fc1b2d1f79d1fb980fa6641",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "phone-grader-scrub/scrub_text.py",
+          "sha256": "09a2bb717792095f2564c1e500333bb58d3c709a419b0c95bac2ca9f4b2f384e",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "phone-grader-scrub/trim_comps_tests.py",
+          "sha256": "c07db5bac9090c512efb3de1e4fde13069e3d44c84a1c5329950931b9aedd70e",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-control-center",
+      "title": "Control Center checkout",
+      "path": "ragnarok-control-center",
+      "category": "Snapshots",
+      "description": "A separate Swift checkout related to the Ragnarok interface. Not treated as a second shipped product.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 37,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".swift",
+          "files": 27
+        },
+        {
+          "extension": ".sh",
+          "files": 5
+        },
+        {
+          "extension": ".py",
+          "files": 5
+        }
+      ],
+      "document": {
+        "path": "ragnarok-control-center/Package.swift",
+        "sha256": "1b6515ca2074b3973ad7261032ef06e60b3205b876a3f816569ece199a34f5c0",
+        "total_lines": 10,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok-control-center/Controls/make-symbol.py",
+          "sha256": "69f3b5d0c0b89bced455be73840a7fd8d7f89b2717b9508d007997d2e507591d",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok-control-center/bin/alexus-chat-bridge.py",
+          "sha256": "c0fc24aa6b166f703fe81378760d53b533aedff39f95d84a10468960052d8956",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok-control-center/bin/heimdall-api-edit.py",
+          "sha256": "0d4a9da4c82398511ca28908214abee909b6f38935516fc9b4991d336c2bfecf",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok-control-center/recall/mac-save-adapter.py",
+          "sha256": "c8ec28481bf16fe1f13e3c302f048b674385e99c457b1c137e3f5e72e33ba9b4",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok-control-center/room/room.py",
+          "sha256": "1e393a1598099c13f5354b8e4b8724b018bfb9baccca33e92dffb30639c31540",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ragnarok-public",
+      "title": "Ragnarok public edition",
+      "path": "ragnarok-public",
+      "category": "Snapshots",
+      "description": "A public-oriented Ragnarok checkout; documentation describes homelab-specific limitations.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 42,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".swift",
+          "files": 29
+        },
+        {
+          "extension": ".sh",
+          "files": 8
+        },
+        {
+          "extension": ".py",
+          "files": 5
+        }
+      ],
+      "document": {
+        "path": "ragnarok-public/README.md",
+        "sha256": "4915e3aae93767fb637a769ed4341534415cc045ac5ae7a9f8a578e21b4cdbf7",
+        "total_lines": 81,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ragnarok-public/Controls/make-symbol.py",
+          "sha256": "69f3b5d0c0b89bced455be73840a7fd8d7f89b2717b9508d007997d2e507591d",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok-public/bin/alexus-chat-bridge.py",
+          "sha256": "0026c7e99a04a295629b837e4bc40fa6e55d50fabde321c45141754de4088e79",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok-public/bin/heimdall-api-edit.py",
+          "sha256": "44cfaddf696ae277108086e61c6599da37d8e824ede15995a4480b5780e2b626",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok-public/recall/mac-save-adapter.py",
+          "sha256": "5b8d8afa86c874983337e2b9e3855eb3bb129c3087ec9d819932dba1fe7893e7",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ragnarok-public/room/room.py",
+          "sha256": "dd27a7669211545a360de7df3184f20c9a188061988cdd5724585c55e8eadfa8",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "scripts",
+      "title": "Host scripts",
+      "path": "scripts",
+      "category": "Operations",
+      "description": "Documented maintenance, backup, notification and measurement scripts.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 65,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".py",
+          "files": 37
+        },
+        {
+          "extension": ".sh",
+          "files": 27
+        },
+        {
+          "extension": ".html",
+          "files": 1
+        }
+      ],
+      "document": {
+        "path": "scripts/README.md",
+        "sha256": "c274a97f8fee57223080cd97e630afc49cdb8947281fb0661f3dad61c0d7a2a9",
+        "total_lines": 82,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "scripts/ragnarok-boot.py",
+          "sha256": "1abb8fb42391f34dea2d53701152769b8e7a8a5cf294cf1ee83a76d713aad1b6",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "scripts/ragnarok-live.py",
+          "sha256": "2157dde1cfe2efa459a014d35bfdfd19914db2d57a66e2b23431be9f1ae18905",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "scripts/ragnarok-premise-check.py",
+          "sha256": "8b8091a6033ecca115df72dbe10b2e0543db29e7b98dd76d8b069561a85e75a0",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "scripts/ragnarok-recall-refresh.py",
+          "sha256": "9e09315671dc5ef230127b35b149f67f7e388b70f5a7143818c91a56bde6b941",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "scripts/ragnarok-turn-context.py",
+          "sha256": "863565b309b5154467c5dce8184135d79313b0605bbf533135b27524bb5a240a",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "scripts/trunk-catch-selftest.py",
+          "sha256": "049d7c53a8db6c529612121f48b2992ad0ad47649718bc35f01e79809b0f0762",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "scripts/ygg-latency.py",
+          "sha256": "5181bd31a20947d217dcb3e2fd6572b03493c4c9323006d7c548ef66880de8cd",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "scripts/ygg-reconcile.py",
+          "sha256": "51572f0f97379b22d7570a5e1967f3b63b3ce75b82faa8d3684278a131ec4b07",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "webdriveragent",
+      "title": "WebDriverAgent dependency",
+      "path": "WebDriverAgent",
+      "category": "External dependency",
+      "description": "An external automation source checkout. It is not presented as original Ragnarok work.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 542,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".h",
+          "files": 292
+        },
+        {
+          "extension": ".m",
+          "files": 204
+        },
+        {
+          "extension": ".ts",
+          "files": 24
+        },
+        {
+          "extension": ".swift",
+          "files": 12
+        },
+        {
+          "extension": ".mjs",
+          "files": 6
+        }
+      ],
+      "document": {
+        "path": "WebDriverAgent/README.md",
+        "sha256": "0f4be38fee3753f61283bd9a9de385a911eb5f170031df09012bef8c59a34263",
+        "total_lines": 55,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "ygg-scratch",
+      "title": "Database split rehearsal",
+      "path": "ygg-scratch",
+      "category": "Research",
+      "description": "A documented scratch database/migration rehearsal, explicitly separate from the live system.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 13,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".py",
+          "files": 8
+        },
+        {
+          "extension": ".sh",
+          "files": 4
+        },
+        {
+          "extension": ".sql",
+          "files": 1
+        }
+      ],
+      "document": {
+        "path": "ygg-scratch/README.md",
+        "sha256": "4813e13218e11c7e2a0b30fe002111dfd7e8f41074dc25f7ace1de83fe5dd891",
+        "total_lines": 33,
+        "inventory_scope": "Document metadata and checksum; description uses separately reviewed excerpts where available."
+      },
+      "syntax_checks": [
+        {
+          "path": "ygg-scratch/tools/nc_api.py",
+          "sha256": "c0c30d36eb711a15e72e1e26b5732c1de56884273d1dcea18260d2c622c3d169",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ygg-scratch/tools/nc_rebuild.py",
+          "sha256": "10d96ee5a6d7d36ebf6a806fdaa2b5fa61d609c3e61dec3b385a4a2953deeaec",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ygg-scratch/tools/nc_verify_split.py",
+          "sha256": "9135de76e2d0b542450560abeac1d20b74cddcaf4d0259060a15dcd912c7bed5",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ygg-scratch/tools/split_map.py",
+          "sha256": "28a9a968d05896e176c72d449ed0ea98b9026bdcd94045418dd03f586070c7a8",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ygg-scratch/tools/live-copy/nc_api.py",
+          "sha256": "526ca13f58801a0ec1188287b1d28c79057386e9340a1f18dd64bcef92ed00ee",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ygg-scratch/tools/live-copy/nc_build.py",
+          "sha256": "4847d49340b22121f0aba52f22aa1fd17d7c575a117be7eddcb2a170fb4ba881",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ygg-scratch/tools/live-copy/nc_verify.py",
+          "sha256": "d115605b07928f514564ca94b979aec2ca9c4f2607fd8b17db94eadcf55fff44",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "ygg-scratch/tools/live-copy/schema_spec.py",
+          "sha256": "0ef3964e229a515d6fc7991aec1d0fdff3572f05db404148940303da67bc7853",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "alexus",
+      "title": "Alexus packages",
+      "path": "alexus",
+      "category": "Research",
+      "description": "A local packages folder. Purpose beyond the visible folder structure is Unverified.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 29,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".ts",
+          "files": 16
+        },
+        {
+          "extension": ".mjs",
+          "files": 6
+        },
+        {
+          "extension": ".sh",
+          "files": 5
+        },
+        {
+          "extension": ".py",
+          "files": 2
+        }
+      ],
+      "document": null,
+      "syntax_checks": [
+        {
+          "path": "alexus/packages/airtable-mcp/tools/calibrate-dedupe.py",
+          "sha256": "9d8d4727a03fd4a16603ef97425b4a82caca0c582715cc93cb23bade2ae0e7aa",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        },
+        {
+          "path": "alexus/packages/identity/ygg_cred.py",
+          "sha256": "6d1fbf7a2e53f2f22d9604f1973abdc9e0ef0e29b8388624e2b76d41c5aa47f6",
+          "check": "Python AST parse; source not executed",
+          "result": "passed"
+        }
+      ],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "app-animation",
+      "title": "App animation",
+      "path": "app animation",
+      "category": "Research",
+      "description": "An empty folder at inventory time; no implementation was observed.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 0,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "build-chronicle",
+      "title": "Build chronicle",
+      "path": "build-chronicle",
+      "category": "Research",
+      "description": "A directory of dated Markdown records. Their contents were not used as verification evidence.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 0,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "sigcut",
+      "title": "Sigcut",
+      "path": "sigcut",
+      "category": "Research",
+      "description": "A media-oriented directory with tools and video files. Media and output behavior were not inspected.",
+      "location": "Mac",
+      "kind": "source",
+      "aliases": [],
+      "source_files_observed": 3,
+      "source_count_capped": false,
+      "languages": [
+        {
+          "extension": ".swift",
+          "files": 3
+        }
+      ],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Source inventoried",
+      "limits": [
+        "Source presence and syntax are not proof of functional behavior.",
+        "No full-code or security audit was performed."
+      ],
+      "next_proof": "Run a documented isolated functional check and record the exact source revision and result."
+    },
+    {
+      "id": "archive-clitools",
+      "title": "CLITools \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/CLITools.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 14,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "CLITools",
+        "archive_path": "consolidation-2026-10-30/mac/CLITools.tar.gz",
+        "bytes": 1853440,
+        "headers_inspected": 150,
+        "source_members_observed": 14,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "CLITools/README.md",
+            "bytes": 4602
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-developer-alexus",
+      "title": "Developer-alexus \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/Developer-alexus.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 23,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "Developer-alexus",
+        "archive_path": "consolidation-2026-10-30/mac/Developer-alexus.tar.gz",
+        "bytes": 143360,
+        "headers_inspected": 112,
+        "source_members_observed": 23,
+        "header_scan_capped": false,
+        "readme_metadata": [],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-liferpg",
+      "title": "LifeRPG \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/LifeRPG.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 27,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "LifeRPG",
+        "archive_path": "consolidation-2026-10-30/mac/LifeRPG.tar.gz",
+        "bytes": 3758080,
+        "headers_inspected": 182,
+        "source_members_observed": 27,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "LifeRPG/README.md",
+            "bytes": 15113
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-ragnarok-timeline",
+      "title": "Ragnarok-Timeline \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/Ragnarok-Timeline.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 0,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "Ragnarok-Timeline",
+        "archive_path": "consolidation-2026-10-30/mac/Ragnarok-Timeline.tar.gz",
+        "bytes": 31037440,
+        "headers_inspected": 1152,
+        "source_members_observed": 0,
+        "header_scan_capped": false,
+        "readme_metadata": [],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-alexus-core",
+      "title": "alexus-core \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/alexus-core.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 25,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "alexus-core",
+        "archive_path": "consolidation-2026-10-30/mac/alexus-core.tar.gz",
+        "bytes": 286720,
+        "headers_inspected": 324,
+        "source_members_observed": 25,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "alexus-core/README.md",
+            "bytes": 4565
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-alexus-rebuild",
+      "title": "alexus-rebuild \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/alexus-rebuild.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 0,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "alexus-rebuild",
+        "archive_path": "consolidation-2026-10-30/mac/alexus-rebuild.tar.gz",
+        "bytes": 51200,
+        "headers_inspected": 96,
+        "source_members_observed": 0,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "alexus-rebuild/README.md",
+            "bytes": 402
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-alexus-swift",
+      "title": "alexus-swift \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/alexus-swift.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 14,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "alexus-swift",
+        "archive_path": "consolidation-2026-10-30/mac/alexus-swift.tar.gz",
+        "bytes": 2478080,
+        "headers_inspected": 244,
+        "source_members_observed": 14,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "alexus-swift/README.md",
+            "bytes": 3155
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-conveyor-app",
+      "title": "conveyor-app \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/conveyor-app.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 8,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "conveyor-app",
+        "archive_path": "consolidation-2026-10-30/mac/conveyor-app.tar.gz",
+        "bytes": 624640,
+        "headers_inspected": 245,
+        "source_members_observed": 8,
+        "header_scan_capped": false,
+        "readme_metadata": [],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-conveyor-json",
+      "title": "conveyor-json \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/conveyor-json.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 13,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "conveyor-json",
+        "archive_path": "consolidation-2026-10-30/mac/conveyor-json.tar.gz",
+        "bytes": 153600,
+        "headers_inspected": 79,
+        "source_members_observed": 13,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "conveyor-json/README.md",
+            "bytes": 7834
+          },
+          {
+            "path": "conveyor-json/task-schema/README.md",
+            "bytes": 5297
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-conveyor",
+      "title": "conveyor \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/conveyor.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 9,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "conveyor",
+        "archive_path": "consolidation-2026-10-30/mac/conveyor.tar.gz",
+        "bytes": 1720320,
+        "headers_inspected": 278,
+        "source_members_observed": 9,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "conveyor/README.md",
+            "bytes": 7337
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-crew",
+      "title": "crew \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/crew.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 2,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "crew",
+        "archive_path": "consolidation-2026-10-30/mac/crew.tar.gz",
+        "bytes": 337920,
+        "headers_inspected": 104,
+        "source_members_observed": 2,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "crew/README.md",
+            "bytes": 6349
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-fix-memory",
+      "title": "fix-memory \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/fix-memory.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 17,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "fix-memory",
+        "archive_path": "consolidation-2026-10-30/mac/fix-memory.tar.gz",
+        "bytes": 276480,
+        "headers_inspected": 163,
+        "source_members_observed": 17,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "fix-memory/README.md",
+            "bytes": 9268
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-grok-swift",
+      "title": "grok-swift \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/grok-swift.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 8,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "grok-swift",
+        "archive_path": "consolidation-2026-10-30/mac/grok-swift.tar.gz",
+        "bytes": 61440,
+        "headers_inspected": 117,
+        "source_members_observed": 8,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "grok-swift/README.md",
+            "bytes": 2737
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-iphone-agent",
+      "title": "iphone-agent \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/iphone-agent.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 50,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "iphone-agent",
+        "archive_path": "consolidation-2026-10-30/mac/iphone-agent.tar.gz",
+        "bytes": 450560,
+        "headers_inspected": 493,
+        "source_members_observed": 50,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "iphone-agent/README.md",
+            "bytes": 7594
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-local-ai-app",
+      "title": "local-ai-app \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/local-ai-app.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 28,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "local-ai-app",
+        "archive_path": "consolidation-2026-10-30/mac/local-ai-app.tar.gz",
+        "bytes": 13332480,
+        "headers_inspected": 207,
+        "source_members_observed": 28,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "local-ai-app/README.md",
+            "bytes": 11323
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-muse-mcp-bridge",
+      "title": "muse-mcp-bridge \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/muse-mcp-bridge.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 3,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "muse-mcp-bridge",
+        "archive_path": "consolidation-2026-10-30/mac/muse-mcp-bridge.tar.gz",
+        "bytes": 71680,
+        "headers_inspected": 73,
+        "source_members_observed": 3,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "muse-mcp-bridge/README.md",
+            "bytes": 2193
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-panes",
+      "title": "panes \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/panes.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 4,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "panes",
+        "archive_path": "consolidation-2026-10-30/mac/panes.tar.gz",
+        "bytes": 256000,
+        "headers_inspected": 193,
+        "source_members_observed": 4,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "panes/README.md",
+            "bytes": 5405
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-phoenix-audio",
+      "title": "phoenix-audio \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/phoenix-audio.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 14,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "phoenix-audio",
+        "archive_path": "consolidation-2026-10-30/mac/phoenix-audio.tar.gz",
+        "bytes": 153600,
+        "headers_inspected": 148,
+        "source_members_observed": 14,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "phoenix-audio/README.md",
+            "bytes": 10902
+          },
+          {
+            "path": "phoenix-audio/client/README.md",
+            "bytes": 857
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-phone-grader-app",
+      "title": "phone-grader-app \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/phone-grader-app.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 81,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "phone-grader-app",
+        "archive_path": "consolidation-2026-10-30/mac/phone-grader-app.tar.gz",
+        "bytes": 75694080,
+        "headers_inspected": 754,
+        "source_members_observed": 81,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "phone-grader-app/README.md",
+            "bytes": 8055
+          },
+          {
+            "path": "phone-grader-app/mcp/README.md",
+            "bytes": 2462
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-phone-grader-portfolio",
+      "title": "phone-grader-portfolio \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/phone-grader-portfolio.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 75,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "phone-grader-portfolio",
+        "archive_path": "consolidation-2026-10-30/mac/phone-grader-portfolio.tar.gz",
+        "bytes": 1064960,
+        "headers_inspected": 416,
+        "source_members_observed": 75,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "phone-grader-portfolio/README.md",
+            "bytes": 5102
+          },
+          {
+            "path": "phone-grader-portfolio/mcp/README.md",
+            "bytes": 2313
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-phone-grader-scrub",
+      "title": "phone-grader-scrub \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/phone-grader-scrub.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 5,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "phone-grader-scrub",
+        "archive_path": "consolidation-2026-10-30/mac/phone-grader-scrub.tar.gz",
+        "bytes": 10240,
+        "headers_inspected": 7,
+        "source_members_observed": 5,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "phone-grader-scrub/README.md",
+            "bytes": 5102
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-ragnarok-client-kit",
+      "title": "ragnarok-client-kit \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/ragnarok-client-kit.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 14,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "ragnarok-client-kit",
+        "archive_path": "consolidation-2026-10-30/mac/ragnarok-client-kit.tar.gz",
+        "bytes": 153600,
+        "headers_inspected": 149,
+        "source_members_observed": 14,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "ragnarok-client-kit/README.md",
+            "bytes": 10902
+          },
+          {
+            "path": "ragnarok-client-kit/client/README.md",
+            "bytes": 857
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-ragnarok-hq-fixes",
+      "title": "ragnarok-hq-fixes \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/ragnarok-hq-fixes.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 18,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "ragnarok-hq-fixes",
+        "archive_path": "consolidation-2026-10-30/mac/ragnarok-hq-fixes.tar.gz",
+        "bytes": 215040,
+        "headers_inspected": 206,
+        "source_members_observed": 18,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "ragnarok-hq-fixes/README.md",
+            "bytes": 14519
+          },
+          {
+            "path": "ragnarok-hq-fixes/client/README.md",
+            "bytes": 857
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-ragnarok-pipe",
+      "title": "ragnarok-pipe \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/ragnarok-pipe.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 8,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "ragnarok-pipe",
+        "archive_path": "consolidation-2026-10-30/mac/ragnarok-pipe.tar.gz",
+        "bytes": 61440,
+        "headers_inspected": 97,
+        "source_members_observed": 8,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "ragnarok-pipe/README.md",
+            "bytes": 4672
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-ragnarok-repair-shop",
+      "title": "ragnarok-repair-shop \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/ragnarok-repair-shop.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 33,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "ragnarok-repair-shop",
+        "archive_path": "consolidation-2026-10-30/mac/ragnarok-repair-shop.tar.gz",
+        "bytes": 215040,
+        "headers_inspected": 262,
+        "source_members_observed": 33,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "ragnarok-repair-shop/README.md",
+            "bytes": 16476
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-script-catalog",
+      "title": "script-catalog \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/script-catalog.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 14,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "script-catalog",
+        "archive_path": "consolidation-2026-10-30/mac/script-catalog.tar.gz",
+        "bytes": 2365440,
+        "headers_inspected": 139,
+        "source_members_observed": 14,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "script-catalog/README.md",
+            "bytes": 4154
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-sigcut",
+      "title": "sigcut \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/sigcut.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 3,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "sigcut",
+        "archive_path": "consolidation-2026-10-30/mac/sigcut.tar.gz",
+        "bytes": 192901120,
+        "headers_inspected": 24,
+        "source_members_observed": 3,
+        "header_scan_capped": false,
+        "readme_metadata": [],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-upwork-alert",
+      "title": "upwork-alert \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/upwork-alert.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 1,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "upwork-alert",
+        "archive_path": "consolidation-2026-10-30/mac/upwork-alert.tar.gz",
+        "bytes": 30720,
+        "headers_inspected": 59,
+        "source_members_observed": 1,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "upwork-alert/README.md",
+            "bytes": 1199
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-verde-coffee",
+      "title": "verde-coffee \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/verde-coffee.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 14,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "verde-coffee",
+        "archive_path": "consolidation-2026-10-30/mac/verde-coffee.tar.gz",
+        "bytes": 153600,
+        "headers_inspected": 148,
+        "source_members_observed": 14,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "verde-coffee/README.md",
+            "bytes": 10902
+          },
+          {
+            "path": "verde-coffee/client/README.md",
+            "bytes": 857
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-ygg-mcp-business",
+      "title": "ygg-mcp-business \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/ygg-mcp-business.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 48,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "ygg-mcp-business",
+        "archive_path": "consolidation-2026-10-30/mac/ygg-mcp-business.tar.gz",
+        "bytes": 409600,
+        "headers_inspected": 417,
+        "source_members_observed": 48,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "ygg-mcp-business/README.md",
+            "bytes": 10734
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    },
+    {
+      "id": "archive-ygg-scratch",
+      "title": "ygg-scratch \u00b7 archive",
+      "path": "Seagate/consolidation-2026-10-30/mac/ygg-scratch.tar.gz",
+      "category": "Archive",
+      "location": "Alexus / Seagate",
+      "kind": "archive",
+      "description": "Historical package observed in the consolidation snapshot. Member headers were inventoried; purpose, runnability and equivalence to current code are Unverified.",
+      "aliases": [],
+      "source_files_observed": 13,
+      "source_count_capped": false,
+      "languages": [],
+      "document": null,
+      "syntax_checks": [],
+      "checks": [],
+      "runtime": "Unverified",
+      "status": "Archive inventoried",
+      "archive_evidence": {
+        "name": "ygg-scratch",
+        "archive_path": "consolidation-2026-10-30/mac/ygg-scratch.tar.gz",
+        "bytes": 2293760,
+        "headers_inspected": 34,
+        "source_members_observed": 13,
+        "header_scan_capped": false,
+        "readme_metadata": [
+          {
+            "path": "ygg-scratch/README.md",
+            "bytes": 2342
+          }
+        ],
+        "contents_extracted": false
+      },
+      "limits": [
+        "Member-header inventory only; no archived source was executed.",
+        "No private payload or original archive is published.",
+        "A named archive is not an additional shipped product."
+      ],
+      "next_proof": "Review a chosen source subset, check its provenance and dependencies, then run a documented check in an isolated scratch environment."
+    }
+  ],
+  "verification_policy": {
+    "tests": "Only freshly executed named checks receive a passed-check label.",
+    "reported": "README/history statements are claims, not a fresh test.",
+    "unverified": "Not executed, incomplete, unavailable or awaiting physical/external evidence.",
+    "trust": "Checksums identify snapshots; this author-generated catalog is not an independent attestation."
+  },
+  "main_project": {
+    "project_title": "ALEXUS",
+    "foundation_title": "RAGNAROK: NEW WORLD \u2014 FOUNDATION",
+    "quote": "ALEXUS emerges when complexity has compressed into simplicity. When the system knows itself well enough that it no longer needs to explain itself.",
+    "continuation": "The name carries the intention forward until the system is ready to read it back.",
+    "origin_quote": "Ragnarok isn't the end. It's the beginning. Point A -> everything in-between -> Point C. Live your own life. Don't let it live you.",
+    "theory": [
+      "Everything starts from one point. Life branches outward in complexity. Then it recedes back into the main trunk.",
+      "The branch is not the destination. The trunk is. Complexity is not the goal \u2014 it is the process. The goal is what remains when the process completes.",
+      "The loopback is built in. What branches out returns. What returns is refined. What is refined becomes the new origin point."
+    ],
+    "attribution": "CLR \u2014 Rgnrk \u00b7 Origin and Branch Theory",
+    "source_scope": "Ragnarok State Foundation, archived September 8, 2026 export; selected text from lines 308\u2013330 of 335. Personal sections omitted. This is the project's philosophy, not a verified runtime claim.",
+    "id": "alexus-project",
+    "children": [
+      "ragnarok",
+      "ragnarok-app-heimdall",
+      "ragnarok-app-heimdall-demos-hardware-proof",
+      "ragnarok-app-belt-ui",
+      "ragnarok-app-cli-tools",
+      "ragnarok-app-local-ai",
+      "ragnarok-brain",
+      "ragnarok-brain-fix-memory",
+      "ragnarok-brain-cartridges",
+      "ragnarok-brain-lookup",
+      "ragnarok-connector",
+      "ragnarok-connector-ygg-business",
+      "ragnarok-connector-platform-deployment",
+      "ragnarok-connector-bridges-muse",
+      "ragnarok-data",
+      "ragnarok-runner",
+      "ragnarok-runner-conveyor",
+      "ragnarok-runner-ragnarok",
+      "ragnarok-agents-alexus-core",
+      "ragnarok-agents-doc-pipe",
+      "ragnarok-agents-iphone-agent",
+      "ragnarok-agents-upwork-alert",
+      "ragnarok-ops-script-catalog",
+      "greenlight"
+    ]
+  }
+}

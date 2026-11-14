@@ -1,0 +1,15 @@
+# Build output
+build/
+dist/
+.build/
+# Logs (build.log, test.log)
+*.log
+# macOS junk
+._*
+.DS_Store
+# Xcode / SwiftPM per-user state
+xcuserdata/
+.swiftpm/xcode/
+*.xcuserstate
+# Build outputs and macOS junk
+DerivedData/

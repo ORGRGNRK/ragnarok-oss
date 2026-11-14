@@ -1,0 +1,170 @@
+/* Ragnarok Design System: supplied ZIP, tokens preserved below.
+   Existing Heimdall icon retained at the operator’s explicit request. */
+:root{
+/* ── Base — the void ── */
+--bg-void:#000000; /* portal background */
+--bg-app:#0d0d0d; /* dashboard background */
+--surface-1:#111111; /* row / card */
+--surface-2:#151515; /* row hover */
+--surface-3:#1a1a1a; /* grid gutter / raised */
+--border-1:#1f1f1f;
+--border-2:#222222;
+--border-3:#333333; /* hover border */
+/* ── Ink ── */
+--ink-1:#e8e8e8; /* primary text */
+--ink-2:#d4d4d4; /* row titles */
+--ink-3:#9ca3af; /* hover-muted */
+--ink-muted:#666666; /* section headings */
+--ink-faint:#4b5563; /* urls, meta */
+--ink-ghost:#444444; /* labels, timestamps */
+--ink-trace:#2a2a2a; /* countdowns, idle dots */
+/* ── Gold — the signal ── */
+--gold:#c9a84c;
+--gold-bright:#ffe680;
+--gold-dim:rgba(201,168,76,.55);
+--gold-faint:rgba(201,168,76,.35);
+--gold-glow:rgba(201,168,76,.6);
+--gold-haze:rgba(201,168,76,.2);
+/* ── Status ── */
+--status-up:#22c55e;
+--status-down:#ef4444;
+--status-checking:#f59e0b;
+--status-local:#4b5563;
+--badge-local-bg:#1f2937;
+--badge-local-ink:#6b7280;
+/* ── System states (RAGNAROK) ── */
+--state-green:#22c55e; /* execution */
+--state-yellow:#f59e0b; /* building / auditing */
+--state-red:#ef4444; /* stabilize, protect the base */
+--state-limbo:#6b7280; /* thinking out loud */
+--state-living:#c9a84c; /* conscious presence — sits underneath */
+/* ── Semantic aliases ── */
+--text-body:var(--ink-1);
+--text-title:var(--ink-2);
+--text-muted:var(--ink-faint);
+--text-label:var(--ink-ghost);
+--accent:var(--gold);
+--accent-hover:var(--gold-bright);
+--surface-card:var(--surface-1);
+--surface-card-hover:var(--surface-2);
+--border-card:var(--border-1);
+--link:var(--gold-dim);
+--link-hover:var(--gold-bright);
+}
+
+:root{
+/* Ceremonial mono — wordmarks, titles, the portal voice */
+--font-display:'Courier New', Courier, monospace;
+/* UI sans — dashboards, tools, body */
+--font-sans:-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
+/* Data mono — urls, timestamps, ledgers, code */
+--font-mono:"SF Mono", ui-monospace, Menlo, Consolas, monospace;
+/* ── Display scale (portal) ── */
+--display-title-size:clamp(18px, 2.5vw, 32px);
+--display-title-spacing:.35em;
+--display-sub-size:clamp(9px, 1vw, 12px);
+--display-sub-spacing:.5em;
+--display-weight:300;
+/* ── UI scale (dashboard) ── */
+--text-h1-size:13px; --text-h1-spacing:.12em;
+--text-label-size:11px; --text-label-spacing:.1em;
+--text-row-size:13px;
+--text-meta-size:12px;
+--text-micro-size:11px;
+--text-nav-size:11px; --text-nav-spacing:.4em;
+--weight-medium:500;
+--weight-bold:700;
+}
+
+:root{
+--space-1:4px;
+--space-2:8px;
+--space-3:12px;
+--space-4:16px;
+--space-5:24px;
+--space-6:32px;
+--space-7:40px;
+--space-page:2rem;
+--gap-nav:40px;
+--row-pad:12px 16px;
+--radius-sm:4px;
+--radius-md:6px;
+--radius-lg:10px;
+--radius-pill:20px;
+--dot-size:7px;
+}
+
+:root{
+/* Gold glow — titles, active elements */
+--glow-title:0 0 12px rgba(201,168,76,.6), 0 0 40px rgba(201,168,76,.2);
+--glow-hover:0 0 16px rgba(201,168,76,.7);
+/* Status dot glow */
+--glow-up:0 0 6px #22c55e55;
+/* Vignette + haze — full-bleed brand surfaces */
+--vignette:radial-gradient(ellipse at 50% 40%, transparent 30%, rgba(0,0,0,.85) 100%); /* @kind other */
+--gold-pulse:radial-gradient(ellipse at 50% 40%, rgba(201,168,76,.18) 0%, rgba(201,168,76,.05) 50%, transparent 75%); /* @kind other */
+/* Motion */
+--ease-ui:.3s; /* @kind other */
+--ease-fast:.1s; /* @kind other */
+--ease-dot:.4s; /* @kind other */
+}
+@keyframes rgnrk-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+:root{color-scheme:dark;--paper:var(--bg-app);--ink:var(--ink-1);--green:var(--gold);--line:var(--border-2);--muted:var(--ink-3);--dim:var(--ink-3);--orange:var(--status-down);--mono:var(--font-mono);--sans:var(--font-sans)}
+body{background:var(--paper);color:var(--ink);font:14px/1.7 var(--sans)}
+main{max-width:1500px;margin:auto;padding:0 5vw}
+h1{font:300 clamp(30px,4.5vw,64px)/1.15 var(--font-display);letter-spacing:.12em;text-transform:uppercase;color:var(--gold);text-shadow:var(--glow-title)}
+h1 em{color:var(--gold-bright);font-style:normal;font-weight:300}
+h2,.stage h2{font:300 clamp(20px,2.5vw,30px)/1.3 var(--font-display);letter-spacing:.06em;color:var(--ink-2)}
+.eyebrow{font:11px var(--mono);letter-spacing:.14em;color:var(--gold);text-transform:uppercase}
+.site-header{display:flex;align-items:center;justify-content:space-between;gap:28px;padding:22px 5vw;border-bottom:1px solid var(--line)}
+.site-header .brand{display:flex;align-items:center;gap:12px;text-decoration:none;font:11px var(--mono);letter-spacing:.07em;color:var(--ink);flex-shrink:0}
+.site-logo{display:block;width:44px;height:44px;object-fit:contain;flex-shrink:0}
+.brand-section{color:var(--muted)}
+.site-nav{display:flex;align-items:center;justify-content:flex-end;gap:24px;flex-wrap:wrap;font:11px var(--mono)}
+.site-nav a{text-decoration:none;color:var(--muted);padding:8px 0;border-bottom:1px solid transparent}
+.site-nav a:hover,.site-nav a[aria-current="page"]{color:var(--green);border-bottom-color:var(--green)}
+.site-header .pill{font:9px var(--mono);border:1px solid var(--line);padding:7px 10px;border-radius:20px;color:var(--muted)}
+.site-footer{display:flex;align-items:center;justify-content:space-between;gap:25px;padding:24px 5vw;border-top:1px solid var(--line);font:9px/1.7 var(--mono);color:var(--muted)}
+.site-footer .footer-brand{display:flex;align-items:center;gap:10px;text-decoration:none;white-space:nowrap}
+.site-footer .site-logo{width:30px;height:30px}
+button,select,input,.button{font-family:var(--mono)}
+button,.button{border-radius:3px}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--green);outline-offset:3px}
+.badge,.pill{letter-spacing:.06em}
+.intro,.lead{font-size:17px;line-height:1.8;color:var(--muted)}
+.caption,.small{color:var(--muted)}
+
+.site-header{background:var(--bg-void)}
+.site-header .brand{font-family:var(--font-display);color:var(--gold);letter-spacing:.12em}
+.site-footer{background:var(--bg-void)}
+.site-nav a:hover,.site-nav a[aria-current="page"]{color:var(--gold-bright);text-shadow:var(--glow-hover)}
+.ledger,.project,.check,.empty{background:var(--surface-1);box-shadow:none;border-color:var(--border-2);border-radius:var(--radius-lg)}
+.ledger-row,.ledger-foot{border-color:var(--border-2)}
+.branch:hover,.branch.selected,.project:hover,.more:hover,button:hover,.button:hover{background:var(--surface-2);border-color:var(--border-3)}
+.branch h3,.project h3,.check h3{font:500 18px/1.4 var(--font-sans);letter-spacing:0;color:var(--ink-2)}
+.badge,.pill{border-radius:var(--radius-pill)}
+.badge.passed,.pass,.steps .done b,.steps .done span:after{color:var(--status-up)}
+.badge.passed{background:#0d2014;border-color:#225a36}
+.badge.source{color:var(--ink-3);background:var(--surface-3);border-color:var(--border-3)}
+.badge.unknown{color:var(--status-checking);background:#241c0c;border-color:#614817}
+.command,.receipt pre,.review code{background:var(--surface-3);color:var(--ink-2);border-radius:var(--radius-sm)}
+.primary{background:var(--gold);border-color:var(--gold);color:var(--bg-void)}
+.primary:hover{background:var(--gold-bright);border-color:var(--gold-bright);color:var(--bg-void)}
+.danger,.fail{color:var(--status-down)}
+.danger{border-color:#692b2b}
+tr.failed{background:#261313}
+#notice,#error{background:var(--surface-3);color:var(--ink-1);border:1px solid var(--border-3)}
+.origin-quote{font:300 clamp(20px,2.3vw,30px)/1.5 var(--font-display);color:var(--gold);margin:24px 0;border-left:2px solid var(--gold);padding-left:20px;max-width:800px}
+.foundation-origin{padding:40px 0;border-top:1px solid var(--line);scroll-margin-top:24px}
+.foundation-origin>div p{font-size:14px;line-height:1.8;max-width:750px;color:var(--muted)}
+.hero-bottom,.workbench,.review,.featured,.coverage,.detail-section{border-color:var(--border-3)}
+@media(max-width:700px){
+.site-header{align-items:flex-start;flex-direction:column;gap:13px;padding:16px 5vw}
+.site-header .brand{font-size:10px;gap:10px}.site-logo{width:40px;height:40px}
+.site-nav{justify-content:flex-start;gap:18px;font-size:10px}
+.site-header .pill{font-size:8px;padding:6px 8px}
+h1,.detail-intro h1{font-size:clamp(27px,7vw,44px);letter-spacing:.06em;overflow-wrap:anywhere}
+h2,.stage h2,.detail-section h2{font-size:24px}.intro,.lead{font-size:15px}
+.site-footer{align-items:flex-start;flex-direction:column;gap:9px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

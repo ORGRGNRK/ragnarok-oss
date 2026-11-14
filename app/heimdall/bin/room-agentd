@@ -1,0 +1,374 @@
+#!/usr/bin/env python3
+"""room-agentd: the shared room as a work queue. A background service (launchd, co.rgnrk.room-agents) that hands
+open room tasks to agent runs (bin/ragnarok-agent, the same runner as Heimdall's Agents tab) and posts results back.
+
+Each pass (every ROOM_AGENTD_POLL seconds, default 20):
+ 1. Follow every run it started. When a run ends it posts once to the room, as the AI that finished it:
+      proved / finished -> `room done <task> "<what was done>"`
+      needs you         -> a message saying what the owner has to answer, and how to resume the run
+      dead end / failed -> a message with the reason (the task stays claimed, for the owner to look at)
+      stopped           -> a message saying it was stopped
+    If the owner resumes a run (Agents tab, or `ragnarok-agent resume`), the new ending is posted too.
+ 2. Pick up new open tasks, oldest first, up to ROOM_AGENTD_MAX runs at once (default 2):
+    start `ragnarok-agent start --who claude --room-task <id>` (proved mode, claude -> codex -> grok handoff),
+    then claim the task in the room as claude. If the claim fails the run is stopped.
+
+Domain fields (room task --outcome/--proof/--wall) go to the runner as data (ragnarok-agent start --domain): every
+proof (P1, P2, …) needs its own passing checklist line before the run counts as proved, and walls in the runner's
+forms (no-network, read-only, write-only:, app-only:, deny:, once:, no-tool:) are blocked before the move happens.
+Plain-text walls are only in the brief; the claim message says which walls are enforced and which aren't.
+
+Which tasks: open (nobody claimed it), from a verified author (the owner or one of the AIs; files someone else can
+write are skipped). Left alone: text starting with "no-agent:", "no-belt:", "hand:" or "belt:" (belt: is the
+conveyor's). While the conveyor room bridge is on (~/.conveyor/room.on), the owner's tasks are the bridge's and are
+left to it, so the two never take the same task.
+
+  room-agentd run            the service loop (launchd runs this)
+  room-agentd once [--dry]   one pass; --dry only prints what it would start, posts nothing
+  room-agentd status         paused or not, runs it is following, last log lines
+  room-agentd pause|resume   stop/start picking up NEW tasks (runs already going are still followed and reported)
+  room-agentd install        write and load ~/Library/LaunchAgents/co.rgnrk.room-agents.plist
+  room-agentd uninstall      unload and remove it
+
+Settings (environment): ROOM_AGENTD_POLL, ROOM_AGENTD_MAX, ROOM_AGENTD_WHO (default claude),
+ROOM_AGENTD_CWD (default ~/Developer/ragnarok, else ~/Developer), ROOM_AGENTD_ROOM (default bin/room next to this).
+State: ~/.ragnarok/room-agentd/ (state.json, log, paused, lock).
+"""
+import fcntl, json, os, subprocess, sys, time
+from datetime import datetime
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+HOME = os.path.expanduser("~")
+DIR = os.path.join(HOME, ".ragnarok", "room-agentd")
+STATE = os.path.join(DIR, "state.json")
+LOG = os.path.join(DIR, "log")
+PAUSED = os.path.join(DIR, "paused")
+AGENTS = os.path.join(HOME, ".ragnarok", "agents")
+BRIDGE_ON = os.path.join(HOME, ".conveyor", "room.on")
+ROOM = os.environ.get("ROOM_AGENTD_ROOM", os.path.join(HERE, "room"))
+AGENT = os.path.join(HERE, "ragnarok-agent")
+POLL = max(5, int(os.environ.get("ROOM_AGENTD_POLL", "20")))
+MAX = max(1, int(os.environ.get("ROOM_AGENTD_MAX", "2")))
+WHO = os.environ.get("ROOM_AGENTD_WHO", "claude")
+SKIP = ("no-agent:", "no-belt:", "hand:", "belt:")
+ROOM_IDS = {"claude", "argon", "grok", "codex"}   # identities bin/room can post as
+LABEL = "co.rgnrk.room-agents"
+PLIST = os.path.join(HOME, "Library", "LaunchAgents", LABEL + ".plist")
+
+
+def work_folder():
+    c = os.environ.get("ROOM_AGENTD_CWD")
+    if c:
+        return c
+    for c in (HOME + "/Developer/ragnarok", HOME + "/Developer"):
+        if os.path.isdir(c):
+            return c
+    return HOME
+
+
+RULES = """Rules for this task (from room-agentd, the shared room's work queue):
+- This came from {by} in the shared room on Alexus. Work only on what it asks.
+- Ask first: anything that spends money, deletes things, sends messages outside, or changes accounts gets a
+  `verify: HUMAN` line in your checklist so the owner approves it before it happens. Never do those on your own.
+- Your final DONE/LEFT lines are posted back to the room. Never put secrets in them.
+- Don't post to the room yourself about this task; room-agentd claims it and reports the result."""
+
+
+def log(msg):
+    os.makedirs(DIR, exist_ok=True)
+    line = f"{datetime.now():%Y-%m-%d %H:%M:%S} {msg}"
+    with open(LOG, "a") as f:
+        f.write(line + "\n")
+    if sys.stdout.isatty():
+        print(line)
+
+
+def load_state():
+    try:
+        with open(STATE) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_state(st):
+    os.makedirs(DIR, exist_ok=True)
+    tmp = STATE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(st, f, indent=1)
+    os.replace(tmp, STATE)
+
+
+def one(s, n):
+    s = " ".join(str(s or "").split())
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def room(args, as_who=None, timeout=60):
+    """bin/room on the Mac takes message text as arguments (it sends them over ssh as stdin itself)."""
+    cmd = [ROOM] + (["--as", as_who] if as_who else []) + args
+    p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+    if p.returncode != 0:
+        raise RuntimeError(one(p.stderr or p.stdout or f"exit {p.returncode}", 300))
+    return p.stdout
+
+
+def room_id(who):
+    who = "argon" if who == "antigravity" else (who or WHO)
+    return who if who in ROOM_IDS else "claude"
+
+
+def run_state(rid):
+    """The run's state.json; {} if it can't be read right now (mid-write); None only if the run folder is gone."""
+    d = os.path.join(AGENTS, rid)
+    if not os.path.isdir(d):
+        return None
+    try:
+        with open(os.path.join(d, "state.json")) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def done_line(final):
+    """The agent's 'DONE: ...' line, else the start of its final reply."""
+    for line in reversed(str(final or "").splitlines()):
+        if line.strip().upper().startswith("DONE:"):
+            return line.strip()[5:].strip()
+    return str(final or "")
+
+
+def follow(st, open_ids, dry):
+    """Post each run's ending once. Returns how many runs are still going."""
+    going = 0
+    for tid, t in list(st.items()):
+        if t.get("closed"):
+            continue
+        r = run_state(t["run"])
+        if r is None:
+            if not dry:
+                log(f"{tid}: run {t['run']} has no state file; no longer following it")
+                t["closed"] = "run missing"
+            continue
+        if not r or not r.get("ended") or r.get("status") in ("starting", "running"):
+            going += 1
+            continue
+        key = f"{t['run']}@{r['ended']}"
+        if t.get("posted") == key:
+            if tid not in open_ids and not dry:   # done in the room (by us or anyone): stop following
+                t["closed"] = "task done"
+            continue
+        who = room_id(r.get("who"))
+        verdict, status, rid = r.get("verdict"), r.get("status"), t["run"]
+        note = r.get("verdict_note") or ""
+        if status == "done" and verdict != "needs you":
+            kind = "done"
+            checks = [c for c in r.get("checks") or [] if c.get("ok") is not None]
+            proved = f", {sum(1 for c in checks if c['ok'])}/{len(checks)} proofs passed" if checks else ""
+            text = one(done_line(r.get("final")) or note or "finished", 500) + f" (agent run {rid}, {verdict or 'finished'}{proved})"
+        elif verdict == "needs you" or r.get("human_request"):
+            kind = "say"
+            text = (f"[task {tid}] needs the owner: {one(r.get('human_request') or note, 400).rstrip('.')}. "
+                    f"Answer in Heimdall's Agents tab (run {rid}) or: ragnarok-agent resume {rid} \"answer\"")
+        elif status == "stopped":
+            kind = "say"
+            text = f"[task {tid}] agent run {rid} was stopped. The task stays claimed; resume the run or mark the task done."
+        else:
+            kind = "say"
+            text = (f"[task {tid}] agent run {rid} hit a dead end: {one(note or r.get('final') or status, 400)} "
+                    f"Hand it off or resume it in Heimdall's Agents tab.")
+        if dry:
+            print(f"would post ({kind} as {who}): {text}")
+            continue
+        try:
+            room(["done", tid, text] if kind == "done" else ["say", text], as_who=who)
+            t["posted"] = key
+            t["outcome"] = verdict or status
+            log(f"{tid}: run {rid} ended ({verdict or status}); posted {kind} as {who}")
+        except Exception as e:
+            log(f"{tid}: couldn't post the result of run {rid} ({e}); will retry")
+    return going
+
+
+def start_run(task, dry):
+    """Start the run. A task with a domain (outcome/proof/walls) hands it to the runner as data: the runner labels the
+    proofs, refuses to call the run proved until each has a passing line, and enforces the walls it knows."""
+    prompt = f"Room task {task['id']} (posted by {task['by']}):\n\n{task['text']}\n\n" + RULES.format(by=task["by"])
+    if dry:
+        print(f"would start {WHO} for task {task['id']} ({task['by']}): {one(task['text'], 100)}"
+              + (f" [domain: {len(task.get('proof') or [])} proofs, {len(task.get('walls') or [])} walls]"
+                 if task.get("outcome") else ""))
+        return None
+    extra = []
+    if task.get("outcome"):
+        os.makedirs(os.path.join(DIR, "domains"), exist_ok=True)
+        df = os.path.join(DIR, "domains", task["id"] + ".json")
+        with open(df, "w") as f:
+            json.dump({k: task.get(k) for k in ("outcome", "proof", "walls")}, f)
+        extra = ["--domain", df]
+    p = subprocess.run([sys.executable, AGENT, "start", "--who", WHO, "--cwd", work_folder(),
+                        "--room-task", task["id"], "--name", one(f"room {task['id']}: {task['text']}", 60)] + extra
+                       + [prompt],
+                       capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+    rid = p.stdout.strip().splitlines()[-1] if p.returncode == 0 and p.stdout.strip() else None
+    if not rid:
+        raise RuntimeError(one(p.stderr or p.stdout or f"exit {p.returncode}", 300))
+    return rid
+
+
+def eligible(t, bridge_on):
+    text = (t.get("text") or "").lstrip().lower()
+    by = t.get("by") or ""
+    if t.get("state") != "open" or by.endswith("?") or not by:
+        return False
+    if any(text.startswith(p) for p in SKIP):
+        return False
+    if bridge_on and by == "owner":
+        return False
+    return True
+
+
+def one_pass(dry=False, last_err=[None]):
+    st = load_state()
+    try:
+        tasks = json.loads(room(["tasks", "--json"]))
+    except Exception as e:
+        if str(e) != last_err[0]:
+            log(f"can't read the room: {e}")
+            last_err[0] = str(e)
+        return
+    if last_err[0]:
+        log("room reachable again")
+        last_err[0] = None
+    open_ids = {t["id"] for t in tasks}
+    going = follow(st, open_ids, dry)
+    if not dry:
+        save_state(st)
+    if os.path.exists(PAUSED):
+        return
+    bridge_on = os.path.exists(BRIDGE_ON)
+    for t in sorted(tasks, key=lambda x: x.get("ts", "")):
+        if going >= MAX:
+            break
+        if t["id"] in st or not eligible(t, bridge_on):
+            continue
+        try:
+            rid = start_run(t, dry)
+        except Exception as e:
+            log(f"{t['id']}: couldn't start an agent: {e}")
+            continue
+        if dry:
+            going += 1
+            continue
+        walls = ((run_state(rid) or {}).get("domain") or {}).get("walls") or []
+        held = [w["text"] for w in walls if w.get("enforced")]
+        loose = [w["text"] for w in walls if not w.get("enforced")]
+        note = f"agent run {rid} picked this up (room-agentd)"
+        if walls:
+            note += (f"; walls enforced: {', '.join(held) or 'none'}"
+                     + (f"; not enforced (plain text): {', '.join(loose)}" if loose else ""))
+        try:
+            room(["claim", t["id"], one(note, 600)], as_who=room_id(WHO))
+        except Exception as e:
+            subprocess.run([sys.executable, AGENT, "stop", rid], capture_output=True, timeout=30)
+            log(f"{t['id']}: couldn't claim it ({e}); stopped run {rid}")
+            continue
+        st[t["id"]] = {"run": rid, "who": WHO, "text": one(t.get("text"), 200), "by": t["by"], "started": time.time()}
+        save_state(st)
+        going += 1
+        log(f"{t['id']}: started {WHO} run {rid} and claimed it ({one(t.get('text'), 80)})")
+
+
+def service():
+    os.makedirs(DIR, exist_ok=True)
+    lock = open(os.path.join(DIR, "lock"), "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit("room-agentd: already running")
+    log(f"started (pid {os.getpid()}, every {POLL}s, up to {MAX} runs, as {WHO}, in {work_folder()})")
+    while True:
+        try:
+            one_pass()
+        except Exception as e:   # one bad pass must not kill the service
+            log(f"pass failed: {type(e).__name__}: {e}")
+        time.sleep(POLL)
+
+
+def status():
+    print("paused (not picking up new tasks)" if os.path.exists(PAUSED) else "picking up new tasks")
+    print("conveyor bridge on: the owner's tasks are left to it" if os.path.exists(BRIDGE_ON) else "conveyor bridge off")
+    loaded = subprocess.run(["launchctl", "list", LABEL], capture_output=True).returncode == 0
+    print(f"launchd job {LABEL}: {'loaded' if loaded else 'not loaded'}")
+    for tid, t in load_state().items():
+        r = run_state(t["run"]) or {}
+        print(f"  {tid}  run {t['run']}  {r.get('status', '?')}/{r.get('verdict') or '-'}"
+              f"  {t.get('closed') or ('reported' if t.get('posted') else 'following')}  {one(t.get('text'), 60)}")
+    try:
+        print("".join(open(LOG).readlines()[-8:]), end="")
+    except OSError:
+        pass
+
+
+def install():
+    path = ":".join([HOME + "/.local/bin", HOME + "/.grok/bin", "/opt/homebrew/bin", "/usr/local/bin",
+                     "/usr/bin", "/bin", "/usr/sbin", "/sbin"])
+    os.makedirs(DIR, exist_ok=True)
+    plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>{LABEL}</string>
+  <key>ProgramArguments</key><array><string>/usr/bin/python3</string><string>{os.path.realpath(__file__)}</string><string>run</string></array>
+  <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>{path}</string>
+    <key>HOME</key><string>{HOME}</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>{DIR}/launchd.out</string>
+  <key>StandardErrorPath</key><string>{DIR}/launchd.out</string>
+</dict></plist>
+"""
+    uid = os.getuid()
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{LABEL}"], capture_output=True)
+    with open(PLIST, "w") as f:
+        f.write(plist)
+    p = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", PLIST], capture_output=True, text=True)
+    if p.returncode != 0:
+        sys.exit(f"room-agentd: launchctl bootstrap failed: {p.stderr.strip()}")
+    print(f"installed and started {LABEL} ({PLIST})")
+
+
+def uninstall():
+    subprocess.run(["launchctl", "bootout", f"gui/{os.getuid()}/{LABEL}"], capture_output=True)
+    if os.path.exists(PLIST):
+        os.remove(PLIST)
+    print(f"removed {LABEL}")
+
+
+def main(argv):
+    cmd = argv[0] if argv else "help"
+    if cmd == "run":
+        service()
+    elif cmd == "once":
+        one_pass(dry="--dry" in argv)
+    elif cmd == "status":
+        status()
+    elif cmd == "pause":
+        os.makedirs(DIR, exist_ok=True); open(PAUSED, "w").close(); print("paused: no new tasks will be picked up")
+    elif cmd == "resume":
+        if os.path.exists(PAUSED):
+            os.remove(PAUSED)
+        print("picking up new tasks again")
+    elif cmd == "install":
+        install()
+    elif cmd == "uninstall":
+        uninstall()
+    else:
+        print(__doc__)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

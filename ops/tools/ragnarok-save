@@ -1,0 +1,395 @@
+#!/usr/bin/env python3
+"""RAGNAROK /save — transcript capture to NocoDB, with redaction IN THE PATH.
+
+WHY THIS EXISTS
+---------------
+Save v1.1 (Yggdrasil Config) says "redact credentials before persisting". That was
+prose, and prose needs a reader: every capture assembled its own curl by hand and
+redacted only if whoever was driving remembered to look. On 2026-09-01 the first
+run of the newly-unblocked path leaked the NocoDB token into the session transcript
+it was about to upload — the model had interpolated it into a shell variable, the
+command was logged, and the upload was cleaned only because someone happened to
+grep for it. Prose rules need a reader; path rules enforce themselves
+(Memories recR2JjTLAF00Hn14).
+
+Two things are therefore structural here, not optional:
+
+  1. THIS SCRIPT READS THE CREDENTIALS ITSELF. No caller ever holds them, so there
+     is no shell variable to interpolate and nothing for the transcript to capture.
+     That is the "close the path first" half of Reminders recmyTF0QUOlNNaSA — the
+     leak route is shut, rather than cleaned up after.
+  2. REDACTION RUNS ON EVERY UPLOAD and cannot be skipped by forgetting. It replaces
+     the live secrets it can read by exact value, then sweeps generic credential
+     shapes for the ones it cannot know about.
+
+It NEVER prints a secret, and it never rewrites the local transcript — the harness
+owns that file. It reports what it found there instead, so a leak is visible.
+
+USAGE
+    ragnarok-save                          # newest transcript for $PWD's project
+    ragnarok-save --label "short title"    # sets the Session Label
+    ragnarok-save --dry-run                # redact + chunk + report, POST nothing
+    ragnarok-save --transcript FILE
+
+Exit 0 = uploaded (or dry run clean). Nonzero = nothing was persisted; the caller
+must report SAVE UNAVAILABLE / SAVE PARTIAL and must NOT claim a capture.
+"""
+
+import argparse, datetime, json, os, re, subprocess, sys, tempfile
+
+BASE_URL = "https://nocodb.example.com"
+FALLBACK_URL = "http://localhost:8090"
+TABLE = "miq2yan0tlsfhnm"
+CHUNK = 95_000                      # NocoDB LongText caps at 100k; leave headroom
+AIRTABLE_BASE = os.environ.get("AIRTABLE_BASE") or (lambda p: next((l.split("=", 1)[1].strip().strip("\"'") for l in (open(p).read().splitlines() if os.path.exists(p) else []) if l.strip().startswith("AIRTABLE_BASE=")), ""))(os.path.expanduser("~/.ragnarok/local.conf"))  # ~/.ragnarok/local.conf
+CONFIG_TABLE = "tblPbTiO6q9GHU28i"
+NOCODB_TOKEN_REC = "recEChN3ZlpWLLHvu"      # Config -> "NocoDB token"
+BRIDGE_KEY_REC = "recaRokVH19liX3fO"        # Config -> "bridge-key"
+MIN_SECRET_LEN = 16                 # below this, exact-match redaction is unsafe
+
+
+def die(msg, code=1):
+    print(f"ragnarok-save: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+# --------------------------------------------------------------------------
+# Credentials. Read here and nowhere else. Never printed, never argv'd — curl
+# gets them through a 0600 --config file, because argv is visible in `ps`.
+# --------------------------------------------------------------------------
+
+def env_value(path, key):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if line.startswith(f"{key}="):
+                    return line.split("=", 1)[1].strip().strip("'\"")
+    except OSError:
+        pass
+    return None
+
+
+def curl(args, token, out_path):
+    """Run curl with the token supplied out-of-band. Returns (http_code, body)."""
+    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".curlrc") as cfg:
+        os.chmod(cfg.name, 0o600)
+        cfg.write(f'header = "xc-token: {token}"\n')
+        cfg_path = cfg.name
+    try:
+        r = subprocess.run(
+            ["curl", "-sS", "--config", cfg_path, "-o", out_path, "-w", "%{http_code}"] + args,
+            capture_output=True, text=True, timeout=120)
+        return r.stdout.strip(), r.stderr.strip()
+    finally:
+        os.unlink(cfg_path)
+
+
+def airtable_get(pat, table, rec):
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE}/{table}/{rec}"
+    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".curlrc") as cfg:
+        os.chmod(cfg.name, 0o600)
+        cfg.write(f'header = "Authorization: Bearer {pat}"\n')
+        cfg_path = cfg.name
+    try:
+        r = subprocess.run(["curl", "-sS", "--config", cfg_path, url],
+                           capture_output=True, text=True, timeout=60)
+        return json.loads(r.stdout) if r.stdout.strip() else None
+    except (json.JSONDecodeError, subprocess.TimeoutExpired):
+        return None
+    finally:
+        os.unlink(cfg_path)
+
+
+def collect_secrets():
+    """Live secret VALUES to redact by exact match, plus the NocoDB token to auth with.
+
+    Every one of these files is git-ignored and named in ~/CLAUDE.md as a credential
+    location. Reading them here is the point: a transcript that quotes any of them
+    must not leave the box carrying the real value.
+    """
+    home = os.path.expanduser("~")
+    secrets, sources = set(), []
+
+    pat = env_value(f"{home}/repos/ALEXUS/packages/airtable-mcp/.env", "AIRTABLE_PAT")
+    if pat:
+        secrets.add(pat); sources.append("AIRTABLE_PAT")
+
+    for key in ("TELEGRAM_BOT_TOKEN", "ANTHROPIC_API_KEY", "AIRTABLE_PAT"):
+        v = env_value(f"{home}/repos/phone-grader-bot/.env", key)
+        if v:
+            secrets.add(v); sources.append(f"phone-grader-bot:{key}")
+    for key in ("DISPATCH_BOT_TOKEN", "ANTHROPIC_API_KEY"):
+        v = env_value(f"{home}/scripts/dispatch-overseer/.env", key)
+        if v:
+            secrets.add(v); sources.append(f"dispatch-overseer:{key}")
+    try:
+        k = open(f"{home}/repos/whisper-ingest/data/.ingest-key", encoding="utf-8").read().strip()
+        if k:
+            secrets.add(k); sources.append("whisper .ingest-key")
+    except OSError:
+        pass
+
+    # Per-client OAuth bearers for the MCP server. Added 2026-09-04 after a session
+    # printed one into its own transcript: the token IS the JSON key here, so a
+    # naive dump of this file exposes it. No PATTERNS entry can catch these --
+    # they are opaque and share no shape with a vendor key -- so exact-match off
+    # the live file is the only thing that works.
+    try:
+        toks = json.load(open(f"{home}/repos/ALEXUS/packages/airtable-mcp/.oauth-tokens.json",
+                              encoding="utf-8"))
+        for t in toks:
+            if t:
+                secrets.add(t); sources.append("mcp oauth token")
+    except (OSError, ValueError):
+        pass
+
+    # x.ai / Grok CLI. Added 2026-09-07 after a session dumped this entire file
+    # into its own transcript while checking whether grok was authed. Two values
+    # per issuer and they need different treatment: "key" is a JWT, which the
+    # shape sweep below also catches, while "refresh_token" is opaque base64url
+    # with no prefix and no delimiter -- it shares its shape with every other
+    # random string on the box, so exact-match off the live file is the ONLY
+    # thing that can catch it. The access token expires in hours; the refresh
+    # token does not expire on its own, which is why it is the one that matters.
+    try:
+        auth = json.load(open(f"{home}/.grok/auth.json", encoding="utf-8"))
+        for entry in auth.values():
+            if not isinstance(entry, dict):
+                continue
+            for field in ("key", "refresh_token", "access_token", "id_token"):
+                v = (entry.get(field) or "").strip()
+                if v:
+                    secrets.add(v); sources.append(f"grok auth:{field}")
+    except (OSError, ValueError):
+        pass
+
+    nocodb = None
+    if pat:
+        rec = airtable_get(pat, CONFIG_TABLE, NOCODB_TOKEN_REC)
+        if rec and "fields" in rec:
+            nocodb = (rec["fields"].get("Content") or "").strip()
+            if nocodb:
+                secrets.add(nocodb); sources.append("NocoDB token")
+
+        # The bridge's shared bearer. Same reasoning as the OAuth tokens, and the
+        # same source pattern as the NocoDB token directly above: it is a bare
+        # 64-hex string, so the only shape that would match it is \b[a-f0-9]{64}\b
+        # -- which also matches every sha256 in a transcript, including the
+        # fingerprints this system prints deliberately INSTEAD of secrets. Reading
+        # the live value is precise where a shape sweep would be noise.
+        rec = airtable_get(pat, CONFIG_TABLE, BRIDGE_KEY_REC)
+        if rec and "fields" in rec:
+            bk = (rec["fields"].get("Content") or "").strip()
+            if bk:
+                secrets.add(bk); sources.append("bridge-key")
+
+    return nocodb, {s for s in secrets if len(s) >= MIN_SECRET_LEN}, sources
+
+
+# --------------------------------------------------------------------------
+# Redaction. Exact values first (reliable), then shapes (catches what we cannot
+# know about — a key pasted in chat, a credential from a service not listed above).
+# --------------------------------------------------------------------------
+
+PATTERNS = [
+    ("nocodb-token",   re.compile(r"nc_pat_[A-Za-z0-9_\-]{20,}")),
+    # Real Airtable PATs are pat + a 14-char key id + "." + 64 hex. The floor is set
+    # below the real minimum on purpose: a shape sweep that only matches the exact
+    # current format stops working the day the format changes by one character.
+    ("airtable-pat",   re.compile(r"pat[A-Za-z0-9]{10,}\.[a-f0-9]{40,}")),
+    ("anthropic-key",  re.compile(r"sk-ant-[A-Za-z0-9\-_]{20,}")),
+    ("openai-key",     re.compile(r"sk-[A-Za-z0-9]{32,}")),
+    ("github-token",   re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}")),
+    ("google-key",     re.compile(r"AIza[A-Za-z0-9_\-]{30,}")),
+    # Google OAuth, not the API-key shape above: the gemini CLI writes both an
+    # access token (ya29.) and a refresh token (1//0) into ~/.gemini/oauth_creds.json,
+    # and neither matches AIza. Found 2026-09-04 when ragnarok-corpus walked that
+    # directory and both landed in the corpus.
+    ("google-oauth",   re.compile(r"ya29\.[A-Za-z0-9_\-]{20,}")),
+    ("google-refresh", re.compile(r"1//0[A-Za-z0-9_\-]{20,}")),
+    ("telegram-token", re.compile(r"\b\d{8,12}:[A-Za-z0-9_\-]{30,}")),
+    # Any JWT, whatever issued it. The grok CLI stores its OAuth access token as
+    # one and it matches nothing else in this list; so would an access token from
+    # any other OIDC service not enumerated above, which is the point of a shape.
+    # Three base64url segments starting "eyJ" (a literal '{"') is specific enough
+    # that a hit in a transcript is a credential rather than prose. The matching
+    # refresh token has NO shape and is caught by exact-match above instead.
+    ("jwt",            re.compile(r"\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}")),
+    ("slack-token",    re.compile(r"xox[abprs]-[A-Za-z0-9\-]{10,}")),
+    ("aws-key-id",     re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
+    ("private-key",    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----")),
+    ("bearer-header",  re.compile(r"(?i)(authorization:\s*bearer\s+)[A-Za-z0-9._\-]{20,}")),
+    ("xc-token-header", re.compile(r"(?i)(xc-token:\s*)[A-Za-z0-9._\-]{20,}")),
+]
+
+
+def redact(text, secrets):
+    """Returns (clean_text, {label: count}). Never returns a secret."""
+    found = {}
+    for value in sorted(secrets, key=len, reverse=True):
+        n = text.count(value)
+        if n:
+            text = text.replace(value, "[REDACTED-CREDENTIAL]")
+            found["known-secret"] = found.get("known-secret", 0) + n
+    for label, rx in PATTERNS:
+        if rx.groups:                       # header patterns keep their prefix
+            text, n = rx.subn(r"\1[REDACTED-CREDENTIAL]", text)
+        else:
+            text, n = rx.subn("[REDACTED-CREDENTIAL]", text)
+        if n:
+            found[label] = found.get(label, 0) + n
+    return text, found
+
+
+def resolve_transcript(explicit):
+    # An EMPTY --transcript is a caller whose own resolution failed and fell through.
+    # Falling back to the newest Claude transcript there uploads a different session
+    # under this one's label and reports success -- the 2026-09-04 defect exactly.
+    if explicit is not None and not explicit.strip():
+        die("--transcript was given but empty: the caller's resolution failed. "
+            "Refusing to fall back to the newest transcript.")
+    if explicit:
+        if not os.path.isfile(explicit):
+            die(f"transcript not found: {explicit}")
+        return explicit
+    # Claude Code stores per-project transcripts under a sanitized cwd name,
+    # and names each file after the SESSION ID.
+    proj = os.path.expanduser("~/.claude/projects/" + os.getcwd().replace("/", "-"))
+    if not os.path.isdir(proj):
+        die(f"no transcript directory for this cwd ({proj}) — pass --transcript")
+    files = sorted((os.path.join(proj, f) for f in os.listdir(proj)
+                    if f.endswith(".jsonl")), key=os.path.getmtime, reverse=True)
+    if not files:
+        die(f"no .jsonl transcripts in {proj}")
+
+    # IDENTITY, NOT RECENCY. The harness sets CLAUDE_CODE_SESSION_ID for every
+    # Claude Code session and the transcript is named <that id>.jsonl. It is
+    # exact, it costs one environment read, and nothing had ever used it.
+    #
+    # WHAT THIS REPLACES, and why it is not a regression fix but a first
+    # implementation: this function used to end `return max(files, key=mtime)`.
+    # Newest-file. That is not session identity (Memories recSK5oFKhXgJuaHY) and
+    # it silently captures whatever process last flushed a line -- a conveyor
+    # leg, a Codex session, or, since 2026-09-07, converse spawning `claude -p`
+    # every time the owner texts the bot. Measured 2026-09-07 16:42: three sessions
+    # had written to this project dir within 20 minutes.
+    #
+    # The 2026-09-04 fd-walk fix, which Reminder recU66BjzuHZ5rSj0 describes as
+    # living here, was only ever applied to ~/scripts/codex-session-transcript.
+    # This file never had it. grep for /proc in the pre-2026-09-07 version
+    # returns nothing.
+    sid = os.environ.get("CLAUDE_CODE_SESSION_ID", "").strip()
+    if sid:
+        by_id = os.path.join(proj, sid + ".jsonl")
+        if os.path.isfile(by_id):
+            return by_id
+        die(f"CLAUDE_CODE_SESSION_ID is {sid} but {by_id} does not exist. "
+            f"Refusing to guess. Pass --transcript if you know better.")
+
+    # NO MTIME FALLBACK. A caller that cannot be identified gets an ERROR, not
+    # a plausible file. Uploading the wrong conversation while printing SAVE
+    # COMPLETE is strictly worse than not saving: the failure is invisible and
+    # the real transcript is never captured. Reminder recU66BjzuHZ5rSj0 asked
+    # for exactly this -- "make a failed resolution a HARD FAILURE (exit
+    # nonzero, print candidates) instead of falling back to mtime."
+    listing = "\n".join(
+        f"    {os.path.basename(f)}  (modified {__import__('datetime').datetime.fromtimestamp(os.path.getmtime(f)):%H:%M:%S})"
+        for f in files[:8])
+    die("cannot identify which session is calling: CLAUDE_CODE_SESSION_ID is "
+        "not set and this script will not guess from file times.\n"
+        f"  {len(files)} transcript(s) in {proj}:\n{listing}\n"
+        "  Pass --transcript <path> with the one you mean.")
+
+
+def main():
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("--transcript")
+    ap.add_argument("--label", default="")
+    ap.add_argument("--title", default="")
+    ap.add_argument("--date", default=datetime.date.today().isoformat())
+    ap.add_argument("--dry-run", action="store_true")
+    a = ap.parse_args()
+
+    path = resolve_transcript(a.transcript)
+    raw = open(path, encoding="utf-8", errors="replace").read()
+    if not raw.strip():
+        die("transcript is empty — nothing to capture")
+
+    nocodb, secrets, sources = collect_secrets()
+    print(f"ragnarok-save: transcript {path} ({len(raw):,} chars)")
+    print(f"ragnarok-save: {len(secrets)} live secret(s) loaded for exact-match redaction "
+          f"[{', '.join(sources) or 'none'}]")
+
+    clean, found = redact(raw, secrets)
+    if found:
+        print("ragnarok-save: REDACTED before upload — " +
+              ", ".join(f"{k}x{v}" for k, v in sorted(found.items())))
+        print("ragnarok-save: NOTE the LOCAL transcript still contains these; this script "
+              "never rewrites it. Rotate anything that should not have been logged.")
+    else:
+        print("ragnarok-save: no credentials found in transcript")
+
+    for value in secrets:                   # the guarantee, asserted not assumed
+        if value in clean:
+            die("INTERNAL: a known secret survived redaction — refusing to upload", 3)
+
+    chunks = [clean[i:i + CHUNK] for i in range(0, len(clean), CHUNK)]
+    of = len(chunks)
+    label = a.label or os.path.basename(path).split(".")[0][:8]
+    print(f"ragnarok-save: {of} chunk(s) of <= {CHUNK:,} chars")
+
+    if a.dry_run:
+        print("ragnarok-save: DRY RUN — nothing posted")
+        return 0
+    if not nocodb:
+        die("no NocoDB token resolved from Config — SAVE UNAVAILABLE", 2)
+
+    base = BASE_URL
+    code, err = curl([f"{base}/api/v2/tables/{TABLE}/records?limit=1"], nocodb, os.devnull)
+    if code != "200":
+        print(f"ragnarok-save: {base} answered {code or 'nothing'} — trying {FALLBACK_URL}")
+        base = FALLBACK_URL
+        code, err = curl([f"{base}/api/v2/tables/{TABLE}/records?limit=1"], nocodb, os.devnull)
+        if code != "200":
+            die(f"no reachable NocoDB endpoint (last code {code or 'none'}) — SAVE UNAVAILABLE", 2)
+
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    ids = []
+    with tempfile.TemporaryDirectory() as tmp:
+        body_f, out_f = os.path.join(tmp, "body.json"), os.path.join(tmp, "out.json")
+        for i, c in enumerate(chunks, 1):
+            row = [{
+                "Session Label": f"Save: {a.date}: {label} [chunk {i}/{of}]",
+                "Session Date": a.date,
+                "Thread Title": a.title or label,
+                "Verbatim": c,
+                "Captured At": now,
+                "Source": "Claude Code (ragnarok-save file capture)",
+            }]
+            with open(body_f, "w", encoding="utf-8") as fh:
+                json.dump(row, fh)
+            # Body as a FILE, never stdin: --data-binary @- returns an empty,
+            # unparseable response and is the likeliest cause of the historical
+            # silent losses (Save v1.1, Reminders recW1MVY98l5iRFp4).
+            code, err = curl(["-X", "POST", f"{base}/api/v2/tables/{TABLE}/records",
+                              "-H", "Content-Type: application/json",
+                              "--data-binary", "@" + body_f], nocodb, out_f)
+            if code != "200":
+                die(f"chunk {i}/{of} failed http={code or 'none'} {err} — "
+                    f"SAVE PARTIAL, persisted Ids {ids or 'none'}", 4)
+            try:
+                ids.append(json.load(open(out_f))[0]["Id"])
+            except Exception:
+                # Unparseable == hard failure, never success. Save v1.1 is explicit.
+                die(f"chunk {i}/{of} returned an unparseable body — SAVE PARTIAL, "
+                    f"persisted Ids {ids or 'none'}", 4)
+            print(f"  chunk {i}/{of} -> Id {ids[-1]} ({len(c):,} chars)")
+
+    print(f"SAVE COMPLETE -- NocoDB {base} -- FULL -- Ids {ids[0]}-{ids[-1]} "
+          f"({of} chunk(s), {len(clean):,} chars)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

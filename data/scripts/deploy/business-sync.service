@@ -1,0 +1,11 @@
+[Unit]
+# Runs Alexus's own repo checkout of data/scripts/business-sync.py (no separate copy). Installed in ~/.config/systemd/user/ on Alexus.
+Description=Keep the two Business tables in sync (ygg-scratch <-> data), moved off the Mac 2026-11-08
+[Service]
+Type=oneshot
+UMask=0077
+Environment=RAGNAROK_DB_SSH=
+Environment="BSYNC_ACTOR=business-sync (ygg-scratch <-> data), systemd timer on Alexus (owner login)"
+ExecStart=/usr/bin/python3 -I %h/Developer/ragnarok/data/scripts/business-sync.py --apply
+StandardOutput=append:%h/.ragnarok/business-sync.log
+StandardError=append:%h/.ragnarok/business-sync.log

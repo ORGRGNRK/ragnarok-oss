@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""alexus-disk-watch: once a minute (LaunchAgent co.rgnrk.alexus-disk-watch), is Alexus's disk still answering?
+
+Alexus runs from an SSD on USB. Twice on 2026-11-12 the disk dropped: every write failed, nothing could start,
+and Alexus could not log it because logging is a write. What still worked was anything already in memory
+(Home Assistant, Intake). What failed first was OpenSSH: it starts a new process per connection, so it cuts
+the connection before saying hello. So, with no login and no key (1Password would prompt every minute):
+  ok         sshd says "SSH-2.0..."                             -> disk is serving new processes
+  disk-dead  no ssh hello, but Home Assistant :8123 answers    -> what the two drops looked like
+  down       neither answers                                   -> off, rebooting, or off the network
+Only CHANGES are logged, to ~/.ragnarok/alexus-disk-watch.log, plus a line every 6 hours so silence means
+the watcher stopped. Going bad pops a macOS notification. It reads nothing and changes nothing on Alexus.
+"""
+import datetime
+import json
+import socket
+import subprocess
+import urllib.request
+from pathlib import Path
+
+HOST = "alexus"
+LOG = Path.home() / ".ragnarok" / "alexus-disk-watch.log"
+STATE = Path.home() / ".ragnarok" / "alexus-disk-watch.state"
+HEARTBEAT = 6 * 3600
+
+
+def ssh_hello():
+    try:
+        with socket.create_connection((HOST, 22), timeout=8) as s:
+            s.settimeout(8)
+            return s.recv(64).startswith(b"SSH-")
+    except OSError:
+        return False
+
+
+def web_up():
+    try:
+        urllib.request.urlopen("http://%s:8123/" % HOST, timeout=8)
+        return True
+    except urllib.error.HTTPError:
+        return True
+    except OSError:
+        return False
+
+
+def main():
+    if ssh_hello():
+        state = "ok"
+    elif not ssh_hello() and web_up():  # one retry so a single dropped packet is not an alarm
+        state = "disk-dead"
+    else:
+        state = "ok" if ssh_hello() else "down"
+    now = datetime.datetime.now().astimezone()
+    try:
+        prev = json.loads(STATE.read_text())
+    except (OSError, ValueError):
+        prev = {"state": None, "since": None, "logged": 0}
+    changed = state != prev["state"]
+    beat = now.timestamp() - prev.get("logged", 0) >= HEARTBEAT
+    if changed or beat:
+        LOG.parent.mkdir(parents=True, exist_ok=True)
+        with LOG.open("a") as fh:
+            fh.write("%s %s%s\n" % (now.isoformat(timespec="seconds"), state,
+                                    "" if changed else " (still)"))
+        prev["logged"] = now.timestamp()
+    if changed:
+        prev["since"] = now.isoformat(timespec="seconds")
+        if state != "ok" and prev["state"] is not None:
+            msg = {"disk-dead": "Alexus disk stopped answering (ssh dead, Home Assistant up)",
+                   "down": "Alexus is not answering at all"}[state]
+            subprocess.run(["osascript", "-e", 'display notification "%s" with title "Alexus"' % msg],
+                           capture_output=True)
+    prev["state"] = state
+    STATE.write_text(json.dumps(prev))
+
+
+if __name__ == "__main__":
+    main()

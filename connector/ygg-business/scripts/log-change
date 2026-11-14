@@ -1,0 +1,6 @@
+#!/bin/sh
+# Append one receipt to the Mac receipts log (ygg_receipts.mac.receipts, hash-chained) by hand.
+#   scripts/log-change --actor "the owner" --cmd "rotated the NocoDB token" [--action Updated --ref /path] [--exit 0]
+# Other modes: scripts/log-change tail [N] | verify | flush
+case "${1-}" in tail|verify|flush|migrate) exec node "$(dirname "$0")/../hooks/mac-receipts/receipt.mjs" "$@";; esac
+exec node "$(dirname "$0")/../hooks/mac-receipts/receipt.mjs" log "$@"

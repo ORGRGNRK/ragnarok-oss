@@ -1,0 +1,114 @@
+#!/bin/bash
+# ragnarok-ai-log: scrub local diagnostics before they reach an agent.
+#   ragnarok-ai-log                                  list Ragnarok's own logs
+#   ragnarok-ai-log <log> [N]                        last N lines (default 80)
+#   ragnarok-ai-log <log> -g WORD                    lines containing WORD (last 80 matches)
+#   ragnarok-ai-log app <process> [duration]          macOS error/fault events (default 15m)
+#   ragnarok-ai-log file <path> [N]                   tail a known local app log file
+set -uo pipefail
+R="$HOME/.ragnarok"
+NAMES="shell shell-cmds receipts edits heal chat access app-errors"
+info() {  # name -> "file|description"
+  case "$1" in
+    shell)      echo "$R/heimdall-shell-output.log|what the Shell tab printed" ;;
+    shell-cmds) echo "$R/heimdall-shell.jsonl|Shell tab commands, folder, exit code" ;;
+    receipts)   echo "$R/terminal-receipts.jsonl|receipts: Room terminal, Hub actions, heal runs" ;;
+    edits)      echo "$R/heimdall-edits.jsonl|Ragnarok edits, installs, crashes, rollbacks" ;;
+    heal)       echo "$R/ragnarok-heal.jsonl|ragnarok-heal steps for other projects" ;;
+    chat)       echo "$R/heimdall-chat.jsonl|Alexus tab chat" ;;
+    access)     echo "$R/heimdall-access.jsonl|unlock/lock attempts" ;;
+    app-errors) echo "$R/ragnarok-app-errors.jsonl|scrubbed Ragnarok app errors" ;;
+    *) return 1 ;;
+  esac
+}
+BIN=""
+for candidate in \
+  "$HOME/Applications/Ragnarok.app/Contents/MacOS/Heimdall" \
+  "$HOME/Developer/ragnarok/app/heimdall/.build/release/Heimdall" \
+  "$HOME/Developer/heimdall/.build/release/Heimdall"; do
+  if [ -x "$candidate" ] && grep -aqF 'AGE-(?:SECRET-KEY' "$candidate" 2>/dev/null; then BIN="$candidate"; break; fi
+done
+[ -n "$BIN" ] || { echo "ragnarok-ai-log: no Ragnarok build with the scrubber; refusing to print logs" >&2; exit 3; }
+scrub() { HEIMDALL_NO_HANDOFF=1 /usr/bin/perl -e 'alarm 60; exec @ARGV' "$BIN" --scrub; }
+
+if [ "${1:-}" = app ]; then
+  process="${2:-}"
+  [ -n "$process" ] && [ "$process" != -* ] || { echo "usage: ragnarok-ai-log app <process-name> [duration, e.g. 15m]" >&2; exit 2; }
+  [[ "$process" =~ ^[A-Za-z0-9._\ -]+$ ]] || { echo "ragnarok-ai-log: process name may contain only letters, numbers, spaces, dot, underscore, or hyphen" >&2; exit 2; }
+  duration="${3:-15m}"
+  [[ "$duration" =~ ^([1-9][0-9]{0,3})(s|m|h|d)$ ]] || { echo "ragnarok-ai-log: duration must look like 30m or 2h" >&2; exit 2; }
+  amount="${BASH_REMATCH[1]}"; unit="${BASH_REMATCH[2]}"
+  case "$unit" in s) seconds=$amount ;; m) seconds=$((amount * 60)) ;; h) seconds=$((amount * 3600)) ;; d) seconds=$((amount * 86400)) ;; esac
+  [ "$seconds" -le 604800 ] || { echo "ragnarok-ai-log: duration is limited to 7 days" >&2; exit 2; }
+  predicate="process == \"$process\" AND (messageType == error OR messageType == fault)"
+  /usr/bin/log show --style compact --last "$duration" --predicate "$predicate" 2>&1 | scrub
+  exit $?
+fi
+
+if [ "${1:-}" = file ]; then
+  raw="${2:-}"
+  [ -n "$raw" ] || { echo "usage: ragnarok-ai-log file <path> [N]" >&2; exit 2; }
+  lines="${3:-80}"; match=""
+  if [ "$lines" = -g ]; then match="${4:-}"; lines=80; fi
+  [[ "$lines" =~ ^[0-9]+$ ]] && [ "$lines" -gt 0 ] || { echo "ragnarok-ai-log: line count must be a positive integer" >&2; exit 2; }
+  file="$(python3 - "$raw" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1]).expanduser().resolve()
+if not p.is_file():
+    sys.exit(1)
+parts = {part.lower() for part in p.parts}
+log_name = p.name.lower().endswith((".log", ".jsonl", ".ndjson"))
+if not log_name and not (parts & {"log", "logs"}):
+    sys.exit(2)
+print(p)
+PY
+)" || { echo "ragnarok-ai-log: provide an existing log file (a .log/.jsonl/.ndjson file or a file under a Log(s) folder)" >&2; exit 1; }
+  if [ -n "$match" ]; then tail -n "$lines" "$file" | grep -F -- "$match" | tail -n 80 | scrub
+  else tail -n "$lines" "$file" | scrub; fi
+  exit $?
+fi
+
+if [ "${1:-}" = doctor ]; then
+  db="$R/doctor/queue.sqlite3"
+  [ -f "$db" ] || { echo "ragnarok-ai-log: $db doesn't exist yet" >&2; exit 1; }
+  limit="${2:-40}"
+  [[ "$limit" =~ ^[0-9]+$ ]] && [ "$limit" -gt 0 ] || limit=40
+  python3 - "$db" "$limit" <<'PY' | scrub
+import json, pathlib, sqlite3, sys
+db_path = pathlib.Path(sys.argv[1])
+limit = int(sys.argv[2])
+conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+conn.row_factory = sqlite3.Row
+meta = {r["key"]: json.loads(r["value"]) for r in conn.execute("SELECT key, value FROM meta")}
+incidents = [dict(r) for r in conn.execute(
+    "SELECT id, severity, status, occurrences, attempts, first_seen, last_seen, note, branch, commit_id, event "
+    "FROM incidents ORDER BY priority ASC, last_seen DESC LIMIT ?", (limit,))]
+for inc in incidents:
+    try: inc["event"] = json.loads(inc.get("event") or "{}")
+    except Exception: pass
+    diag_file = db_path.parent / "incidents" / inc["id"] / "diagnosis.json"
+    if diag_file.is_file():
+        try: inc["diagnosis"] = json.loads(diag_file.read_text())
+        except Exception: pass
+history = [dict(r) for r in conn.execute(
+    "SELECT ts, incident, status, note FROM history ORDER BY ts DESC LIMIT ?", (limit,))]
+print(json.dumps({"meta": meta, "incidents": incidents, "history": history}, indent=2))
+PY
+  exit $?
+fi
+
+if [ $# -eq 0 ]; then
+  for k in $NAMES; do
+    IFS='|' read -r f d <<< "$(info "$k")"
+    printf '%-11s %-55s %s\n' "$k" "$d" "$([ -f "$f" ] && echo "$(wc -l < "$f" | tr -d ' ') lines" || echo missing)"
+  done
+  printf '%-11s %-55s %s\n' "doctor" "ragnarok-doctor status, incidents, and repair history" "$([ -f "$R/doctor/queue.sqlite3" ] && echo "ready" || echo missing)"
+  printf '%-11s %s\n' "app" "macOS Unified Log errors/faults by process name"
+  printf '%-11s %s\n' "file" "explicit local app log file (scrubbed)"
+  exit 0
+fi
+info "$1" >/dev/null || { echo "ragnarok-ai-log: no log '$1' (run with no arguments for the list)" >&2; exit 2; }
+IFS='|' read -r f _ <<< "$(info "$1")"
+[ -f "$f" ] || { echo "ragnarok-ai-log: $f doesn't exist yet" >&2; exit 1; }
+if [ "${2:-}" = "-g" ]; then grep -F -- "${3:-}" "$f" | tail -n 80 | scrub
+else tail -n "${2:-80}" "$f" | scrub; fi

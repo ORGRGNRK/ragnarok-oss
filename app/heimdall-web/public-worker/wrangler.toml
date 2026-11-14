@@ -1,0 +1,15 @@
+# proved.rgnrk.co: one public page, the agent run the owner chose to show. No secrets in this file;
+# PUBLISH_TOKEN is a Worker secret (the same value is in ~/.ragnarok/heimdall-web/proved-publish-token on Alexus).
+name = "proved-page"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = false
+preview_urls = false
+routes = [{ pattern = "proved.rgnrk.co", custom_domain = true }]
+
+[[kv_namespaces]]
+binding = "PAGES"
+id = "555f1baa78164bc1ae23a21e72af0de3"
+
+# Deploy (from this folder, wrangler comes from proved-site's install):
+#   npx --prefix ~/Developer/proved-site wrangler deploy

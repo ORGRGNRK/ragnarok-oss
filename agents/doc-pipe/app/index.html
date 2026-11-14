@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ragnarok pipe</title>
+<style>
+ body{font:16px -apple-system,system-ui,sans-serif;margin:0;padding:16px;max-width:760px;margin:auto;background:#f6f6f4;color:#222}
+ h1{font-size:22px;margin:4px 0 12px} h2{font-size:18px;margin:20px 0 8px}
+ .card{background:#fff;border-radius:12px;padding:14px;box-shadow:0 1px 3px #0002;margin-bottom:14px}
+ .btns{display:flex;gap:10px;flex-wrap:wrap} label.btn,button{flex:1;min-width:140px;text-align:center;padding:14px;border-radius:10px;border:0;background:#1d4ed8;color:#fff;font-size:17px;cursor:pointer}
+ label.btn.alt{background:#475569} button.ok{background:#15803d} button.edit{background:#7c3aed} button.plain{background:#64748b} input[type=file]{display:none}
+ pre{white-space:pre-wrap;word-break:break-word;background:#0f172a;color:#e2e8f0;padding:10px;border-radius:8px;font-size:13px;max-height:420px;overflow:auto}
+ textarea{width:100%;min-height:260px;font:13px ui-monospace,monospace;box-sizing:border-box}
+ .badge{display:inline-block;padding:3px 9px;border-radius:99px;font-size:13px;font-weight:600;color:#fff}
+ .ok{background:#15803d}.needs_review{background:#d97706}.processing{background:#2563eb}.failed{background:#b91c1c}.approved{background:#0f766e}
+ table{width:100%;border-collapse:collapse;font-size:14px} td,th{padding:7px 4px;border-bottom:1px solid #e5e5e5;text-align:left}
+ tr.row{cursor:pointer} img.thumb{max-width:100%;max-height:320px;border-radius:8px;display:block;margin:8px 0}
+ .muted{color:#666;font-size:14px} ul.err{color:#b45309;margin:6px 0;padding-left:20px}
+ .form{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0} .form label{font-size:13px;color:#555;display:flex;flex-direction:column;gap:3px}
+ .form input,.form select{font-size:16px;padding:8px;border:1px solid #ccc;border-radius:8px} .form .wide{grid-column:1/-1}
+ ul.batch{list-style:none;padding:0;margin:6px 0} ul.batch li{padding:6px 0;border-bottom:1px solid #eee;font-size:14px} ul.batch a{color:#1d4ed8;cursor:pointer}
+ .bad{color:#b91c1c}
+ .flag{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;font-weight:600;margin-left:4px;background:#fef3c7;color:#92400e}
+ .flag.dup{background:#ffedd5;color:#9a3412} .flag.gone{background:#e5e7eb;color:#4b5563} tr.excluded td{opacity:.5}
+ .warnbox{background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:10px;margin:10px 0} .warnbox.grey{background:#f3f4f6;border-color:#d1d5db}
+ .warnbox .btns button{padding:9px;font-size:15px;min-width:110px}
+</style></head><body>
+<h1>📄 Ragnarok pipe</h1>
+<div class="card">
+ <div class="btns">
+  <label class="btn">📷 Take photo<input id="cam" type="file" accept="image/*" capture="environment"></label>
+  <label class="btn alt">🖼️ Choose photos<input id="pick" type="file" accept="image/*" multiple></label>
+ </div>
+ <p id="msg" class="muted">Pick one photo or many at once (in the picker, tap several, then Add / Open). Photos are read by the local Qwen model on Alexus. Nothing leaves your network. Expect about a minute per photo.</p>
+ <div id="batch" style="display:none"></div>
+</div>
+<div id="result" class="card" style="display:none"></div>
+<h2>Past documents</h2>
+<div class="card"><table><thead><tr><th>#</th><th>Status</th><th>Vendor</th><th>Date</th><th>Total</th></tr></thead><tbody id="list"></tbody></table>
+ <p id="totals" class="muted"></p><p class="muted"><a href="api/export.csv">⬇︎ Download all as a spreadsheet (CSV)</a> — receipts marked as duplicates are left out.</p></div>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const BATCH = 5;   // photos per request when sending many
+let polling = null, listTimer = null, batchResults = [];
+async function api(url, opts) { const r = await fetch(url, opts); if (!r.ok) throw new Error(r.status + ' ' + await r.text()); return r.json(); }
+async function upload(input) {
+  const files = Array.from(input.files || []); input.value = '';
+  if (!files.length) return;
+  if (files.length === 1) return uploadOne(files[0]);
+  return uploadMany(files);
+}
+async function uploadOne(f) {
+  $('#msg').textContent = 'Uploading ' + f.name + '…';
+  const fd = new FormData(); fd.append('file', f);
+  try { const r = await api('api/upload', {method: 'POST', body: fd});
+        $('#msg').textContent = r.duplicate ? 'Already uploaded before: showing document #' + r.id : 'Uploaded. Reading it now…';
+        show(r.id); refresh(); }
+  catch (e) { $('#msg').textContent = 'Upload failed: ' + e.message; }
+}
+async function uploadMany(files) {
+  batchResults = []; drawBatch();
+  for (let i = 0; i < files.length; i += BATCH) {
+    const part = files.slice(i, i + BATCH);
+    $('#msg').textContent = `Uploading ${i + 1}–${i + part.length} of ${files.length} photos…`;
+    const fd = new FormData(); part.forEach(f => fd.append('files', f));
+    try { const r = await api('api/upload-many', {method: 'POST', body: fd}); batchResults.push(...r.results); }
+    catch (e) { part.forEach(f => batchResults.push({filename: f.name, ok: false, error: e.message})); }
+    drawBatch(); refresh();
+  }
+  const ok = batchResults.filter(r => r.ok && !r.duplicate).length, dup = batchResults.filter(r => r.duplicate).length,
+        bad = batchResults.filter(r => !r.ok).length;
+  $('#msg').textContent = `Done: ${ok} new` + (dup ? `, ${dup} already uploaded` : '') + (bad ? `, ${bad} failed` : '') +
+    '. The model reads them one at a time (about a minute each); tap one to see it.';
+}
+function drawBatch() {
+  const box = $('#batch'); box.style.display = batchResults.length ? 'block' : 'none';
+  box.innerHTML = '<ul class="batch">' + batchResults.map(r => r.ok
+    ? `<li>✅ ${esc(r.filename)} → <a data-id="${r.id}">document #${r.id}</a>${r.duplicate ? ' <span class="muted">(already uploaded before)</span>' : ''}</li>`
+    : `<li class="bad">❌ ${esc(r.filename)}: ${esc(r.error)}</li>`).join('') + '</ul>';
+  box.querySelectorAll('a[data-id]').forEach(a => a.onclick = () => show(a.dataset.id));
+}
+$('#cam').onchange = e => upload(e.target); $('#pick').onchange = e => upload(e.target);
+const num = v => v === '' || v == null ? null : v;
+function editForm(d) {
+  const types = ['receipt', 'invoice', 'bill', 'statement', 'letter', 'other'];
+  const t = d.doc_type || '';
+  return `<div id="editbox" style="display:none"><h2>Edit this document</h2><div class="form">
+    <label class="wide">Vendor / sender<input id="f_vendor" value="${esc(d.vendor)}"></label>
+    <label>Type<select id="f_type">${[...new Set([t, ...types])].map(x => `<option ${x === t ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
+    <label>Date<input id="f_date" type="date" value="${esc(d.doc_date)}"></label>
+    <label>Subtotal<input id="f_sub" inputmode="decimal" value="${esc(d.subtotal)}"></label>
+    <label>Tax<input id="f_tax" inputmode="decimal" value="${esc(d.tax)}"></label>
+    <label>Total<input id="f_total" inputmode="decimal" value="${esc(d.total)}"></label>
+    <label>Currency<input id="f_cur" value="${esc(d.currency || 'USD')}" maxlength="3"></label>
+   </div><div class="btns"><button class="ok" id="savefix">💾 Save changes</button><button class="plain" id="cancelfix">Cancel</button></div>
+   <p class="muted">Saving marks it approved and counts as checking the date. Line items and the transcribed text are kept as they are.</p></div>`;
+}
+async function show(id) {
+  clearTimeout(polling);
+  const d = await api('api/documents/' + id);
+  const box = $('#result'); box.style.display = 'block';
+  let h = `<b>Document #${d.id}</b> <span class="badge ${d.status}">${d.status.replace('_',' ')}</span>
+   <div class="muted">${esc(d.filename)} · ${d.latency_ms ? (d.latency_ms/1000).toFixed(1)+' s' : ''} · ${esc(d.model)}${d.model_confidence!=null?' · confidence '+d.model_confidence:''}</div>
+   <img class="thumb" src="api/documents/${d.id}/image">`;
+  if (d.status === 'processing') { h += '<p>⏳ The model is reading this photo… (you can edit it once it\'s done)</p>'; polling = setTimeout(() => show(id), 3000); }
+  else {
+    h += flagBoxes(d);
+    if (d.errors && d.errors.length) h += '<b>Needs a look because:</b><ul class="err">' + d.errors.map(e => '<li>'+esc(e)+'</li>').join('') + '</ul>';
+    h += `<p><b>${esc(d.vendor) || '?'}</b> · ${esc(d.doc_type)} · ${esc(d.doc_date)} · <b>${esc(d.total)} ${esc(d.currency)}</b></p>`;
+    const inv = (d.extracted_json && typeof d.extracted_json === 'object') ? d.extracted_json : {};
+    const invBits = [['Invoice #', inv.invoice_number], ['Bill to', inv.bill_to], ['Due', inv.due_date], ['Terms', inv.payment_terms], ['Subtotal', d.subtotal], ['Discount', inv.discount]]
+      .filter(([, v]) => d.doc_type === 'invoice' && v !== null && v !== undefined && v !== '').map(([k, v]) => `${k}: ${esc(v)}`);
+    if (invBits.length) h += `<p>${invBits.join(' · ')}</p>`;
+    if (d.line_items.length) h += '<table><tr><th>Item</th><th>Qty</th><th>Price</th><th>Amount</th></tr>' +
+      d.line_items.map(i => `<tr><td>${esc(i.description)}</td><td>${esc(i.qty)}</td><td>${esc(i.unit_price)}</td><td>${esc(i.amount)}</td></tr>`).join('') + '</table>';
+    h += '<div class="btns" style="margin-top:10px"><button class="edit" id="editbtn">✏️ Edit</button><button class="ok" id="approve">✅ Approve as is</button><button id="again">🔁 Read again</button></div>';
+    h += editForm(d);
+    h += '<details style="margin-top:10px"><summary class="muted">Advanced: edit the raw JSON</summary><textarea id="edit"></textarea><div class="btns" style="margin-top:8px"><button class="ok" id="approvejson">✅ Approve this JSON</button></div></details>';
+    h += '<details><summary class="muted">Processing log</summary><pre>' + esc(d.log.map(l => `#${l.seq} ${l.created_at} ${l.actor} ${l.step} ${l.ok?'ok':'FAIL'} ${l.result}`).join('\n')) + '</pre></details>';
+  }
+  box.innerHTML = h;
+  if (d.status !== 'processing') {
+    $('#edit').value = JSON.stringify(d.extracted_json, null, 2);
+    const send = async fields => {
+      const extra = fields && fields.date_confirmed ? {date_confirmed: true} : {};
+      if (fields) delete fields.date_confirmed;
+      try { await api('api/documents/' + d.id + '/review', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({fields, ...extra})}); }
+      catch (e) { alert('Saving failed: ' + e.message); return; }
+      show(d.id); refresh();
+    };
+    $('#editbtn').onclick = () => { $('#editbox').style.display = 'block'; $('#f_vendor').focus(); };
+    $('#cancelfix').onclick = () => { $('#editbox').style.display = 'none'; };
+    $('#savefix').onclick = () => {
+      const base = (d.extracted_json && typeof d.extracted_json === 'object' && !d.extracted_json.unparsed_reply) ? d.extracted_json : {};
+      send({...base, vendor: $('#f_vendor').value.trim() || null, document_type: $('#f_type').value || null,
+            date: $('#f_date').value || null, subtotal: num($('#f_sub').value.trim()), tax: num($('#f_tax').value.trim()),
+            total: num($('#f_total').value.trim()), currency: $('#f_cur').value.trim().toUpperCase() || null,
+            language: d.language ?? base.language ?? null, raw_text: d.raw_text ?? base.raw_text ?? '',
+            line_items: d.line_items.map(i => ({description: i.description, qty: i.qty, unit_price: i.unit_price, amount: i.amount})),
+            model_confidence: 1.0, date_confirmed: true});
+    };
+    $('#approve').onclick = () => send(null);
+    wireFlags(d);
+    $('#approvejson').onclick = () => {
+      let fields; try { fields = JSON.parse($('#edit').value); } catch (e) { alert('That JSON has a typo: ' + e.message); return; }
+      send(fields);
+    };
+    $('#again').onclick = async () => { await api('api/documents/' + d.id + '/reprocess', {method: 'POST'}); show(d.id); };
+  } else refresh();
+  box.scrollIntoView({behavior: 'smooth'});
+}
+async function refresh() {
+  const rows = await api('api/documents');
+  $('#list').innerHTML = rows.map(r => `<tr class="row${r.marked_duplicate_of ? ' excluded' : ''}" data-id="${r.id}"><td>${r.id}</td><td><span class="badge ${r.status}">${r.status.replace('_',' ')}</span>${listFlags(r)}</td><td>${esc(r.vendor)}</td><td>${esc(r.doc_date)}</td><td>${esc(r.total)} ${esc(r.currency)}</td></tr>`).join('') || '<tr><td colspan=5 class="muted">Nothing yet</td></tr>';
+  const sums = {}; let left = 0;
+  rows.forEach(r => { if (r.marked_duplicate_of) { left++; return; } if (r.total != null && r.status !== 'failed') sums[r.currency || '?'] = (sums[r.currency || '?'] || 0) + Number(r.total); });
+  $('#totals').textContent = Object.keys(sums).length ? 'Total of these receipts: ' + Object.entries(sums).map(([c, v]) => v.toFixed(2) + ' ' + c).join(' + ') +
+    (left ? ` (${left} marked duplicate${left > 1 ? 's' : ''} not counted)` : '') : '';
+  document.querySelectorAll('tr.row').forEach(tr => tr.onclick = () => show(tr.dataset.id));
+  clearTimeout(listTimer);   // keep the list fresh while the model is still reading something
+  if (rows.some(r => r.status === 'processing')) listTimer = setTimeout(refresh, 5000);
+}
+function listFlags(r) {
+  let h = '';
+  if (r.marked_duplicate_of) h += `<span class="flag gone">duplicate of #${r.marked_duplicate_of}</span>`;
+  else if (r.possible_duplicate_of) h += `<span class="flag dup">⚠︎ possible duplicate of #${r.possible_duplicate_of}</span>`;
+  if (r.date_flags && r.date_flags.length) h += '<span class="flag">📅 check date</span>';
+  return h;
+}
+function flagBoxes(d) {
+  let h = '';
+  if (d.marked_duplicate_of) h += `<div class="warnbox grey">🗂️ Marked as a duplicate of <a href="#" data-open="${d.marked_duplicate_of}">#${d.marked_duplicate_of}</a>. It's kept, but not counted in totals or the export.
+     <div class="btns" style="margin-top:8px"><button class="plain" id="dupundo">Undo: count it again</button></div></div>`;
+  else if (d.possible_duplicate_of) h += `<div class="warnbox">⚠︎ <b>Possible duplicate of <a href="#" data-open="${d.possible_duplicate_of}">#${d.possible_duplicate_of}</a></b> (${esc(d.duplicate_reason)}).
+     <div class="btns" style="margin-top:8px"><button class="ok" id="dupno">Not a duplicate</button><button id="dupyes">Yes, it's a duplicate</button></div></div>`;
+  if (d.date_flags && d.date_flags.length) h += `<div class="warnbox">📅 <b>Check the date</b> (${esc(d.doc_date) || 'none'}):<ul class="err">` +
+     d.date_flags.map(e => '<li>' + esc(e) + '</li>').join('') + `</ul><div class="btns"><button class="ok" id="dateok">The date is right</button><button class="edit" id="datefix">✏️ Fix the date</button></div></div>`;
+  return h;
+}
+function wireFlags(d) {
+  const act = async body => { try { await api('api/documents/' + d.id + '/duplicate', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}); } catch (e) { alert(e.message); } show(d.id); refresh(); };
+  document.querySelectorAll('#result a[data-open]').forEach(a => a.onclick = e => { e.preventDefault(); show(a.dataset.open); });
+  if ($('#dupno')) $('#dupno').onclick = () => act({action: 'dismiss', of: d.possible_duplicate_of});
+  if ($('#dupyes')) $('#dupyes').onclick = () => act({action: 'mark', of: d.possible_duplicate_of});
+  if ($('#dupundo')) $('#dupundo').onclick = () => act({action: 'unmark'});
+  if ($('#dateok')) $('#dateok').onclick = async () => { try { await api('api/documents/' + d.id + '/date-ok', {method: 'POST'}); } catch (e) { alert(e.message); } show(d.id); refresh(); };
+  if ($('#datefix')) $('#datefix').onclick = () => { $('#editbox').style.display = 'block'; $('#f_date').focus(); };
+}
+refresh();
+</script></body></html>

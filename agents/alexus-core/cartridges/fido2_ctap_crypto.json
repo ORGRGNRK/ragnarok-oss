@@ -1,0 +1,15 @@
+{
+  "id": "expert-fido2-ctap-crypto",
+  "domain": "FIDO2, CTAP2 & Apple Secure Enclave Cryptographic Protocols",
+  "description": "Specialized expert in FIDO2/WebAuthn public key cryptography, CTAP2 HID command framing, authenticatorData bitmask flags, ES256 NIST P-256 ECDSA assertion verification, clientDataHash binding, resident keys, and Apple Secure Enclave biometrics.",
+  "standards": ["FIDO2 CTAP 2.1", "W3C WebAuthn Level 3", "RFC 8152 COSE", "FIPS 186-4"],
+  "negative_exclusions": ["blockchain", "cryptocurrency_mining", "bitcoin_mempool", "nft"],
+  "knowledge_rules": [
+    "CTAP2 AuthenticatorData binary structure (37+ bytes): 32-byte rpIdHash (SHA-256 of RP ID string), 1-byte flags bitmask, 4-byte big-endian signCount, optional attestedCredentialData, optional extension data (CBOR).",
+    "AuthenticatorData Flags bitmask: Bit 0 (0x01) = UP (User Presence confirmed via physical touch); Bit 2 (0x04) = UV (User Verification confirmed via PIN/biometric); Bit 6 (0x40) = AT (Attested Credential Data present); Bit 7 (0x80) = ED (Extension Data present).",
+    "Assertion Signature Verification: Computed over binary concatenation (authData || SHA-256(clientDataJSON)). Signature algorithm ES256 (-7) uses ECDSA over NIST P-256 with SHA-256.",
+    "Hardware Presence Gating: A physical token challenge must mandate UP=1 (bit 0 set). If UP is false, the assertion must be immediately rejected regardless of cryptographic validity.",
+    "Apple Secure Enclave Fallback: Use LocalAuthentication LAContext.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics). On success, assert biometric presence via hardware-backed secure enclave token."
+  ],
+  "verification_command": "python3 ~/Developer/alexus-core/tests/verify_fido2_ctap.py"
+}

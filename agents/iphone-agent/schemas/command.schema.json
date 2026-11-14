@@ -1,0 +1,337 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rgnrk.co/schemas/iphone-command/0.1",
+  "title": "Portable iPhone Command",
+  "description": "AI-, runner-, and driver-independent description of an iPhone interaction.",
+  "type": "object",
+  "required": ["schemaVersion", "id", "name", "safety", "steps"],
+  "properties": {
+    "schemaVersion": { "const": "0.1" },
+    "version": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "id": { "$ref": "#/$defs/identifier" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "description": { "type": "string", "maxLength": 4000 },
+    "inputs": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/inputDefinition" }
+    },
+    "preconditions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/observationConstraint" }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/step" }
+    },
+    "onFailure": { "$ref": "#/$defs/failureBehavior" },
+    "safety": { "$ref": "#/$defs/safety" },
+    "postconditions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/observationConstraint" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "risk": {
+      "enum": ["read", "reversible", "external", "financial", "destructive", "credential"]
+    },
+    "safety": {
+      "type": "object",
+      "required": ["risk"],
+      "properties": {
+        "risk": { "$ref": "#/$defs/risk" },
+        "requiresConfirmation": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "inputDefinition": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["string", "number", "integer", "boolean"] },
+        "description": { "type": "string", "maxLength": 1000 },
+        "required": { "type": "boolean" },
+        "secret": { "type": "boolean" },
+        "default": {}
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "secret": { "const": true } }, "required": ["secret"] },
+          "then": { "not": { "properties": { "default": {} }, "required": ["default"] } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "point": {
+      "type": "object",
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "role": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "hint": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "within": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "fallbackPoint": { "$ref": "#/$defs/point" },
+        "minimumConfidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "anyOf": [
+        { "required": ["role"] },
+        { "required": ["label"] },
+        { "required": ["text"] },
+        { "required": ["hint"] },
+        { "required": ["within"] },
+        { "required": ["fallbackPoint"] }
+      ],
+      "additionalProperties": false
+    },
+    "app": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "bundleId": { "type": "string", "minLength": 1, "maxLength": 300 }
+      },
+      "anyOf": [
+        { "required": ["name"] },
+        { "required": ["bundleId"] }
+      ],
+      "additionalProperties": false
+    },
+    "observationConstraint": {
+      "type": "object",
+      "properties": {
+        "screenText": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "app": { "$ref": "#/$defs/app" },
+        "target": { "$ref": "#/$defs/target" },
+        "all": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/observationConstraint" }
+        },
+        "any": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/observationConstraint" }
+        },
+        "not": { "$ref": "#/$defs/observationConstraint" }
+      },
+      "minProperties": 1,
+      "additionalProperties": false
+    },
+    "failureBehavior": {
+      "type": "object",
+      "required": ["behavior"],
+      "properties": {
+        "behavior": { "enum": ["stop", "retry", "requestHelp", "recover"] },
+        "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 20 },
+        "recoveryCommandId": { "$ref": "#/$defs/identifier" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "behavior": { "const": "retry" } }, "required": ["behavior"] },
+          "then": { "required": ["maxAttempts"] }
+        },
+        {
+          "if": { "properties": { "behavior": { "const": "recover" } }, "required": ["behavior"] },
+          "then": { "required": ["recoveryCommandId"] }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "commonStep": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "precondition": { "$ref": "#/$defs/observationConstraint" },
+        "expect": { "$ref": "#/$defs/observationConstraint" },
+        "safety": { "$ref": "#/$defs/safety" }
+      }
+    },
+    "openAppStep": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/commonStep" },
+        {
+          "type": "object",
+          "required": ["action", "app"],
+          "properties": {
+            "action": { "const": "openApp" },
+            "app": { "$ref": "#/$defs/app" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "tapStep": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/commonStep" },
+        {
+          "type": "object",
+          "required": ["action", "target"],
+          "properties": {
+            "action": { "const": "tap" },
+            "target": { "$ref": "#/$defs/target" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "typeTextStep": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/commonStep" },
+        {
+          "type": "object",
+          "required": ["action", "text"],
+          "properties": {
+            "action": { "const": "typeText" },
+            "text": { "type": "string", "maxLength": 100000 },
+            "target": { "$ref": "#/$defs/target" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "swipeStep": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/commonStep" },
+        {
+          "type": "object",
+          "required": ["action", "direction"],
+          "properties": {
+            "action": { "const": "swipe" },
+            "direction": { "enum": ["up", "down", "left", "right"] },
+            "distance": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+            "from": { "$ref": "#/$defs/point" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "pressStep": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/commonStep" },
+        {
+          "type": "object",
+          "required": ["action", "button"],
+          "properties": {
+            "action": { "const": "press" },
+            "button": { "enum": ["home", "appSwitcher", "back"] }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "captureStep": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/commonStep" },
+        {
+          "type": "object",
+          "required": ["action", "label"],
+          "properties": {
+            "action": { "const": "capture" },
+            "label": { "type": "string", "minLength": 1, "maxLength": 200 }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "waitForStep": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/commonStep" },
+        {
+          "type": "object",
+          "required": ["action", "condition"],
+          "properties": {
+            "action": { "const": "waitFor" },
+            "condition": { "$ref": "#/$defs/observationConstraint" },
+            "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 300000 }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "assertStep": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/commonStep" },
+        {
+          "type": "object",
+          "required": ["action", "condition"],
+          "properties": {
+            "action": { "const": "assert" },
+            "condition": { "$ref": "#/$defs/observationConstraint" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "confirmStep": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/commonStep" },
+        {
+          "type": "object",
+          "required": ["action", "message"],
+          "properties": {
+            "action": { "const": "confirm" },
+            "message": { "type": "string", "minLength": 1, "maxLength": 2000 }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "callStep": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/commonStep" },
+        {
+          "type": "object",
+          "required": ["action", "commandId"],
+          "properties": {
+            "action": { "const": "call" },
+            "commandId": { "$ref": "#/$defs/identifier" },
+            "commandVersion": { "type": "string", "minLength": 1, "maxLength": 100 },
+            "inputs": { "type": "object", "additionalProperties": true }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "step": {
+      "oneOf": [
+        { "$ref": "#/$defs/openAppStep" },
+        { "$ref": "#/$defs/tapStep" },
+        { "$ref": "#/$defs/typeTextStep" },
+        { "$ref": "#/$defs/swipeStep" },
+        { "$ref": "#/$defs/pressStep" },
+        { "$ref": "#/$defs/captureStep" },
+        { "$ref": "#/$defs/waitForStep" },
+        { "$ref": "#/$defs/assertStep" },
+        { "$ref": "#/$defs/confirmStep" },
+        { "$ref": "#/$defs/callStep" }
+      ]
+    }
+  }
+}

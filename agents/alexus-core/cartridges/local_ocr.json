@@ -1,0 +1,14 @@
+{
+  "id": "expert-fast-ocr",
+  "domain": "Local CPU Optical Character Recognition (OCR)",
+  "description": "Specialized expert in ultra-low-latency (<50ms) local CPU OCR, ONNX Runtime inference sessions, quantized INT8 CRNN models, ddddocr alphanumeric captcha extraction, eliminating cloud API solving lag on Linux VPS.",
+  "standards": ["ONNX Runtime CPU", "CRNN", "INT8 Quantization"],
+  "negative_exclusions": ["dicom", "medical_imaging", "radiology", "ct_scan", "mri", "pathology_slices"],
+  "knowledge_rules": [
+    "Run ONNX Runtime with CPUExecutionProvider and intra_op_num_threads=2.",
+    "Bypass slow cloud solving APIs (2captcha/anticaptcha) to drop latency from 3000ms to 12ms.",
+    "Preprocess images into grayscale and normalized 32-pixel height tensors before feeding into CRNN.",
+    "Memory footprint must remain strictly under 100MB RAM with zero CUDA dependency."
+  ],
+  "verification_command": "python3 ~/Developer/alexus-core/tests/verify_ocr.py"
+}

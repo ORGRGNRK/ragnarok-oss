@@ -1,0 +1,8 @@
+[Unit]
+Description=Nightly vault backup
+[Timer]
+OnCalendar=*-*-* 03:30:00 America/Los_Angeles
+Persistent=true
+RandomizedDelaySec=10m
+[Install]
+WantedBy=timers.target

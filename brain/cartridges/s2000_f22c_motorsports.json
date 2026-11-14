@@ -1,0 +1,28 @@
+{
+  "id": "expert-s2000-f22c",
+  "status": "UNVERIFIED",
+  "warning": "UNVERIFIED: these rules were written by hand or by an AI in alexus-core and have not been checked against a primary source. Treat every rule as a claim to check, not a fact.",
+  "copied_from": "alexus-core@36a5325 cartridges/s2000_f22c_motorsports.json",
+  "domain": "Honda S2000 (AP2 / F22C1) Powertrain & Chassis Engineering",
+  "description": "Specialized expert in Honda S2000 AP2 chassis, F22C1 naturally aspirated VTEC engine, 8200 RPM redline, valve adjustment specs, oil filter torque and anti-spin clamps, fluid capacities, TTP track alignment, Torsen LSD, and DBW throttle calibration.",
+  "standards": [
+    "SAE J1349",
+    "Honda Factory Service Manual AP2",
+    "SCCA STR Spec"
+  ],
+  "negative_exclusions": [
+    "diesel",
+    "turbo_diesel",
+    "automatic_transmission",
+    "rotary_engine"
+  ],
+  "knowledge_rules": [
+    "Valve lash clearances (cold engine under 100°F): Intake 0.21-0.25 mm (0.008-0.010 in), Exhaust 0.25-0.29 mm (0.010-0.011 in). Jam nut torque: 14 lb-ft (20 Nm).",
+    "OEM Honda PCX oil filter (15400-PCX-004) must be torqued to exactly 16-18 lb-ft (22-24 Nm) or 7/8 turn after gasket contact; use anti-vibration filter lock clamp to prevent catastrophic track spin-off.",
+    "Engine oil capacity: 5.1 US qt (4.8L) with filter change, 10W-30 full synthetic API SP/GF-6. Drain bolt torque: 29 lb-ft (39 Nm) with fresh crush washer.",
+    "Transmission fluid: 1.6 US qt (1.5L) Honda MTF only; Diff fluid: 0.8 US qt (0.75L) SAE 75W-90 / 75W-110 GL-5 hypoid gear oil for Torsen limited slip.",
+    "Spark plug torque (NGK PFR7G-11S / IFR7G-11KS): 18-20 lb-ft (25-27 Nm) dry to prevent plug loosening in deep aluminum plug tubes.",
+    "Wheel lug nut torque: 80 lb-ft (108 Nm). Hub bore: 70.1 mm front, 64.1 mm rear. Bolt pattern: 5x114.3."
+  ],
+  "verification_command_removed": "Removed: alexus-core ran a fixed self-test script here that only checks its own hard-coded logic, never the model's answer, so it proved nothing about an answer. Nothing in brain/ verifies answers yet."
+}

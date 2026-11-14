@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# conveyor-status — where is everything on the belt, and what is waiting on the operator.
+#
+# WHY THIS EXISTS. the operator, 2026-09-03, right after his first belt task finished:
+# "how do i check". There was no answer. The belt shipped conveyor-add, -check,
+# -finding, -tap, -intent-reader and -ygg-receipt — every one of them a thing
+# that ACTS, and not one that reports. Checking meant ls'ing six directories and
+# reading logs/receipts.jsonl by hand. That is the same write-only shape this
+# system keeps rediscovering: plenty recording, nothing reporting.
+#
+# READ-ONLY, ALWAYS. Moves nothing, ticks nothing, mints nothing, never touches
+# the intents queue. Safe at any moment, including mid-leg.
+#
+# EXIT 0 ALWAYS. This is a report, not a check. A busy belt and an empty belt
+# are both normal, and nothing downstream should ever read either as a failure.
+set -uo pipefail
+
+DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+R="${CONVEYOR_ROOT:-$DIR}"
+RECEIPTS="$R/logs/receipts.jsonl"
+
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  B=$'\033[1m'; D=$'\033[2m'; Y=$'\033[33m'; G=$'\033[32m'; RD=$'\033[31m'; N=$'\033[0m'
+else
+  B=; D=; Y=; G=; RD=; N=
+fi
+
+title_of() { sed -n '1s/^#[[:space:]]*//p' "$1" 2>/dev/null | cut -c1-68; }
+
+# NOT `|| echo 0`. grep -c already PRINTS 0 when nothing matches and THEN exits
+# 1, so a fallback echo lands on top of it and the function returns "0\n0".
+# That is the same defect that refuted two good legs of the phone-grader task
+# on 2026-09-03 before the brief was repaired; it is easy to write twice.
+legs_of() { grep -cE '^## Leg [0-9]+' "$1" 2>/dev/null || true; }
+
+age_of() {
+  local now mt s
+  now=$(date +%s); mt=$(stat -c %Y "$1" 2>/dev/null || echo "$now")
+  s=$(( now - mt ))
+  if   [ "$s" -lt 3600 ]  ; then echo "$((s/60))m"
+  elif [ "$s" -lt 86400 ] ; then echo "$((s/3600))h"
+  else                          echo "$((s/86400))d"
+  fi
+}
+
+stage() { # dir label colour note
+  local d="$R/$1" n f
+  n=$(ls -1 "$d"/*.md 2>/dev/null | wc -l)
+  [ "$n" -eq 0 ] && return 0
+  printf '%s%s%s  %s%s%s\n' "$3" "$2" "$N" "$D" "${4:-}" "$N"
+  for f in "$d"/*.md; do
+    [ -e "$f" ] || continue
+    printf '    %s\n      %sleg %s · %s%s\n' \
+      "$(title_of "$f")" "$D" "$(legs_of "$f")" "$(age_of "$f")" "$N"
+  done
+  echo
+}
+
+echo "${B}THE BELT${N}  ${D}$R${N}"
+echo
+
+stage human   "WAITING ON YOU"   "$Y"  "tap on the dashboard — confirm returns it to the belt, kill stops it"
+stage running "RUNNING NOW"      "$B"  "a seat has it; it moves on its own"
+stage queue   "QUEUED"           ""    "the next run takes the oldest"
+stage plan    "BEING PLANNED"    ""    "a planner and a critic agree the steps before any work starts"
+stage verify  "STAGED TO VERIFY" ""    "waiting on the adversarial seat"
+stage failed  "STOPPED"          "$RD" "dead end or blocked — every leg's reasoning is in the file"
+
+n_done=$(ls -1 "$R/done"/*.md 2>/dev/null | wc -l)
+echo "${G}DONE${N}  ${D}${n_done} total, newest first${N}"
+ls -1t "$R/done"/*.md 2>/dev/null | head -3 | while read -r f; do
+  printf '    %s\n      %sleg %s · %s ago%s\n' \
+    "$(title_of "$f")" "$D" "$(legs_of "$f")" "$(age_of "$f")" "$N"
+done
+
+if [ -s "$RECEIPTS" ] && command -v jq >/dev/null 2>&1; then
+  echo
+  echo "${B}LAST 6 MOVES${N}"
+  tail -6 "$RECEIPTS" | jq -r '
+    "    " + (.ts[5:16] | sub("T"; " "))
+           + "  leg " + ((.leg // "-") | tostring | (. + "  ")[0:2])
+           + " " + ((.seat // "-") + "         ")[0:9]
+           + " " + ((.verdict // "") + "                ")[0:16]
+           + " " + (.task // "")[9:56]
+  ' 2>/dev/null
+fi
+
+echo
+nxt=$(systemctl list-timers conveyor.timer --no-pager 2>/dev/null | awk 'NR==2{print $1,$2,$3}')
+printf '%snext run  %s%s\n' "$D" "${nxt:-unknown}" "$N"
+
+exit 0

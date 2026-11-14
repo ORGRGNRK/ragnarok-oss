@@ -1,0 +1,590 @@
+#!/usr/bin/env python3
+# conveyor-finding — the ONE path from a check's finding to a conveyor task.
+#
+#   <check> | conveyor-finding --source <name> --title <short> --actionable \
+#              [--key <stable-id>] [--split-lines [--key-regex RE]] [--recheck CMD]
+#              [--step "<claim> :: verify: <cmd|HUMAN>"] [--preamble <text>]
+#
+# WHY THIS EXISTS. the operator, 2026-09-02: "i always have to look for it and say it
+# thats why icant finish shit." Every check on this box terminates in a human
+# noticing — prose-drift prints to stdout, crew-doctor exits 1 into a systemd
+# failure, the conveyor's own dead end fires a notify. All of them END AT THE OPERATOR,
+# so the noticing never leaves him no matter how many checks exist. The belt is
+# the only thing here that ACTS without him, `conveyor-add` takes stdin, and on
+# the day this was written NOT ONE CHECK CALLED IT.
+#
+# TWO CALLERS, ONE PATH (2026-09-02). A check is one; conveyor-intent-reader is
+# the other, handing over a request the operator tapped approved. --step and --preamble
+# exist for that second direction: a request has no mechanical --recheck (its
+# proof is HUMAN) and the check preamble below is false in front of a seat
+# acting on his own words. Both default to the previous behaviour exactly.
+#
+# This is an emitter, not a queue. It writes ONE task file into the belt's
+# queue/ and nothing else. There is no second queue, no state machine, no
+# bespoke integration per check — a check pipes its failures in and declares
+# them actionable, and that is the whole contract.
+#
+# THE SIX RULES, in the order they break things if you get them wrong:
+#
+# 1. DEDUP IS LOAD-BEARING. prose-drift runs daily, crew-doctor 4x a day. A
+#    persistent finding must queue ONCE. The fingerprint is sha256(source + key)
+#    truncated to 12 hex, written into BOTH the filename and a
+#    `finding-fingerprint:` line, so the scan is a filename match with a content
+#    grep behind it — mechanical, never fuzzy. Present anywhere in queue/
+#    running/ verify/ human/ -> do nothing, exit 0.
+#
+# 2. REGRESSION IS NOT PERSISTENCE. A fingerprint found only in done/ means the
+#    finding CAME BACK after being handled: queue it again, and say so in the
+#    body. A regression that dedups against its own fix is the worst outcome
+#    here.
+#    DELIBERATE DEVIATION (2026-09-02, first build): the spec said done/ OR
+#    failed/. failed/ is treated as CLOSED instead. Walk the alternative: a
+#    finding requeued out of failed/ dead-ends again, which fires an intent, a
+#    notify and a the author's database receipt — every day, forever, because a 1/day
+#    requeue never reaches the 24h cap. failed/ contains no fix, so "it came
+#    back" is not what happened; the dead end already surfaced to the operator four
+#    ways and its intent is his handle on it. Flip FAILED_IS_CLOSED to False if
+#    that reads wrong.
+#
+# 3. NEVER BREAK THE CALLER. This ALWAYS exits 0 — bad flags, missing belt,
+#    unwritable queue, an exception in here. A health check must not start
+#    failing because the emitter broke. Degradation goes to stderr, which for a
+#    systemd caller lands in the journal. Same doctrine as prose-drift's
+#    `degraded`.
+#
+# 4. FLOOD AND LOOP GUARDS. Per-invocation cap (3) and a rolling 24h per-source
+#    cap (10); over either, ONE summary task naming the count, carrying every
+#    finding as its own checklist step. And the belt may not feed itself: a seat
+#    editing a file, tripping prose-drift, and queueing another task is a loop
+#    that runs all night. Two guards, both structural — the conveyor exports
+#    CREW_ACTOR=conveyor and CONVEYOR_SELF to every seat and every tool hook
+#    under it, and a source naming the belt is refused by name.
+#
+# 5. ONLY FAILURES, and 6. NOT EVERYTHING THAT FAILS IS BUILD WORK. Both live in
+#    the CALLER, and are enforced here by making --actionable mandatory: absent
+#    classification resolves to least authority (Ruleset v4.7), which is no
+#    task. A check pipes in only the failures it has classified as build work.
+#    crew-doctor's `ok` and `note` must never reach this program; its `bad`
+#    lines must pass its own allowlist first. Wiring a noisy check to the belt
+#    manufactures work — proven the same day, when crew-doctor was FAILED for
+#    days on two retired cameras and the fix made an idle slot fail instead.
+#
+# Env: CONVEYOR_ROOT (belt state root)   CONVEYOR_QUEUE (queue dir alone)
+#      CONVEYOR_FINDING_MAX_PER_RUN=3    CONVEYOR_FINDING_MAX_PER_DAY=10
+#      CONVEYOR_FINDING_DISABLE=1        kill switch, refuses everything
+#      CREW_ACTOR / CONVEYOR_SELF        loop guard (set by conveyor-run.sh)
+
+import hashlib
+import json
+import os
+import re
+import shlex
+import sys
+import time
+from datetime import datetime
+
+EMITTER = "conveyor-finding"
+OPEN_DIRS = ("queue", "running", "verify", "human")   # a finding here is already in flight
+DONE_DIRS = ("done",)                                  # here = handled, so a repeat is a REGRESSION
+DEAD_DIRS = ("failed",)                                # here = dead-ended; see rule 2's deviation
+FAILED_IS_CLOSED = True
+
+DEFAULT_ROOT = os.path.dirname(os.path.realpath(__file__))
+
+
+def degraded(msg):
+    """The only output channel. Never raises, never changes the exit code."""
+    try:
+        sys.stderr.write("%s: %s\n" % (EMITTER, msg))
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
+def norm(text):
+    """Normalised form for fingerprinting: whitespace collapsed, case-folded."""
+    return re.sub(r"\s+", " ", text or "").strip().lower()
+
+
+def fingerprint(source, key_norm):
+    h = hashlib.sha256(("%s\0%s" % (source, key_norm)).encode("utf-8", "replace"))
+    return h.hexdigest()[:12]
+
+
+def slugify(text, limit=40):
+    s = re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")
+    return s[:limit] or "finding"
+
+
+# --------------------------------------------------------------------------
+# argument parsing. Hand-rolled on purpose: argparse calls sys.exit(2) on an
+# unknown flag, and rule 3 says this program has exactly one exit code.
+# --------------------------------------------------------------------------
+FLAGS_WITH_VALUE = ("--source", "--title", "--key", "--key-regex", "--recheck",
+                    "--max-per-run", "--max-per-day", "--preamble")
+FLAGS_BARE = ("--actionable", "--split-lines", "--dry-run")
+# --step may be given more than once, so it cannot go through the generic
+# setattr path above — it accumulates instead of overwriting.
+FLAGS_REPEATED = ("--step",)
+
+
+class Args(object):
+    def __init__(self):
+        self.source = None
+        self.title = None
+        self.key = None
+        self.key_regex = None
+        self.recheck = None
+        # A caller-written checklist step, verbatim, and a replacement for the
+        # PREAMBLE. Both exist because this emitter serves TWO directions as of
+        # 2026-09-02: a check's finding, and a request the operator tapped through
+        # conveyor-intent-reader. The check preamble ("a check reported this and
+        # nobody acted on it") is false in front of a seat acting on the operator's own
+        # words, and a request has no mechanical --recheck — its proof is HUMAN.
+        # Both default to the previous behaviour exactly.
+        self.step = []
+        self.preamble = None
+        self.split_lines = False
+        self.actionable = False
+        self.dry_run = False
+        self.max_per_run = None
+        self.max_per_day = None
+
+
+def parse_args(argv):
+    a = Args()
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok in FLAGS_REPEATED:
+            if i + 1 >= len(argv):
+                degraded("%s needs a value — nothing queued" % tok)
+                return None
+            getattr(a, tok[2:].replace("-", "_")).append(argv[i + 1])
+            i += 2
+        elif tok in FLAGS_WITH_VALUE:
+            if i + 1 >= len(argv):
+                degraded("%s needs a value — nothing queued" % tok)
+                return None
+            val = argv[i + 1]
+            i += 2
+            name = tok[2:].replace("-", "_")
+            setattr(a, name, val)
+        elif tok in FLAGS_BARE:
+            setattr(a, tok[2:].replace("-", "_"), True)
+            i += 1
+        else:
+            degraded("unknown argument %r — nothing queued" % tok)
+            return None
+    if not a.source or not a.title:
+        degraded("--source and --title are both required — nothing queued")
+        return None
+    if not re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]*$", a.source):
+        degraded("--source %r is not a plain name — nothing queued" % a.source)
+        return None
+    for attr, envname, default in (("max_per_run", "CONVEYOR_FINDING_MAX_PER_RUN", 3),
+                                   ("max_per_day", "CONVEYOR_FINDING_MAX_PER_DAY", 10)):
+        raw = getattr(a, attr)
+        if raw is None:
+            raw = os.environ.get(envname, str(default))
+        try:
+            setattr(a, attr, max(1, int(raw)))
+        except (TypeError, ValueError):
+            degraded("%s=%r is not a number, using %d" % (envname, raw, default))
+            setattr(a, attr, default)
+    return a
+
+
+# --------------------------------------------------------------------------
+# the belt, as this program sees it: a set of directories, nothing more.
+# --------------------------------------------------------------------------
+def belt_dirs():
+    root = os.environ.get("CONVEYOR_ROOT") or DEFAULT_ROOT
+    dirs = dict((d, os.path.join(root, d))
+                for d in OPEN_DIRS + DONE_DIRS + DEAD_DIRS)
+    q = os.environ.get("CONVEYOR_QUEUE")
+    if q:
+        dirs["queue"] = q
+    return root, dirs
+
+
+def scan(dirs, names, fp):
+    """First task file in `names` carrying `fp`, as (dir, filename), else None.
+
+    Filename first because the fingerprint is baked into it, so the common case
+    is a string compare with no IO. The content grep behind it is what keeps
+    this mechanical if a file is ever renamed by hand.
+    """
+    for d in names:
+        path = dirs.get(d)
+        if not path:
+            continue
+        try:
+            entries = sorted(os.listdir(path))
+        except OSError:
+            continue                      # a missing lane is not a match and not an error
+        for n in entries:
+            if not n.endswith(".md"):
+                continue
+            if fp in n:
+                return d, n
+            try:
+                with open(os.path.join(path, n), "r", errors="replace") as f:
+                    head = f.read(16384)
+            except OSError:
+                continue
+            # Only the `finding-` header lines count. A bare 12-hex match
+            # anywhere in a task body would be a fuzzy scan, and rule 1 says
+            # this one is mechanical. `finding-covers:` is how a SUMMARY task
+            # dedups the findings it swallowed -- without it, the run after a
+            # cap collapse would queue all N of them individually, because the
+            # summary carries only its own fingerprint.
+            for hl in head.splitlines():
+                if hl.startswith("finding-fingerprint:") or hl.startswith("finding-covers:"):
+                    if fp in hl:
+                        return d, n
+    return None
+
+
+# --------------------------------------------------------------------------
+# the 24h ledger. Its own append-only log under logs/, which is git-ignored for
+# the same reason the rest of logs/ is.
+# --------------------------------------------------------------------------
+def log_path(root):
+    return os.path.join(root, "logs", "findings.jsonl")
+
+
+def read_log(root):
+    try:
+        with open(log_path(root), "r", errors="replace") as f:
+            rows = []
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rows.append(json.loads(line))
+                except ValueError:
+                    continue          # a torn line is not a reason to stop counting
+            return rows
+    except OSError:
+        return []
+
+
+def append_log(root, row):
+    try:
+        os.makedirs(os.path.dirname(log_path(root)), exist_ok=True)
+        with open(log_path(root), "a") as f:
+            f.write(json.dumps(row, separators=(",", ":")) + "\n")
+    except OSError as e:
+        degraded("could not append to findings log: %s" % e)
+
+
+def within_24h(rows, source, kinds=None):
+    cutoff = time.time() - 86400
+    n = 0
+    for r in rows:
+        if r.get("source") != source:
+            continue
+        if r.get("t", 0) < cutoff:
+            continue
+        if kinds and r.get("kind") not in kinds:
+            continue
+        n += 1
+    return n
+
+
+# --------------------------------------------------------------------------
+# task file construction
+# --------------------------------------------------------------------------
+def claim_text(source, key_raw):
+    """A checklist claim is a single line and may not contain the grammar's
+    ' :: ' separator — conveyor-check splits on the first one."""
+    s = re.sub(r"\s+", " ", key_raw).strip().replace(" :: ", " - ")
+    if len(s) > 90:
+        s = s[:87] + "..."
+    return "%s no longer reports: %s" % (source, s)
+
+
+def oneline(text):
+    """Collapse to a single line. A checklist step is ONE line by grammar, so a
+    finding carrying a newline would otherwise split the step in half and the
+    tail would parse as prose — silently dropping the verify."""
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def recheck_cmd(template, source, key_raw, line):
+    """{key} / {line} / {source} are substituted SHELL-QUOTED and collapsed to
+    one line. The caller writes a template, never a command with a value already
+    interpolated into it — findings are arbitrary text and this ends up inside a
+    `:: verify:` line."""
+    return (template
+            .replace("{key}", shlex.quote(oneline(key_raw)))
+            .replace("{line}", shlex.quote(oneline(line)))
+            .replace("{source}", shlex.quote(source)))
+
+
+PREAMBLE = (
+    "A check on this box reported this and nobody acted on it. That is the whole\n"
+    "reason this task exists: the check already ran, already knew, and had no way\n"
+    "to reach anything that acts. Fix the underlying claim or state, not the\n"
+    "check's output — silencing the check without fixing what it found is the\n"
+    "failure this belt exists to end.\n"
+)
+
+
+def render_task(args, fp, title, sections, checklist, covers=None):
+    # Caller-written steps ride at the END of the checklist, after any
+    # --recheck step, so a mechanical proof is always read first.
+    checklist = list(checklist) + ["- [ ] %s" % oneline(st) for st in args.step]
+    out = []
+    out.append("# %s\n" % title)
+    out.append("queued: %s" % datetime.now().astimezone().isoformat(timespec="seconds"))
+    out.append("by: %s:%s" % (EMITTER, args.source))
+    # Rule 4: a task queued BY this emitter is marked as such, so the belt (and
+    # any future guard) can tell machine-queued work from the operator's own.
+    out.append("finding-emitter: %s" % EMITTER)
+    out.append("finding-source: %s" % args.source)
+    out.append("finding-fingerprint: %s" % fp)
+    if covers:
+        # Kept in the HEADER, not the body: scan() reads only the head of a file,
+        # and a summary of many findings can be long.
+        out.append("finding-covers: %s" % " ".join(covers))
+    out.append("")
+    out.append(args.preamble.rstrip("\n") + "\n" if args.preamble else PREAMBLE)
+    for heading, text in sections:
+        out.append("## %s\n" % heading)
+        out.append(text.rstrip("\n") + "\n")
+    if checklist:
+        out.append("## Checklist")
+        out.extend(checklist)
+        out.append("")
+    return "\n".join(out) + "\n"
+
+
+def write_task(dirs, fp, source, title_slug, content, dry_run):
+    qdir = dirs["queue"]
+    try:
+        os.makedirs(qdir, exist_ok=True)
+    except OSError as e:
+        degraded("queue %s unusable (%s) — nothing queued, caller unaffected" % (qdir, e))
+        return None
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    base = "%s-finding-%s-%s-%s" % (stamp, slugify(source, 24), title_slug, fp)
+    path = os.path.join(qdir, base + ".md")
+    n = 1
+    while os.path.exists(path):          # same second, same source: never clobber
+        path = os.path.join(qdir, "%s-%d.md" % (base, n))
+        n += 1
+    if dry_run:
+        sys.stdout.write("would queue: %s\n" % path)
+        return path
+    try:
+        tmp = path + ".part"
+        with open(tmp, "w") as f:
+            f.write(content)
+        os.rename(tmp, path)             # atomic: the runner must never see a half-written task
+    except OSError as e:
+        degraded("could not write %s (%s) — nothing queued, caller unaffected" % (path, e))
+        return None
+    sys.stdout.write("queued: %s\n" % path)
+    return path
+
+
+# --------------------------------------------------------------------------
+def main(argv):
+    if os.environ.get("CONVEYOR_FINDING_DISABLE") == "1":
+        degraded("disabled by CONVEYOR_FINDING_DISABLE=1 — nothing queued")
+        return
+
+    args = parse_args(argv)
+    if args is None:
+        return
+
+    # --- loop guard (rule 4) -------------------------------------------------
+    # The conveyor exports CREW_ACTOR=conveyor and CONVEYOR_SELF into every seat
+    # and every process a seat spawns. A check run from inside a leg therefore
+    # cannot queue: the belt may not feed itself.
+    if os.environ.get("CREW_ACTOR") == "conveyor" or os.environ.get("CONVEYOR_SELF"):
+        degraded("running inside a conveyor leg (CREW_ACTOR/CONVEYOR_SELF set) — "
+                 "the belt may not feed itself; nothing queued")
+        return
+    if re.match(r"^conveyor(-|$)", args.source) or EMITTER in args.source:
+        degraded("--source %r names the belt itself — a finding about the belt "
+                 "acting on a finding is the loop this guard exists to stop; "
+                 "nothing queued" % args.source)
+        return
+
+    # --- classification (rule 6) --------------------------------------------
+    if not args.actionable:
+        degraded("--actionable not declared for source %r — absent classification "
+                 "resolves to least authority, so no task. The CHECK decides which "
+                 "of its failures are build work." % args.source)
+        return
+
+    try:
+        body = sys.stdin.read()
+    except Exception as e:
+        degraded("could not read stdin: %s — nothing queued" % e)
+        return
+    if not body.strip():
+        degraded("empty body for source %r — nothing queued" % args.source)
+        return
+
+    # --- findings ------------------------------------------------------------
+    findings = []          # (key_raw, key_norm, line)
+    if args.split_lines:
+        rx = None
+        if args.key_regex:
+            try:
+                rx = re.compile(args.key_regex)
+            except re.error as e:
+                degraded("bad --key-regex (%s) — falling back to whole lines" % e)
+        for line in body.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            key_raw = line
+            if rx is not None:
+                m = rx.search(line)
+                if m:
+                    key_raw = m.group(1) if m.groups() else m.group(0)
+                else:
+                    degraded("--key-regex did not match %r — keying on the whole line"
+                             % line[:80])
+            k = norm(key_raw)
+            if args.key:
+                k = "%s|%s" % (norm(args.key), k)
+            findings.append((key_raw, k, line))
+    else:
+        key_raw = args.key if args.key else body
+        findings.append((key_raw, norm(key_raw), body))
+
+    if not findings:
+        degraded("no findings in body for source %r — nothing queued" % args.source)
+        return
+
+    root, dirs = belt_dirs()
+
+    # --- dedup / regression (rules 1 and 2) ----------------------------------
+    fresh = []
+    for key_raw, key_norm, line in findings:
+        fp = fingerprint(args.source, key_norm)
+        hit = scan(dirs, OPEN_DIRS, fp)
+        if hit:
+            degraded("already in flight (%s/%s) — %s" % (hit[0], hit[1], key_raw[:70]))
+            continue
+        if FAILED_IS_CLOSED:
+            hit = scan(dirs, DEAD_DIRS, fp)
+            if hit:
+                degraded("already dead-ended in %s/%s — that dead end is the "
+                         "handle on it, not a requeue: %s"
+                         % (hit[0], hit[1], key_raw[:70]))
+                continue
+        prior = scan(dirs, DONE_DIRS, fp)
+        fresh.append((key_raw, key_norm, line, fp, prior))
+
+    if not fresh:
+        return
+
+    # --- caps (rule 4) -------------------------------------------------------
+    rows = read_log(root)
+    day_count = within_24h(rows, args.source)
+    over_run = len(fresh) > args.max_per_run
+    over_day = (day_count + len(fresh)) > args.max_per_day
+
+    if over_run or over_day:
+        if over_day and within_24h(rows, args.source, kinds=("summary",)):
+            degraded("source %r is over its 24h cap (%d already, %d new) and a "
+                     "summary already went out inside 24h — nothing queued"
+                     % (args.source, day_count, len(fresh)))
+            return
+        why = []
+        if over_run:
+            why.append("%d findings in one run, cap %d" % (len(fresh), args.max_per_run))
+        if over_day:
+            why.append("%d already queued from this source in 24h, cap %d"
+                       % (day_count, args.max_per_day))
+        emit_summary(args, dirs, root, fresh, "; ".join(why))
+        return
+
+    for key_raw, key_norm, line, fp, prior in fresh:
+        emit_one(args, dirs, root, key_raw, line, fp, prior)
+
+
+def emit_one(args, dirs, root, key_raw, line, fp, prior):
+    sections = [("Finding", line)]
+    if prior:
+        sections.append(("Regression",
+                         "This exact finding was previously handled in `%s/%s` and HAS "
+                         "RETURNED.\nRead that task before starting: whatever closed it "
+                         "did not hold, and repeating\nthe same fix is how a regression "
+                         "becomes permanent." % (prior[0], prior[1])))
+    checklist = []
+    if args.recheck:
+        checklist.append("- [ ] %s :: verify: %s"
+                         % (claim_text(args.source, key_raw),
+                            recheck_cmd(args.recheck, args.source, key_raw, line)))
+    title = "%s: %s" % (args.title, re.sub(r"\s+", " ", key_raw).strip()[:70])
+    content = render_task(args, fp, title, sections, checklist)
+    path = write_task(dirs, fp, args.source, slugify(key_raw, 30), content, args.dry_run)
+    if path and not args.dry_run:
+        append_log(root, {"ts": datetime.now().astimezone().isoformat(timespec="seconds"),
+                          "t": time.time(), "source": args.source, "fingerprint": fp,
+                          "kind": "regression" if prior else "task",
+                          "task": os.path.basename(path)})
+
+
+def emit_summary(args, dirs, root, fresh, why):
+    """ONE task naming the count — never N tasks. Every finding still rides
+    along as its own checklist step, so the belt works through all of them and
+    the task cannot complete while any one of them still reproduces."""
+    keys = sorted(k for _, k, _, _, _ in fresh)
+    fp = fingerprint(args.source, "cap-summary\0" + "\n".join(keys))
+    hit = scan(dirs, OPEN_DIRS, fp) or (scan(dirs, DEAD_DIRS, fp) if FAILED_IS_CLOSED else None)
+    if hit:
+        degraded("summary for this exact set already in %s/%s — nothing queued"
+                 % (hit[0], hit[1]))
+        return
+    listing = "\n".join("- %s" % re.sub(r"\s+", " ", ln).strip() for _, _, ln, _, _ in fresh)
+    sections = [("Why this is one task",
+                 "%s reported %d actionable findings at once (%s), so they arrive as one\n"
+                 "task rather than %d. Each is a checklist step below; the task is not done\n"
+                 "until every one of them stops reproducing."
+                 % (args.source, len(fresh), why, len(fresh))),
+                ("Findings", listing)]
+    regressions = ["%s (previously handled in %s/%s)" % (kr, p[0], p[1])
+                   for kr, _, _, _, p in fresh if p]
+    if regressions:
+        sections.append(("Regressions in this batch",
+                         "\n".join("- %s" % r for r in regressions)))
+    checklist = []
+    if args.recheck:
+        for key_raw, _, line, _, _ in fresh:
+            checklist.append("- [ ] %s :: verify: %s"
+                             % (claim_text(args.source, key_raw),
+                                recheck_cmd(args.recheck, args.source, key_raw, line)))
+    title = "%s — %d findings over cap" % (args.title, len(fresh))
+    content = render_task(args, fp, title, sections, checklist,
+                          covers=[f for _, _, _, f, _ in fresh])
+    path = write_task(dirs, fp, args.source, "summary", content, args.dry_run)
+    if path and not args.dry_run:
+        append_log(root, {"ts": datetime.now().astimezone().isoformat(timespec="seconds"),
+                          "t": time.time(), "source": args.source, "fingerprint": fp,
+                          "kind": "summary", "count": len(fresh),
+                          "task": os.path.basename(path)})
+
+
+if __name__ == "__main__":
+    # Rule 3, structurally: nothing below this line can change the exit code.
+    # BaseException, not Exception — a stray SystemExit from anywhere inside
+    # would otherwise reach the caller as a nonzero status.
+    try:
+        main(sys.argv[1:])
+    except BaseException as exc:          # noqa: BLE001 - deliberate, see above
+        try:
+            degraded("internal error (%s: %s) — nothing queued, caller unaffected"
+                     % (type(exc).__name__, exc))
+        except Exception:
+            pass
+    sys.exit(0)

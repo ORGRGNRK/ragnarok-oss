@@ -1,0 +1,231 @@
+#!/bin/bash
+# ragnarok-heal — the self-healing edit loop for ANY project (heimdall-edit, generalised).
+#   ragnarok-heal <project-folder> <claude|grok|codex> "instruction"
+#   ragnarok-heal <project-folder> --plan        print the build/test/install steps it would use, change nothing
+#   ragnarok-heal selfcheck                      prove the retry loop with a fake AI (no model, no network)
+#
+#   1. a separate copy (git worktree under <project>/.git's worktrees, folder ~/.ragnarok/heal/<id>) from the project's HEAD
+#   2. the AI makes the change in that copy only
+#   3. the copy must BUILD and pass its TEST, or nothing changes (no test step = refused; nothing is shipped unproven)
+#   4. if the build or the test fails, the same AI is given that failure and tries again in the same copy.
+#      It does not stop and wait to be started again. HEAL_ROUNDS (default 4, max 4) is the cap.
+#   5. committed, fast-forwarded onto the project's current branch, then INSTALL runs there if the project has one
+#   6. every step goes to ~/.ragnarok/ragnarok-heal.jsonl, and a receipt goes to ~/.ragnarok/terminal-receipts.jsonl
+#      (provider = the AI, cwd = the project) so it shows in the Hub's History for that project
+#
+# Steps come from <project>/.ragnarok-heal (KEY=value lines, never run as a script: BUILD=, TEST=, INSTALL=), else they're detected:
+#   Package.swift → swift build / swift test (if Tests/) · package.json → npm run build / npm test (if a real test script)
+#   python → pytest (if tests/ or test_*.py). make-app.sh → BUILD=./make-app.sh.
+# Main Ragnarok (~/Developer/heimdall) uses bin/heimdall-edit instead (its launcher also rolls back crashes).
+set -u
+REPO_BIN="$(cd "$(dirname "$0")" && pwd)"
+if [ "${1:-}" = "selfcheck" ]; then
+  exec /bin/bash "$REPO_BIN/../checks/heal-check.sh"
+fi
+. "$REPO_BIN/loop-lib.sh"
+PROJ="$(cd "${1:-}" 2>/dev/null && pwd -P)" || { echo "ragnarok-heal: no such folder: ${1:-}" >&2; exit 2; }
+WHO="${2:-}"; shift 2 2>/dev/null || true
+INSTR="${*:-}"
+[ "$INSTR" = "-" ] && INSTR="$(cat)"          # long instructions come on stdin
+NAME="$(basename "$PROJ")"
+LOG="$HOME/.ragnarok/ragnarok-heal.jsonl"
+RECEIPTS="$HOME/.ragnarok/terminal-receipts.jsonl"
+ID="$(date +%Y%m%d-%H%M%S)-$$"
+# Child processes inherit explicit actor/run labels independently of the shared OS account.
+export RAGNAROK_ACTOR="$WHO" RAGNAROK_RUN_ID="$ID" RAGNAROK_ORIGIN="project-heal"
+[ "$WHO" = manual ] && export RAGNAROK_ACTOR=owner
+WT="$HOME/.ragnarok/heal/$NAME-$ID"
+BRANCH="heal/$ID"
+START=$(date +%s)
+mkdir -p "$HOME/.ragnarok/heal" "$HOME/.ragnarok/heal-locks"; [ -e "$LOG" ] || install -m 600 /dev/null "$LOG"
+
+# B7: main Ragnarok goes through heimdall-edit; matched by its real path (any case/symlink) or its own edit script
+MAIN="$(cd "$REPO_BIN/.." 2>/dev/null && pwd -P)"
+[ -z "$MAIN" ] && MAIN="$(cd "$HOME/Developer/heimdall" 2>/dev/null && pwd -P)"
+TOP="$(git -C "$PROJ" rev-parse --show-toplevel 2>/dev/null)"
+lc() { printf '%s' "$1" | tr 'A-Z' 'a-z'; }
+if { [ -n "$MAIN" ] && [ "$(lc "$PROJ")" = "$(lc "$MAIN")" ]; } || [ -x "$PROJ/bin/heimdall-edit" ] || { [ -n "$TOP" ] && [ -x "$TOP/bin/heimdall-edit" ]; }; then
+  echo "ragnarok-heal: main Ragnarok uses bin/heimdall-edit (it also handles crash rollback):" >&2
+  echo "  ~/Developer/heimdall/bin/heimdall-edit <claude|grok|codex|manual> \"instruction\"" >&2; exit 2
+fi
+
+# --- steps ---
+BUILD=""; TEST=""; INSTALL=""; NOTE=""
+# B2: .ragnarok-heal is read as plain KEY=value lines (BUILD, TEST, INSTALL), never run as a script, so just looking
+# at a project (--plan, which the Hub calls when you open one) can't execute anything from it.
+read_steps() {
+  local line key val
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    case "$line" in ''|'#'*) continue ;; esac
+    key="${line%%=*}"; val="${line#*=}"
+    key="${key#export }"; key="$(printf '%s' "$key" | tr -d ' \t')"
+    case "$val" in \"*\") val="${val:1:${#val}-2}" ;; \'*\') val="${val:1:${#val}-2}" ;; esac
+    case "$key" in BUILD) BUILD="$val" ;; TEST) TEST="$val" ;; INSTALL) INSTALL="$val" ;; esac
+  done < "$1"
+}
+detect() {
+  local d="$1"
+  if [ -f "$d/.ragnarok-heal" ]; then read_steps "$d/.ragnarok-heal"; return; fi
+  if [ -x "$d/make-app.sh" ]; then BUILD="./make-app.sh"; fi
+  if [ -f "$d/Package.swift" ]; then
+    [ -n "$BUILD" ] || BUILD="swift build"
+    [ -d "$d/Tests" ] && TEST="swift test"
+  fi
+  if [ -f "$d/package.json" ]; then
+    grep -q '"build"' "$d/package.json" && BUILD="${BUILD:-npm run build}"
+    grep -q '"test"' "$d/package.json" && ! grep -q 'no test specified' "$d/package.json" && TEST="${TEST:-npm test}"
+  fi
+  if [ -z "$TEST" ] && { [ -d "$d/tests" ] || ls "$d"/test_*.py >/dev/null 2>&1; }; then
+    # only when pytest is really there (the project's .venv first); otherwise no test step, so edits are refused
+    if [ -x "$d/.venv/bin/python" ] && "$d/.venv/bin/python" -m pytest --version >/dev/null 2>&1; then TEST=".venv/bin/python -m pytest -q"
+    elif python3 -m pytest --version >/dev/null 2>&1; then TEST="python3 -m pytest -q"
+    else NOTE="(there are Python tests, but pytest isn't installed here)"; fi
+  fi
+}
+detect "$PROJ"
+if [ "$WHO" = "--plan" ]; then
+  echo "project: $PROJ"; echo "build:   ${BUILD:-(none)}"; echo "test:    ${TEST:-(none — edits are refused until one is set in .ragnarok-heal) $NOTE}"
+  echo "install: ${INSTALL:-(none)}"; exit 0
+fi
+
+receipt() {  # verdict detail [changed files...]
+  local verdict="$1" detail="$2"; shift 2
+  /usr/bin/python3 - "$RECEIPTS" "$WHO" "$PROJ" "$NAME: heal: $INSTR — $detail" "$START" "$verdict" "$@" <<'PY'
+import json, sys, os, time, datetime
+f, who, cwd, q, start, verdict, *changed = sys.argv[1:]
+d = {"ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "provider": who, "by": os.environ.get("USER", ""),
+     "cwd": cwd, "question": q[:300], "seconds": int(time.time() - int(start)), "exit": 0 if verdict == "verified" else 1,
+     "changed": [os.path.join(cwd, c) for c in changed][:200], "claims": [], "verdict": verdict}
+new = not os.path.exists(f)
+with open(f, "a") as h: h.write(json.dumps(d, sort_keys=True) + "\n")
+if new: os.chmod(f, 0o600)
+PY
+}
+LOGFIELDS="\"heal\":\"$ID\",\"project\":$(printf '%s' "$PROJ" | /usr/bin/python3 -c 'import json,sys;print(json.dumps(sys.stdin.read()))'),\"who\":\"$WHO\",\"by\":\"$(id -un)\""
+cleanup() { cd "$PROJ" 2>/dev/null; git -C "$PROJ" worktree remove --force "$WT" >/dev/null 2>&1; git -C "$PROJ" branch -D "$BRANCH" >/dev/null 2>&1; }
+fail() { log "$1" 0 "${2:-}"; receipt failed "failed at $1: ${2:-}"; cleanup; echo "ragnarok-heal: FAILED at $1: ${2:-}" >&2; exit 1; }
+save_failed() {  # a change that failed its build/test is kept as a patch, so the next round can reuse the good parts
+  local d="$HOME/.ragnarok/failed-edits"; mkdir -p "$d" && chmod 700 "$d"
+  git -C "$WT" add -A >/dev/null 2>&1
+  if git -C "$WT" diff --cached --binary HEAD > "$d/$ID.patch" 2>/dev/null && [ -s "$d/$ID.patch" ]; then
+    chmod 600 "$d/$ID.patch"; echo "the failed change is saved in $d/$ID.patch"
+  else rm -f "$d/$ID.patch"; fi
+}
+stale_cleanup() {  # an earlier run on this project died holding the lock: remove its staging copies (heal/ branches)
+  local wt
+  for wt in "$HOME/.ragnarok/heal/$NAME-"*; do [ -d "$wt" ] && git -C "$PROJ" worktree remove --force "$wt" >/dev/null 2>&1; done
+  git -C "$PROJ" worktree prune >/dev/null 2>&1
+  git -C "$PROJ" for-each-ref --format='%(refname:short)' refs/heads/heal/ | while read -r b; do git -C "$PROJ" branch -D "$b" >/dev/null 2>&1; done
+}
+
+case "$WHO" in
+  claude|grok|codex) ;;
+  fake) [ "${HEAL_SELFCHECK:-}" = 1 ] && [ -n "${HEAL_FAKE_CMD:-}" ] && [ -x "$HEAL_FAKE_CMD" ] || { echo "ragnarok-heal: fake is only for selfcheck" >&2; exit 2; } ;;
+  *) echo "usage: ragnarok-heal <project-folder> <claude|grok|codex> \"instruction\"   (- reads it from stdin; or --plan)" >&2; exit 2 ;;
+esac
+ROUNDS="${HEAL_ROUNDS:-4}"
+case "$ROUNDS" in ''|*[!0-9]*) ROUNDS=4 ;; esac
+[ "$ROUNDS" -ge 1 ] && [ "$ROUNDS" -le 4 ] || ROUNDS=4
+[ -n "$INSTR" ] || { echo "ragnarok-heal: give an instruction" >&2; exit 2; }
+git -C "$PROJ" rev-parse --show-toplevel >/dev/null 2>&1 || { echo "ragnarok-heal: $PROJ is not a git repository" >&2; exit 2; }
+[ -n "$BUILD$TEST" ] || { echo "ragnarok-heal: no build or test step for $NAME; add BUILD= and TEST= to $PROJ/.ragnarok-heal" >&2; exit 2; }
+[ -n "$TEST" ] || { echo "ragnarok-heal: no test step for $NAME, so a change can't be proven; add TEST= to $PROJ/.ragnarok-heal $NOTE" >&2; exit 2; }
+git -C "$PROJ" rev-parse -q --verify HEAD >/dev/null || { echo "ragnarok-heal: $NAME has no commits yet; commit once first" >&2; exit 2; }   # B8
+PREFIX="$(git -C "$PROJ" rev-parse --show-prefix)"   # B6: the project may be a subfolder of its repo
+loop_logger_start
+loop_lock "$HOME/.ragnarok/heal-locks/$(echo "$PROJ" | shasum | cut -c1-12)" stale_cleanup
+[ -n "${LOOP_CLEANED_STALE:-}" ] && log stale 1 "cleaned up an interrupted change"
+TARGET="$(git -C "$PROJ" branch --show-current)"
+[ -n "$TARGET" ] || { echo "ragnarok-heal: $PROJ is not on a branch" >&2; exit 2; }
+
+log start 1 "$INSTR (build: $BUILD · test: $TEST · install: ${INSTALL:-none} · onto $TARGET)"
+echo "ragnarok-heal: $NAME on $TARGET · build: ${BUILD:-none} · test: $TEST · install: ${INSTALL:-none}"
+git -C "$PROJ" worktree add -q -b "$BRANCH" "$WT" HEAD 2>&1 || fail worktree "could not make the staging copy"
+cd "$WT/$PREFIX" || fail worktree "staging copy missing"
+
+GUIDE=$(for f in AGENTS.md CLAUDE.md README.md; do [ -f "$f" ] && { echo "$f"; break; }; done)
+STEP_OUT="$WT.step"
+cleanup() { cd "$PROJ" 2>/dev/null; rm -f "$STEP_OUT"; git -C "$PROJ" worktree remove --force "$WT" >/dev/null 2>&1; git -C "$PROJ" branch -D "$BRANCH" >/dev/null 2>&1; }
+run_logged() {  # step command... — log every line, keep the tail for the next round. Returns the command's exit code.
+  local step=$1; shift
+  "$@" </dev/null >"$STEP_OUT" 2>&1
+  local rc=$?
+  while IFS= read -r line || [ -n "$line" ]; do log "$step" 1 "$line"; printf '%s\n' "$line"; done < "$STEP_OUT"
+  LAST_OUT="$(tail -c 1500 "$STEP_OUT" 2>/dev/null || true)"
+  # A failing command that prints nothing is still a failure the next round has to see.
+  if [ "$rc" -ne 0 ] && [ -z "$LAST_OUT" ]; then LAST_OUT="$step failed (exit $rc)"; log "$step" 0 "$LAST_OUT"; fi
+  return "$rc"
+}
+run_ai() {
+  export HEAL_PROMPT="$PROMPT"
+  case "$WHO" in
+    claude) stream ai "$REPO_BIN/claude-live" -p "$PROMPT" --permission-mode acceptEdits --allowedTools "Read,Edit,Write,Glob,Grep" ;;
+    grok)   stream ai grok --cwd "$WT" --always-approve -p "$PROMPT" ;;
+    codex)  command -v codex >/dev/null || fail ai "codex CLI is not installed on this Mac"
+            stream ai codex exec --full-auto "$PROMPT" ;;
+    fake)   stream ai "$HEAL_FAKE_CMD" ;;
+  esac
+}
+LAST_OUT=""; round=1; passed=0
+while [ "$round" -le "$ROUNDS" ]; do
+  PROMPT="You are changing the project in the current folder ($NAME).${GUIDE:+ Read $GUIDE first.}
+Make this change: $INSTR
+Rules: edit only files inside this folder; never print or log secrets; don't deploy, push, send messages, delete
+anything outside this folder or spend money; keep it building. After your change these must pass: ${BUILD:+build: $BUILD; }test: $TEST.
+Stop when the change is made."
+  if [ -n "$LAST_OUT" ]; then
+    PROMPT="$PROMPT
+
+The previous try failed. Fix the code already in this folder. Do not wait to be asked again.
+Failure:
+$LAST_OUT"
+  fi
+  echo "▸ stage: ai (round $round of $ROUNDS)"   # the Hub's progress bar follows these lines
+  log round 1 "round $round of $ROUNDS"
+  run_ai
+  rc=$?
+  if [ "$rc" -ne 0 ]; then LAST_OUT="$WHO exited $rc"; round=$((round + 1)); continue; fi
+  git add -A .
+  if [ -z "$(git status --porcelain .)" ]; then
+    LAST_OUT="$WHO made no changes"
+    round=$((round + 1)); continue
+  fi
+  CHANGED=(); while IFS= read -r -d '' f; do CHANGED+=("$f"); done < <(git diff --cached --name-only --relative -z)   # B3
+  log diff 1 "$(git diff --cached --stat)"
+  if [ -n "$BUILD" ]; then
+    echo "▸ stage: build"
+    if ! run_logged build /usr/bin/perl -e 'alarm 1800; exec @ARGV' /bin/zsh -lc "$BUILD"; then
+      round=$((round + 1)); continue
+    fi
+  fi
+  echo "▸ stage: test"
+  if ! run_logged test /usr/bin/perl -e 'alarm 600; exec @ARGV' /bin/zsh -lc "$TEST"; then
+    round=$((round + 1)); continue
+  fi
+  passed=1; break
+done
+[ "$passed" = 1 ] || { save_failed; fail test "still failing after $ROUNDS rounds"; }
+
+git -c user.name="ragnarok-heal ($WHO)" -c user.email="$(git config user.email || echo heimdall@localhost)" commit -q -m "ragnarok-heal ($WHO): $(printf '%s' "$INSTR" | head -c 2000)" || fail commit "commit failed"
+NEW=$(git rev-parse --short HEAD)
+cd "$PROJ"
+if ! git merge -q --ff-only "$BRANCH" 2>&1; then
+  # B1: the change built and passed its test; keep it on a branch instead of throwing it away
+  git -C "$PROJ" worktree remove --force "$WT" >/dev/null 2>&1
+  KEPT="heal-kept/$ID"; git -C "$PROJ" branch -m "$BRANCH" "$KEPT" >/dev/null 2>&1 || KEPT="$BRANCH"
+  log merge 0 "$TARGET moved, or you have unsaved edits to the same files; the tested change is kept on branch $KEPT"
+  receipt failed "tested change kept on branch $KEPT (not merged)" "${CHANGED[@]}"
+  echo "ragnarok-heal: $TARGET moved or has unsaved edits to the same files, so nothing was changed there." >&2
+  echo "  The tested change is kept on branch $KEPT (git merge $KEPT when ready)." >&2; exit 1
+fi
+log merged 1 "$NEW onto $TARGET"
+if [ -n "$INSTALL" ]; then
+  echo "▸ stage: install"
+  stream install /usr/bin/perl -e 'alarm 900; exec @ARGV' /bin/zsh -lc "$INSTALL" || { log install 0 "$INSTALL failed"; receipt failed "committed $NEW but install failed" "${CHANGED[@]}"; cleanup
+    echo "ragnarok-heal: committed $NEW, but INSTALL failed ($INSTALL)" >&2; exit 1; }
+fi
+cleanup
+log done 1 "$NEW"
+receipt verified "committed $NEW${INSTALL:+, installed}" "${CHANGED[@]}"
+echo "ragnarok-heal: done — $NEW on $TARGET, built and tested${INSTALL:+, installed}."

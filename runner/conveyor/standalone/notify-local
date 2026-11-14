@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Standalone NOTIFY. Replaces the author's notify sender on a machine that is not the author's server.
+#
+# The invariant it preserves: a dead end is ALWAYS surfaced somewhere a human
+# will see it. On the operator's box that is a phone bot. Here it is stderr plus a
+# log file. What must NOT happen is the belt silently swallowing a loss --
+# that is the failure the whole stop rule exists to prevent.
+#
+# Accepts the author's notify sender's calling convention: --b64 <base64> or plain args.
+set -uo pipefail
+LOG="${CONVEYOR_ROOT:-$(dirname "$(dirname "$(readlink -f "$0")")")}/logs/notify.log"
+mkdir -p "$(dirname "$LOG")" 2>/dev/null
+if [ "${1:-}" = "--b64" ]; then msg=$(printf '%s' "${2:-}" | base64 -d 2>/dev/null); else msg="$*"; fi
+ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+printf '\n=== CONVEYOR NOTICE %s ===\n%s\n===========================\n' "$ts" "$msg" >&2
+printf '[%s] %s\n' "$ts" "$msg" >> "$LOG"

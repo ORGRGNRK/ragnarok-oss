@@ -1,0 +1,21 @@
+# Bambu Studio on Alexus, for the Bambu Lab P1S. Runs as claude@ from ~/bambustudio.
+# The web desktop is published on the Tailscale address only, never the LAN.
+# The user name is in ~/bambustudio/.env. That file only points at ~/bambustudio/secret/login (mode 600),
+# mounted below, so the secret is not in this file or in `docker inspect`.
+services:
+  bambustudio:
+    image: lscr.io/linuxserver/bambustudio:v02.09.01.70-ls178
+    container_name: bambustudio
+    env_file: .env
+    environment:
+      - PUID=1001
+      - PGID=1002
+      - TZ=America/Los_Angeles
+      - DARK_MODE=true
+    volumes:
+      - ./config:/config
+      - ./secret:/secrets:ro
+    ports:
+      - ${TAILSCALE_IP:?set TAILSCALE_IP in .env next to this file}:3001:3001
+    shm_size: "1gb"
+    restart: unless-stopped

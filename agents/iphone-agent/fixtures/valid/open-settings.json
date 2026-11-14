@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "0.1",
+  "id": "com.yggdrasil.iphone.open-settings",
+  "name": "Open Settings",
+  "safety": { "risk": "reversible" },
+  "steps": [
+    {
+      "id": "open-settings",
+      "action": "openApp",
+      "app": { "name": "Settings", "bundleId": "com.apple.Preferences" },
+      "expect": { "screenText": "Settings" }
+    }
+  ],
+  "postconditions": [{ "screenText": "Settings" }]
+}

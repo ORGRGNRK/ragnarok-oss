@@ -1,0 +1,511 @@
+#!/usr/bin/env python3
+"""conveyor-taskjson -- the JSON task path for planned tasks (branch json-tasks).
+
+The planner seat writes ONE task as JSON (task-schema/task.schema.json), code
+checks it, the critic seat answers with a JSON verdict
+(task-schema/critic-verdict.schema.json), and a passing task is rendered into
+the belt's ordinary markdown + `:: verify:` checklist so the coder seat and
+conveyor-check work exactly as before. No model is called from here except by
+the `api` subcommand, which only the `api` seat uses.
+
+  conveyor-taskjson schema task|verdict          print a schema (compact JSON)
+  conveyor-taskjson extract-task  RAW TEXT OUT --by WHO
+        pull the task JSON out of a seat's answer, stamp the fields the belt
+        owns (status, provenance.proposed_by/at/source), check it, write OUT.
+        Prints one problem per line and exits 1 when it is not usable.
+  conveyor-taskjson extract-verdict RAW TEXT OUT
+        same for the critic's verdict. Prints "pass" or "issues" on the first
+        line, then one "ISSUE: where: problem (fix: ...)" line per issue.
+  conveyor-taskjson validate FILE                check a task JSON file
+  conveyor-taskjson render FILE --tool PATH --note TEXT
+        print the "## Plan approved"
+        body: goal, files, steps, rules, and the ## Checklist the belt runs.
+        Records a git baseline beside FILE when root is a git repo, and adds a
+        scope/size check line that runs `scope-check`.
+  conveyor-taskjson scope-check FILE             exit 0 only when every file
+        changed under root since the baseline is inside write_scope and within
+        limits (used as a checklist command, so conveyor-check runs it).
+  conveyor-taskjson api                          one chat-completions call to an
+        OpenAI-compatible server (prompt on stdin), printed as stream-json.
+
+RAW is the seat's .jsonl stream (may be missing/empty), TEXT its text log.
+Settings (all optional, all environment variables):
+  CONVEYOR_JSON_ALLOW_HUMAN=1     allow the schema's one HUMAN check (default:
+                                  planned tasks get none, so nobody is waited on)
+  CONVEYOR_JSON_ALLOWED_ROOTS     colon-separated path prefixes a task's root
+                                  must be under (default: any absolute path)
+  CONVEYOR_API_BASE_URL / _MODEL / _KEY_ENV / _STRICT / _TIMEOUT, and the same
+  with a CONVEYOR_PLANNER_API_ or CONVEYOR_CRITIC_API_ prefix (see `api`).
+Python 3.8+, standard library only.
+"""
+import datetime
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+SCHEMA_DIR = os.environ.get("CONVEYOR_TASK_SCHEMA_DIR", os.path.join(HERE, "task-schema"))
+sys.path.insert(0, SCHEMA_DIR)
+import validate as V  # noqa: E402  (task-schema/validate.py: schema + cross-field rules)
+
+TASK_SCHEMA = os.path.join(SCHEMA_DIR, "task.schema.json")
+VERDICT_SCHEMA = os.path.join(SCHEMA_DIR, "critic-verdict.schema.json")
+
+
+def load(path):
+    with open(path) as f:
+        return json.load(f)
+
+
+# ------------------------------------------------------------------ secrets
+# THE SECRETS RULE. The schema pins constraints.secrets to "none"; this is the
+# part a schema cannot say: no credential-shaped string anywhere in the task,
+# and no check, step or path that reads a well-known secret store. Character
+# classes like [k] keep this file from matching tests/portable.sh's own
+# credential scan (which would otherwise report these patterns as a leak).
+TOKEN_RES = [
+    re.compile(r"\bs[k]-[A-Za-z0-9_-]{16,}"),             # OpenAI / Anthropic style
+    re.compile(r"\bx[a]i-[A-Za-z0-9]{16,}"),              # xAI
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}"),          # GitHub
+    re.compile(r"\bgithub_pa[t]_[A-Za-z0-9_]{20,}"),
+    re.compile(r"\bAK[I]A[0-9A-Z]{16}\b"),                # AWS access key id
+    re.compile(r"\bAI[z]a[0-9A-Za-z_-]{30,}"),            # Google API key
+    re.compile(r"\bxo[x][bpars]-[A-Za-z0-9-]{10,}"),      # Slack
+    re.compile(r"BEGIN [A-Z ]*PRIVA[T]E KEY"),
+    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]{20,}"),
+    re.compile(r"(?i)\b(pass(word)?|secret|token|api[_-]?key)\s*[=:]\s*['\"]?[^\s'\"]{8,}"),
+]
+SECRET_PATH_RE = re.compile(
+    r"(^|[\s/'\"=])(\.env(\.[A-Za-z0-9_-]+)?|db\.env|id_(rsa|ed25519|ecdsa)[A-Za-z0-9_.]*|"
+    r"\.ssh/|\.aws/credentials|\.netrc|\.pgpass|\.npmrc|\.pypirc|\.git-credentials|[A-Za-z0-9_-]+\.pem)"
+    r"($|[\s'\";|&)])|security\s+find-(generic|internet)-password|printenv|(^|[\s;|&])env($|[\s;|&])")
+
+
+def strings(v, path="$"):
+    if isinstance(v, str):
+        yield path, v
+    elif isinstance(v, dict):
+        for k, x in v.items():
+            for y in strings(x, path + "." + k):
+                yield y
+    elif isinstance(v, list):
+        for i, x in enumerate(v):
+            for y in strings(x, "%s[%d]" % (path, i)):
+                yield y
+
+
+def secret_errors(t):
+    errs = []
+    for p, s in strings(t):
+        for r in TOKEN_RES:
+            if r.search(s):
+                errs.append("%s: looks like a credential; tasks never carry secrets (secrets: none)" % p)
+                break
+    places = [("acceptance.checks[%d].verify" % i, c.get("verify", ""))
+              for i, c in enumerate(t.get("acceptance", {}).get("checks", []))]
+    places += [("files_to_touch[%d].path" % i, f.get("path", "")) for i, f in enumerate(t.get("files_to_touch", []))]
+    places += [("constraints.write_scope[%d]" % i, w) for i, w in enumerate(t.get("constraints", {}).get("write_scope", []))]
+    for p, s in places:
+        if SECRET_PATH_RE.search(s):
+            errs.append("%s: reads or writes a secret store or the environment (%r); not allowed (secrets: none)" % (p, s))
+    return errs
+
+
+# ------------------------------------------------------------------ belt rules
+def belt_errors(t):
+    """Rules this belt adds on top of the schema and validate.py."""
+    errs = []
+    checks = t["acceptance"]["checks"]
+    if os.environ.get("CONVEYOR_JSON_ALLOW_HUMAN", "0") != "1":
+        for c in checks:
+            if c["verify"].strip() == "HUMAN":
+                errs.append("check %r is a HUMAN check; a planned task is checked by commands only, so it never waits on a person "
+                            "(set CONVEYOR_JSON_ALLOW_HUMAN=1 to allow one)" % c["claim"])
+    for c in checks:
+        if c["verify"].strip() in ("true", ":", "exit 0", "/bin/true", "/usr/bin/true"):
+            errs.append("check %r proves nothing (%r)" % (c["claim"], c["verify"]))
+    claims = [c["claim"] for c in checks]
+    if len(set(claims)) != len(claims):
+        errs.append("acceptance: two checks have the same claim; each needs its own")
+    if ".." in t["root"].split("/"):
+        errs.append("root %r: '..' is not allowed" % t["root"])
+    allowed = [a.rstrip("/") for a in os.environ.get("CONVEYOR_JSON_ALLOWED_ROOTS", "").split(":") if a.strip()]
+    if allowed and not any(t["root"] == a or t["root"].startswith(a + "/") for a in allowed):
+        errs.append("root %r is not under CONVEYOR_JSON_ALLOWED_ROOTS (%s)" % (t["root"], ":".join(allowed)))
+    return errs + secret_errors(t)
+
+
+def task_errors(t):
+    """Every problem with a task, schema first (the other rules need the shape)."""
+    if not isinstance(t, dict):
+        return ["the answer is not a JSON object"]
+    _engine, errs = V.schema_errors(t, load(TASK_SCHEMA), False)
+    if errs:
+        return errs
+    return V.rule_errors(t) + belt_errors(t)
+
+
+def verdict_errors(v):
+    if not isinstance(v, dict):
+        return ["the verdict is not a JSON object"]
+    _engine, errs = V.schema_errors(v, load(VERDICT_SCHEMA), False)
+    if errs:
+        return errs
+    if v["verdict"] == "pass" and v["issues"]:
+        return ["verdict is pass but issues are listed (pass means no issues)"]
+    if v["verdict"] == "issues" and not v["issues"]:
+        return ["verdict is issues but none are listed"]
+    return []
+
+
+# ------------------------------------------------------------------ extraction
+def _objects(text):
+    """Every top-level {...} in text that parses as JSON, in order."""
+    out, dec, i = [], json.JSONDecoder(), 0
+    while True:
+        i = text.find("{", i)
+        if i == -1:
+            return out
+        try:
+            obj, end = dec.raw_decode(text, i)
+            out.append(obj)
+            i = end
+        except ValueError:
+            i += 1
+
+
+def extract(raw_path, text_path, want_key):
+    """The answer object: a native structured_output in the seat's stream
+    first (claude/grok --json-schema, the api seat), else the LAST fenced
+    ```json block in the text, else the last JSON object in the text that
+    has `want_key`."""
+    try:
+        with open(raw_path) as f:
+            lines = f.read().splitlines()
+    except OSError:
+        lines = []
+    native = None
+    for ln in lines:
+        try:
+            ev = json.loads(ln)
+        except ValueError:
+            continue
+        if isinstance(ev, dict) and isinstance(ev.get("structured_output"), dict):
+            native = ev["structured_output"]
+    if native is not None:
+        return native, "structured output"
+    try:
+        with open(text_path) as f:
+            text = f.read()
+    except OSError:
+        text = ""
+    fences = re.findall(r"```(?:json)?[ \t]*\n(.*?)\n[ \t]*```", text, re.S)
+    for body in reversed(fences):
+        try:
+            obj = json.loads(body)
+            if isinstance(obj, dict) and want_key in obj:
+                return obj, "fenced json block"
+        except ValueError:
+            pass
+    for obj in reversed(_objects(text)):
+        if isinstance(obj, dict) and want_key in obj:
+            return obj, "json in the reply text"
+    return None, None
+
+
+def now_iso():
+    return datetime.datetime.now().astimezone().replace(microsecond=0).isoformat()
+
+
+def stamp(t, by):
+    """Fields the BELT owns, not the model: where the task goes and who wrote it.
+    status is always queue -- a passing task goes straight onto the belt."""
+    if not isinstance(t, dict):
+        return t
+    t["schema_version"] = "conveyor-task/0.1"
+    t["status"] = "queue"
+    pv = t.get("provenance") if isinstance(t.get("provenance"), dict) else {}
+    pv["proposed_by"] = (by if len(by) >= 2 else "planner:" + by)[:80]
+    pv["source"] = "planner"
+    pv["proposed_at"] = now_iso()
+    t["provenance"] = pv
+    return t
+
+
+def cmd_extract_task(raw, text, out, by):
+    t, how = extract(raw, text, "acceptance")
+    if t is None:
+        print("no task JSON found in the answer (want one JSON object matching task.schema.json)")
+        return 1
+    t = stamp(t, by)
+    with open(out, "w") as f:
+        json.dump(t, f, indent=2)
+        f.write("\n")
+    errs = task_errors(t)
+    if errs:
+        print("\n".join(errs))
+        return 1
+    print("VALID (%s)" % how, file=sys.stderr)
+    return 0
+
+
+def cmd_extract_verdict(raw, text, out):
+    v, _how = extract(raw, text, "verdict")
+    if v is None:
+        print("no verdict JSON found in the answer (want {\"verdict\": \"pass\"|\"issues\", \"issues\": [...]})")
+        return 1
+    with open(out, "w") as f:
+        json.dump(v, f, indent=2)
+        f.write("\n")
+    errs = verdict_errors(v)
+    if errs:
+        print("\n".join(errs))
+        return 1
+    print(v["verdict"])
+    for i in v["issues"]:
+        print("ISSUE: %s: %s%s" % (i["where"], i["problem"], (" (fix: %s)" % i["fix"]) if i.get("fix") else ""))
+    return 0
+
+
+# ------------------------------------------------------------------ render
+SCOPE_CLAIM = "only files inside write_scope changed, within the size limits"
+
+
+def git(root, *args):
+    return subprocess.run(["git", "-C", root] + list(args), capture_output=True, text=True)
+
+
+def sha(path):
+    try:
+        with open(path, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except OSError:
+        return None
+
+
+def changed_now(root):
+    """{relative path: sha or None} for every tracked change vs HEAD plus every untracked file."""
+    out = {}
+    r = git(root, "status", "--porcelain=v1", "-uall", "--no-renames", ".")
+    top = git(root, "rev-parse", "--show-toplevel").stdout.strip()
+    prefix = os.path.relpath(os.path.realpath(root), os.path.realpath(top)) if top else "."
+    for ln in r.stdout.splitlines():
+        p = ln[3:].strip().strip('"')
+        if prefix != "." and p.startswith(prefix + "/"):
+            p = p[len(prefix) + 1:]
+        out[p] = sha(os.path.join(root, p))
+    return out
+
+
+def baseline_path(task_file):
+    return task_file + ".baseline"
+
+
+def record_baseline(t, task_file):
+    root = t["root"]
+    if not os.path.isdir(root) or git(root, "rev-parse", "--is-inside-work-tree").stdout.strip() != "true":
+        return None
+    head = git(root, "rev-parse", "HEAD").stdout.strip()
+    b = {"head": head or None, "dirty": changed_now(root), "at": now_iso()}
+    with open(baseline_path(task_file), "w") as f:
+        json.dump(b, f, indent=2)
+    return b
+
+
+def render_body(t, tool, task_file, seat_note):
+    """The block appended to the task file. The task file already has its
+    title, queued/by lines and ## Outputs; this adds what the coder needs and
+    the live ## Checklist (conveyor-check's grammar, unchanged)."""
+    c, lim, pv = t["constraints"], t["limits"], t["provenance"]
+    out = [seat_note, "",
+           "task-json: %s" % task_file,
+           "task-id: %s" % t["id"], "project: %s" % t["project"], "root: %s" % t["root"],
+           "by: %s (%s, %s)" % (pv["proposed_by"], pv["source"], pv["proposed_at"])]
+    if t["depends_on"]:
+        out.append("depends-on: %s" % " ".join(t["depends_on"]))
+    out += ["", "Goal: %s" % t["goal"], "", "Files (relative to root):"]
+    out += ["- %s %s%s" % (f["action"], f["path"], (" - " + f["why"]) if f.get("why") else "")
+            for f in t["files_to_touch"]]
+    out += ["", "Do, in order:"] + ["%d. %s" % (i, s) for i, s in enumerate(t["steps"], 1)]
+    out += ["", "Rules:", "- work in %s; every path above is relative to it" % t["root"],
+            "- network: %s" % c["network"],
+            "- secrets: none (never read, print or write tokens, passwords or .env values)",
+            "- write only: %s; everything else is read-only" % ", ".join(c["write_scope"]),
+            "- size: at most %d file(s) changed, %d changed lines" % (lim["max_files_changed"], lim["max_lines_changed"])]
+    out += ["- %s" % n for n in c.get("notes", [])]
+    out += ["", "Done means: %s" % t["acceptance"]["expected_result"], ""]
+    base = record_baseline(t, task_file)
+    if base is None:
+        out += ["Scope note: %s is not a git repository here (or does not exist yet), so the belt cannot check "
+                "write_scope and the size limit by itself for this task. The checks below still run." % t["root"], ""]
+    out.append("## Checklist")
+    for ch in t["acceptance"]["checks"]:
+        v = ch["verify"].strip()
+        verify = v if v == "HUMAN" else "cd %s && %s" % (t["root"], v)
+        line = "- [ ] %s :: verify: %s" % (ch["claim"], verify)
+        if ch.get("expect"):
+            line += " :: expect: %s" % ch["expect"]
+        out.append(line)
+    if base is not None:
+        out.insert(out.index("## Checklist"), "If the scope check below fails, run its verify command yourself: it names the files "
+                   "that are out of scope or over the limit. Undo those changes; do not widen the scope.\n")
+        out.append("- [ ] %s :: verify: python3 %s scope-check %s" % (SCOPE_CLAIM, shq(tool), shq(task_file)))
+    return "\n".join(out) + "\n"
+
+
+def shq(s):
+    return "'" + s.replace("'", "'\\''") + "'"
+
+
+def scope_check(task_file):
+    t = load(task_file)
+    try:
+        b = load(baseline_path(task_file))
+    except (OSError, ValueError):
+        print("FAIL no baseline recorded for %s" % task_file)
+        return 1
+    root, scope = t["root"], t["constraints"]["write_scope"]
+    now = changed_now(root)
+    if b.get("head"):
+        for p in git(root, "diff", "--name-only", "--relative", "--no-renames", b["head"]).stdout.splitlines():
+            now.setdefault(p, sha(os.path.join(root, p)))
+    changed = sorted(p for p, h in now.items() if b["dirty"].get(p, "missing") != h)
+    bad = [p for p in changed if not any(p == w.rstrip("/") or p.startswith(w.rstrip("/") + "/") for w in scope)]
+    lines = 0
+    for p in changed:
+        if b.get("head"):
+            r = git(root, "diff", "--numstat", "--relative", b["head"], "--", p).stdout.split()
+            if len(r) >= 2 and r[0].isdigit():
+                lines += int(r[0]) + int(r[1])
+                continue
+        try:
+            with open(os.path.join(root, p), "rb") as f:
+                lines += f.read().count(b"\n")
+        except OSError:
+            pass
+    ok = True
+    if bad:
+        print("FAIL changed outside write_scope: %s" % ", ".join(bad)); ok = False
+    if len(changed) > t["limits"]["max_files_changed"]:
+        print("FAIL %d files changed, limit %d" % (len(changed), t["limits"]["max_files_changed"])); ok = False
+    if lines > t["limits"]["max_lines_changed"]:
+        print("FAIL about %d lines changed, limit %d" % (lines, t["limits"]["max_lines_changed"])); ok = False
+    if ok:
+        print("OK %d file(s), about %d line(s) changed, all inside write_scope" % (len(changed), lines))
+    return 0 if ok else 1
+
+
+# ------------------------------------------------------------------ api seat
+def setting(role, name, default=""):
+    """CONVEYOR_<ROLE>_API_<NAME> if set, else CONVEYOR_API_<NAME>, else default."""
+    keys = (["CONVEYOR_%s_API_%s" % (role.upper(), name)] if role else []) + ["CONVEYOR_API_%s" % name]
+    for k in keys:
+        if os.environ.get(k):
+            return os.environ[k]
+    return default
+
+
+def emit(obj):
+    sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
+    sys.stdout.flush()
+
+
+def cmd_api():
+    """One OpenAI-compatible chat-completions call. Works with any server that
+    speaks that API (llama-server, Ollama /v1, LM Studio, vLLM, OpenRouter,
+    OpenAI, xAI...). The schema (CONVEYOR_API_SCHEMA_FILE, set by the runner)
+    goes in response_format json_schema; with CONVEYOR_API_RESPONSE_FORMAT=none
+    the schema stays in the prompt only. The key is read from the environment
+    variable NAMED by ..._KEY_ENV (default CONVEYOR_API_KEY), sent as a Bearer
+    header, and never printed. Output: stream-json lines, final type=result with
+    the text and, when it parses, structured_output."""
+    role = os.environ.get("CONVEYOR_API_ROLE", "")
+    base = setting(role, "BASE_URL").rstrip("/")
+    model = setting(role, "MODEL")
+    key = os.environ.get(setting(role, "KEY_ENV", "CONVEYOR_API_KEY"), "")
+    strict = setting(role, "STRICT", "0") == "1"
+    fmt = setting(role, "RESPONSE_FORMAT", "json_schema")
+    tmo = int(setting(role, "TIMEOUT", "600") or 600)
+    if not base or not model:
+        print("conveyor-taskjson api: set CONVEYOR_API_BASE_URL and CONVEYOR_API_MODEL "
+              "(or the CONVEYOR_%s_API_ ones)" % (role.upper() or "PLANNER"), file=sys.stderr)
+        return 3
+    prompt = sys.stdin.read()
+    body = {"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}
+    sf = os.environ.get("CONVEYOR_API_SCHEMA_FILE", "")
+    if sf and fmt == "json_schema":
+        body["response_format"] = {"type": "json_schema", "json_schema": {
+            "name": "conveyor_" + (role or "answer"), "strict": strict, "schema": load(sf)}}
+    elif sf and fmt == "json_object":
+        body["response_format"] = {"type": "json_object"}
+    req = urllib.request.Request(base + "/chat/completions", data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"})
+    if key:
+        req.add_header("Authorization", "Bearer " + key)
+    try:
+        with urllib.request.urlopen(req, timeout=tmo) as r:
+            resp = json.loads(r.read().decode())
+        text = resp["choices"][0]["message"].get("content") or ""
+    except urllib.error.HTTPError as e:
+        print("conveyor-taskjson api: %s answered HTTP %s" % (base, e.code), file=sys.stderr)
+        return 3
+    except (urllib.error.URLError, OSError, ValueError, KeyError, IndexError) as e:
+        print("conveyor-taskjson api: %s could not be used (%s)" % (base, type(e).__name__), file=sys.stderr)
+        return 3
+    ev = {"type": "result", "subtype": "success", "is_error": False, "result": text}
+    rm = resp.get("model") if isinstance(resp, dict) else None   # as reported by the API, not as requested
+    ev["model_reported"] = rm.strip()[:200] if isinstance(rm, str) and rm.strip() else None
+    try:
+        obj = json.loads(text)
+        if isinstance(obj, dict):
+            ev["structured_output"] = obj
+    except ValueError:
+        pass
+    emit(ev)
+    return 0
+
+
+def main(argv):
+    if not argv:
+        sys.stderr.write(__doc__)
+        return 2
+    cmd, a = argv[0], argv[1:]
+    if cmd == "schema" and len(a) == 1 and a[0] in ("task", "verdict"):
+        print(json.dumps(load(TASK_SCHEMA if a[0] == "task" else VERDICT_SCHEMA), separators=(",", ":")))
+        return 0
+    if cmd == "extract-task" and len(a) == 5 and a[3] == "--by":
+        return cmd_extract_task(a[0], a[1], a[2], a[4])
+    if cmd == "extract-verdict" and len(a) == 3:
+        return cmd_extract_verdict(a[0], a[1], a[2])
+    if cmd == "validate" and len(a) == 1:
+        try:
+            t = load(a[0])
+        except (OSError, ValueError) as e:
+            print("INVALID (could not read/parse): %s" % e)
+            return 1
+        errs = task_errors(t)
+        print("VALID %s" % a[0] if not errs else "INVALID %s\n  - %s" % (a[0], "\n  - ".join(errs)))
+        return 1 if errs else 0
+    if cmd == "render" and len(a) == 5 and a[1] == "--tool" and a[3] == "--note":
+        t = load(a[0])
+        errs = task_errors(t)
+        if errs:
+            print("refusing to render an invalid task:\n" + "\n".join(errs), file=sys.stderr)
+            return 1
+        sys.stdout.write(render_body(t, a[2], os.path.abspath(a[0]), a[4]))
+        return 0
+    if cmd == "scope-check" and len(a) == 1:
+        return scope_check(a[0])
+    if cmd == "api" and not a:
+        return cmd_api()
+    sys.stderr.write(__doc__)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

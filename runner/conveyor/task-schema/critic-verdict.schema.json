@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:conveyor:critic-verdict:0.1",
+  "title": "Conveyor critic verdict (draft 0.1)",
+  "description": "What the critic seat returns about one planned task JSON. pass = no issues; issues = at least one. Kept to the llama.cpp-friendly subset.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "issues"],
+  "properties": {
+    "verdict": {"enum": ["pass", "issues"]},
+    "issues": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["where", "problem"],
+        "properties": {
+          "where": {"description": "The field or check it is about, e.g. acceptance.checks[1] or steps[2].", "type": "string", "minLength": 1, "maxLength": 80},
+          "problem": {"type": "string", "minLength": 5, "maxLength": 300},
+          "fix": {"description": "What the planner should change.", "type": "string", "maxLength": 300}
+        }
+      }
+    },
+    "notes": {"type": "string", "maxLength": 500}
+  }
+}

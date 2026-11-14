@@ -1,0 +1,588 @@
+#!/usr/bin/env python3
+"""ragnarok-timeline: what the owner and their AIs did on this machine, newest activity as JSON.
+
+    ragnarok-timeline [--host NAME] [--hours N] [--since EPOCH] [--limit N]
+    ragnarok-timeline selfcheck
+
+The Timeline's reading of the logs, as one script that runs on the Mac, on Linux and on Alexus, so no screen
+has to carry it (the Mac app's Parsers.swift / Feeds.swift did this inside the app). It looks for every feed it
+knows; a feed whose files are not on this machine says "no files", one it cannot read says so. Read-only.
+
+Out: {"host", "at", "hours", "feeds": [{"name", "status", "ok"}], "events": [...]}, events oldest first, each
+{"t" (epoch seconds), "actor", "host", "source", "kind", "title", "body", "session", "n"}. "n" > 1 means the same
+line came n times with never more than 10 minutes between two of them, and is shown once (t is the last time,
+the body says when the first was).
+
+Every title and body goes through the secret scrubber (the same rules as the Mac app's Scrub.swift) before it
+leaves this script. Model reasoning is never read; Codex transcripts give tool names only.
+Standard library only; works on Python 3.9.
+"""
+import argparse, datetime, glob, json, math, os, pwd, re, socket, subprocess, sys, time
+
+TAIL = 4 * 1024 * 1024      # per file: only the last 4 MB are read
+PER_FEED = 600              # newest events kept per feed, so one noisy feed cannot push the others out
+BODY = 2000                 # characters of body kept per event
+REPEAT = 600                # seconds: the same line again within this long is counted, not repeated
+OWNER_LOGIN = pwd.getpwuid(os.getuid()).pw_name.lower()   # this machine's login = the owner
+ROOM_BIN = os.environ.get("ROOM_BIN", os.path.expanduser("~/Developer/ragnarok-room/bin/room"))
+
+
+# ------------------------------------------------------------------ scrubber (port of Scrub.swift)
+PATTERNS = [(n, re.compile(p)) for n, p in [
+    ("private-key", r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)"),
+    ("age-secret", r"AGE-(?:SECRET-KEY|PLUGIN-[A-Z0-9-]+?)-1[A-Z0-9]{20,}"),
+    ("anthropic-key", r"sk-ant-[A-Za-z0-9_-]{20,}"),
+    ("openai-key", r"sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}"),
+    ("xai-key", r"xai-[A-Za-z0-9]{20,}"),
+    ("github-token", r"(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})"),
+    ("gitlab-token", r"glpat-[A-Za-z0-9_-]{20,}"),
+    ("slack-token", r"xox[abprs]-[A-Za-z0-9-]{10,}"),
+    ("aws-key", r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
+    ("google-key", r"AIza[0-9A-Za-z_-]{35}"),
+    ("stripe-key", r"\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{16,}"),
+    ("nocodb-token", r"nc_pat_[A-Za-z0-9_-]{16,}"),
+    ("jwt", r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),
+    ("bearer", r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}"),
+    ("url-password", r"(?<=://)[^\s:/@]+:[^\s@/]+(?=@)"),
+    ("assignment", r"(?i)\b(?:[A-Z0-9_]*(?:password|passwd|pwd|secret|token|api[_-]?key|apikey|auth|credential)[A-Z0-9_]*)"
+                   r"\s*[:=]\s*[\"']?(?!\[hidden)[^\s\"']{6,}"),
+]]
+SECRET_NAME = re.compile(r"(?i)(key|token|secret|pass|auth|credential|cookie|session)")
+RANDOMISH = re.compile(r"(?<![A-Za-z0-9+_=-])[A-Za-z0-9+_=-]{32,}(?![A-Za-z0-9+_=-])")
+NOT_SECRET_ENV = {"SSH_AUTH_SOCK", "XPC_SERVICE_NAME", "TERM_SESSION_ID", "SECURITYSESSIONID"}
+_values = None
+
+
+def scrub_values(home):
+    """Exact secret values: secret-named environment variables, and each line of ~/.ragnarok/scrub-values."""
+    found = {}
+    for k, v in os.environ.items():
+        if len(v) >= 8 and not v.startswith("/") and " " not in v and SECRET_NAME.search(k) and k not in NOT_SECRET_ENV:
+            found[v] = "env:" + k
+    try:
+        with open(os.path.join(home, ".ragnarok/scrub-values"), encoding="utf-8", errors="replace") as f:
+            for l in f:
+                v = l.strip()
+                if len(v) >= 6 and not v.startswith("#"):
+                    found[v] = "listed"
+    except OSError:
+        pass
+    return sorted(((label, v) for v, label in found.items()), key=lambda x: -len(x[1]))
+
+
+def entropy(s):
+    return -sum((c / len(s)) * math.log2(c / len(s)) for c in (s.count(ch) for ch in set(s)))
+
+
+def _random(m):
+    w = m.group(0)
+    hexish = all(c in "0123456789abcdefABCDEF" for c in w)
+    mixed = any(c.isupper() for c in w) and any(c.islower() for c in w) and any(c.isdigit() for c in w)
+    return "[hidden:random]" if (not hexish and mixed and entropy(w) >= 4.0) else w
+
+
+def scrub(text):
+    for label, v in _values or ():
+        if v in text:
+            text = text.replace(v, f"[hidden:{label}]")
+    for name, rx in PATTERNS:
+        text = rx.sub(f"[hidden:{name}]", text)
+    return RANDOMISH.sub(_random, text)
+
+
+# ------------------------------------------------------------------ small helpers
+def normalize(raw):
+    s = (raw or "").lower()
+    for needle, name in (("claude", "claude"), ("argon", "argon"), ("castor", "argon"), ("gemini", "argon"),
+                         ("antigravity", "argon"), ("grok", "grok"), ("codex", "codex")):
+        if needle in s:
+            return name
+    if "alexus" in s and "@alexus" not in s:
+        return "alexus"
+    if "ai-admin" in s:
+        return "ai-admin"
+    if s in ("owner", "user", "human-terminal", OWNER_LOGIN):
+        return "owner"
+    return s or "unknown"
+
+
+def when(s):
+    """ISO time (with Z, with or without fractions of any length) -> epoch seconds, or None."""
+    if not isinstance(s, str) or not s:
+        return None
+    m = re.match(r"^(\d{4}-\d\d-\d\d)[T ](\d\d:\d\d:\d\d)(\.\d+)?\s*(Z|[+-]\d\d:?\d\d)?$", s.strip())
+    if not m:
+        return None
+    day, clock, frac, zone = m.groups()
+    zone = "+00:00" if zone in (None, "Z") else (zone if ":" in zone else zone[:3] + ":" + zone[3:])
+    try:
+        d = datetime.datetime.strptime(f"{day}T{clock}{zone.replace(':', '')}", "%Y-%m-%dT%H:%M:%S%z")
+    except ValueError:
+        return None
+    return d.timestamp() + (float(frac) if frac else 0.0)
+
+
+def one_line(s, n=160):
+    flat = " ".join(str(s).split())
+    return flat[:n] + "…" if len(flat) > n else flat
+
+
+def pretty(v):
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v
+    try:
+        return json.dumps(v, indent=1, sort_keys=True, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return str(v)
+
+
+def session_name(path):
+    parts = path.split("/")
+    if "brain" in parts[:-1]:
+        return parts[parts.index("brain") + 1][:8]
+    return parts[-1].replace(".jsonl", "")[:8]
+
+
+def js(line):
+    try:
+        d = json.loads(line)
+    except ValueError:
+        return None
+    return d if isinstance(d, dict) else None
+
+
+def ev(t, actor, source, kind, title, body, session=""):
+    return {"t": t, "actor": actor, "source": source, "kind": kind, "title": title, "body": body, "session": session}
+
+
+# ------------------------------------------------------------------ parsers: (path, line, fallback time) -> events
+def p_claude(path, line, ft):
+    d = js(line)
+    if not d or d.get("type") not in ("user", "assistant") or not isinstance(d.get("message"), dict):
+        return []
+    if d.get("isCompactSummary") or d.get("isMeta"):
+        return []
+    t, s, user = when(d.get("timestamp")) or ft, session_name(path), d["type"] == "user"
+
+    def said(text):
+        return ev(t, "owner", "claude-code", "prompt", "→ Claude: " + one_line(text), text, s) if user \
+            else ev(t, "claude", "claude-code", "said", one_line(text), text, s)
+    c = d["message"].get("content")
+    if isinstance(c, str):
+        return [said(c)]
+    out = []
+    for it in c if isinstance(c, list) else []:
+        if not isinstance(it, dict):
+            continue
+        if it.get("type") == "text":                       # "thinking" blocks are never read
+            out.append(said(it.get("text") or ""))
+        elif it.get("type") == "tool_use":
+            inp = it.get("input") if isinstance(it.get("input"), dict) else {}
+            head = inp.get("command") or inp.get("file_path") or inp.get("description") or ""
+            out.append(ev(t, "claude", "claude-code", "tool", f"{it.get('name') or 'tool'}: {one_line(head)}", pretty(inp), s))
+        elif it.get("type") == "tool_result":
+            r = it.get("content")
+            text = r if isinstance(r, str) else "\n".join(x.get("text", "") for x in r if isinstance(x, dict)) \
+                if isinstance(r, list) else ""
+            out.append(ev(t, "claude", "claude-code", "result", "result: " + one_line(text), text, s))
+    return out
+
+
+def p_argon(path, line, ft):
+    d = js(line)
+    if not d or not isinstance(d.get("type"), str):
+        return []
+    t, s, content = when(d.get("created_at")) or ft, session_name(path), d.get("content") or ""
+    if not isinstance(content, str):
+        content = pretty(content)
+    if d["type"] == "USER_INPUT":
+        m = re.search(r"<USER_REQUEST>([\s\S]*?)</USER_REQUEST>", content)
+        return [ev(t, "owner", "antigravity", "prompt", "→ Argon: " + one_line(m.group(1) if m else content), content, s)]
+    if d["type"] == "PLANNER_RESPONSE":
+        out = [ev(t, "argon", "antigravity", "said", one_line(content), content, s)] if content else []
+        if d.get("tool_calls"):
+            calls = pretty(d["tool_calls"])
+            out.append(ev(t, "argon", "antigravity", "tool", "tools: " + one_line(calls), calls, s))
+        return out
+    if d["type"] == "GENERIC" and content:
+        return [ev(t, "argon", "antigravity", "result", "result: " + one_line(content), content, s)]
+    return []
+
+
+def p_grok(path, line, ft):
+    d = js(line)
+    if not d or not isinstance(d.get("type"), str):
+        return []
+    t, s, kind = when(d.get("timestamp") or d.get("ts")) or ft, session_name(path), d["type"]
+    if kind == "user":
+        c = pretty(d.get("content"))
+        return [ev(t, "owner", "grok-cli", "prompt", "→ Grok: " + one_line(c), c, s)]
+    if kind == "assistant":
+        c = pretty(d.get("content"))
+        return [ev(t, "grok", "grok-cli", "said", one_line(c), c, s)] if c else []
+    if kind == "reasoning":
+        return []                                          # model reasoning is never read
+    return [ev(t, "grok", "grok-cli", "tool", kind + ": " + one_line(pretty(d)), pretty(d), s)]
+
+
+def p_codex_tools(path, line, ft):
+    """Tool names and status only. Never model messages, reasoning, tool arguments or results."""
+    d = js(line)
+    if not d or d.get("type") != "event_msg":
+        return []
+    p = d.get("payload") if isinstance(d.get("payload"), dict) else {}
+    item = p.get("item") if isinstance(p.get("item"), dict) else {}
+    if p.get("type") != "item_completed":
+        return []
+    if item.get("type") == "McpToolCall":
+        title = f"MCP: {item.get('server') or 'unknown'}.{item.get('tool') or 'unknown'}"
+    elif item.get("type") == "Extension":
+        title = f"Tool: {item.get('kind') or 'extension'}"
+    else:
+        return []                                          # shell commands already have receipts
+    status = str(item.get("status") or "recorded")
+    return [ev(when(d.get("timestamp")) or ft, "codex", "codex-tools", "tool", f"{title} · {status}",
+               f"{title}\nStatus: {status}\nSource: Codex transcript metadata. Arguments, results and model messages "
+               "are not included.", str(p.get("thread_id") or session_name(path))[:8])]
+
+
+def p_mac_receipts(path, line, ft):
+    d = js(line)
+    if not d:
+        return []
+    cmd = d.get("command") or d.get("record_ref") or ""
+    raw = str(d.get("kind") or "").lower()
+    code = d.get("exit_code")
+    return [ev(when(d.get("at")) or ft, normalize(d.get("actor")), "mac-receipts",
+               raw if raw in ("read", "change", "command", "tool") else "command",
+               f"{d.get('tool') or d.get('kind') or ''} exit {'?' if code is None else code}: {one_line(cmd)}",
+               pretty(d), str(d.get("session") or "")[:8])]
+
+
+def p_owner_shell(path, line, ft):
+    d = js(line)
+    if not d:
+        return []
+    cmd, rc, src = str(d.get("cmd") or ""), d.get("exit", "?"), str(d.get("src") or "zsh")
+    return [ev(when(d.get("ts")) or ft, "owner", src, "command", f"$ {one_line(cmd)}  (exit {rc})",
+               f"{cmd}\n\ncwd: {d.get('cwd') or ''}\nexit: {rc}", src)]
+
+
+def p_ssh_receipts(path, line, ft):
+    d = js(line)
+    if not d:
+        return []
+    raw = str(d.get("actor") or "")
+    return [ev(when(d.get("ts")) or ft, normalize(raw.split("@")[0]), "ai-ssh-receipts", "command",
+               f"$ {one_line(d.get('cmd') or '')}  ({d.get('status') or ''})", pretty(d), raw)]
+
+
+def _step_log(source, word):
+    def parse(path, line, ft):
+        d = js(line)
+        if not d:
+            return []
+        who = str(d.get("who") or "")
+        actor = {"manual": "owner", "launcher": "heimdall", "gemini": "gemini"}.get(who) or \
+            (who if who.startswith("api:") else normalize(who))
+        step, ok = str(d.get("step") or ""), d.get("ok", True)
+        project = os.path.basename(str(d.get("project") or ""))
+        prefix = f"{word} {project}" if (word == "heal" and project) else word
+        return [ev(when(d.get("ts")) or ft, actor, source, "said" if step == "ai" else "edit",
+                   f"{'' if ok else '✗ '}{prefix} {step}: {one_line(d.get('detail') or '')}", pretty(d),
+                   str(d.get("edit") or d.get("heal") or ""))]
+    return parse
+
+
+def p_app_errors(path, line, ft):
+    d = js(line)
+    if not d:
+        return []
+
+    def label(k):
+        v = d.get(k)
+        return v if isinstance(v, str) and v.strip() and v.lower() not in ("unknown", "unverified") else "Unverified"
+    area, message = str(d.get("area") or "app"), str(d.get("message") or "error")
+    code = f" ({d['code']})" if d.get("code") is not None else ""
+    detail = ": ".join(x for x in (d.get("domain"), message) if isinstance(x, str))
+    who = "\n".join(f"{k}: {label(k)}" for k in ("actor", "os_user", "origin", "run_id", "incident_id", "build"))
+    run = label("run_id")
+    return [ev(when(d.get("ts")) or ft, label("actor"), "ragnarok-app-error", "error", f"{area}{code}: {one_line(message)}",
+               detail + "\n" + who, str(d.get("process_session") or area) if run == "Unverified" else run)]
+
+
+def p_chat(path, line, ft):
+    d = js(line)
+    if not d:
+        return []
+    role, text = d.get("role") or "", str(d.get("content") or "")
+    title = "→ Alexus: " + one_line(text) if role == "user" else ("chat " if role == "seal" else "") + one_line(text)
+    return [ev(when(d.get("ts")) or ft, "owner" if role == "user" else "alexus", "alexus-chat",
+               "prompt" if role == "user" else ("change" if role == "seal" else "said"), title, text, str(d.get("session") or ""))]
+
+
+def p_room(path, line, ft):
+    d = js(line)
+    if not d or not d.get("id"):
+        return []
+    by, kind, text, ref = str(d.get("by") or "?"), d.get("type") or "say", str(d.get("text") or ""), d.get("ref") or ""
+    verified = not d.get("unverified")
+    title = {"task": f"room task {d['id']}: {one_line(text)}",
+             "claim": f"room: claimed task {ref}" + (f" — {one_line(text)}" if text else ""),
+             "done": f"room: finished task {ref}" + (f" — {one_line(text)}" if text else "")}.get(kind, "room: " + one_line(text))
+    return [ev(when(d.get("ts")) or ft, normalize(by) if verified else "unknown", "room", "said" if kind == "say" else "change",
+               ("" if verified else f"⚠︎ unverified ({by}) ") + title, pretty(d), "room")]
+
+
+def p_audit(path, line, ft):
+    if 'key="ai_' not in line:
+        return []
+
+    def field(name):
+        m = re.search(rf' {name}=(?:"([^"]*)"|(\S+))', line)
+        return (m.group(1) if m.group(1) is not None else m.group(2)) if m else None
+    m = re.search(r"msg=audit\((\d+(?:\.\d+)?):", line)
+    auid = field("auid") or ""
+    if auid == "4294967295":
+        actor = "os"
+    else:
+        try:
+            actor = normalize(pwd.getpwuid(int(auid)).pw_name)
+        except (KeyError, ValueError):
+            actor = normalize(field("AUID")) if field("AUID") else f"uid {auid}"
+    return [ev(float(m.group(1)) if m else ft, actor, "auditd", "audit",
+               f"{field('key') or ''}: {field('exe') or field('comm') or field('name') or ''}", line, f"auid {auid}")]
+
+
+# name, glob patterns (~ is the home folder), parser
+FEEDS = [
+    ("Claude Code", ["~/.claude/projects/*/*.jsonl"], p_claude),
+    ("Argon / Antigravity", ["~/.gemini/antigravity/brain/*/.system_generated/logs/transcript.jsonl"], p_argon),
+    ("Grok CLI", ["~/.grok/sessions/*/*/chat_history.jsonl"], p_grok),
+    ("Codex tool activity", ["~/.codex/sessions/*/*/*/*.jsonl"], p_codex_tools),
+    ("AI receipts", ["~/.ragnarok/receipts-spool.jsonl"], p_mac_receipts),
+    ("The owner's shell", ["~/.ragnarok/user-commands.jsonl", "~/.ragnarok/heimdall-shell.jsonl"], p_owner_shell),
+    ("Heimdall edits / launcher", ["~/.ragnarok/heimdall-edits.jsonl"], _step_log("heimdall-edit", "edit")),
+    ("Project heal runs", ["~/.ragnarok/ragnarok-heal.jsonl"], _step_log("ragnarok-heal", "heal")),
+    ("Ragnarok app errors", ["~/.ragnarok/ragnarok-app-errors.jsonl"], p_app_errors),
+    ("Alexus chat", ["~/.ragnarok/heimdall-chat.jsonl"], p_chat),
+    ("AI SSH commands", ["/var/log/ragnarok/ai_ssh_receipts.jsonl"], p_ssh_receipts),
+    ("auditd AI activity", ["/var/log/audit/audit.log"], p_audit),
+]
+
+
+# ------------------------------------------------------------------ reading
+def tail_lines(path, size):
+    """Whole lines from the last TAIL bytes. A line cut by the start of the window is dropped, never half-read."""
+    start = max(0, size - TAIL)
+    with open(path, "rb") as f:
+        f.seek(start)
+        data = f.read()
+    end = data.rfind(b"\n")
+    if end < 0:
+        return []
+    lines = data[:end].split(b"\n")
+    if start > 0:
+        lines = lines[1:]
+    return [l.decode("utf-8", "replace") for l in lines if l]
+
+
+def collapse(events):
+    """The same actor + title again within REPEAT seconds of its last time folds into one event with a count,
+    even when other lines sit in between (a poll every few seconds would otherwise bury everything else)."""
+    out, open_groups = [], {}
+    for e in events:
+        key = (e["actor"], e["title"])
+        g = open_groups.get(key)
+        if g is not None and e["t"] - g["t"] <= REPEAT:
+            g.setdefault("first", g["t"])
+            g["t"], g["n"] = e["t"], g["n"] + 1
+        else:
+            g = dict(e, n=1)
+            open_groups[key] = g
+            out.append(g)
+    for e in out:
+        if e["n"] > 1:
+            first = datetime.datetime.fromtimestamp(e.pop("first"), datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+            e["body"] = f"({e['n']} times, first at {first}, never more than {REPEAT // 60} minutes apart; this is the last one)\n" + e["body"]
+    out.sort(key=lambda e: e["t"])
+    return out
+
+
+def read_feed(name, patterns, parse, home, cutoff):
+    paths = sorted(p for pat in patterns for p in glob.glob(pat.replace("~", home, 1) if pat.startswith("~") else pat))
+    if not paths:
+        return [], {"name": name, "status": "no files on this machine", "ok": True, "files": 0}
+    events, recent, errors = [], 0, []
+    for path in paths:
+        try:
+            st = os.stat(path)
+            if st.st_mtime < cutoff:
+                continue
+            recent += 1
+            for line in tail_lines(path, st.st_size):
+                try:
+                    events.extend(parse(path, line, st.st_mtime))
+                except Exception as e:                      # one odd line never takes the feed down
+                    errors.append(f"{os.path.basename(path)}: {type(e).__name__}")
+        except OSError as e:
+            errors.append(f"{os.path.basename(path)}: {e.strerror or e}")
+    status = f"{recent} of {len(paths)} file{'s' if len(paths) != 1 else ''} active"
+    if errors:
+        status += f" · {len(errors)} problem{'s' if len(errors) != 1 else ''}: {errors[0]}"
+    return events, {"name": name, "status": status, "ok": not errors, "files": len(paths)}
+
+
+def read_room(cutoff):
+    name = "Shared room"
+    if not os.path.isfile(ROOM_BIN):
+        return [], {"name": name, "status": "the room is not on this machine", "ok": True, "files": 0}
+    try:
+        r = subprocess.run([sys.executable, ROOM_BIN, "read", "200", "--json"], capture_output=True, text=True, timeout=15)
+        if r.returncode != 0:
+            raise RuntimeError((r.stderr.strip().splitlines() or [f"exit {r.returncode}"])[-1])
+        rows = json.loads(r.stdout or "[]")
+    except Exception as e:
+        return [], {"name": name, "status": f"can't read the room: {e}", "ok": False, "files": 0}
+    events = [x for row in rows if isinstance(row, dict) for x in p_room("", json.dumps(row), time.time())]
+    return events, {"name": name, "status": f"{len(rows)} newest posts read", "ok": True, "files": 1}
+
+
+def gather(home, host, hours, since=0.0, limit=1500, room=True):
+    global _values
+    _values = scrub_values(home)
+    now = time.time()
+    cutoff = max(now - hours * 3600, since)
+    feeds, events = [], []
+    sources = [(lambda f=f: read_feed(f[0], f[1], f[2], home, cutoff)) for f in FEEDS]
+    if room:
+        sources.append(lambda: read_room(cutoff))
+    for read in sources:
+        got, status = read()
+        got = [e for e in got if e["t"] > cutoff]
+        got.sort(key=lambda e: e["t"])
+        got = collapse(got)[-PER_FEED:]
+        status["events"] = len(got)
+        feeds.append(status)
+        events.extend(got)
+    events.sort(key=lambda e: e["t"])
+    events = events[-limit:]
+    for e in events:
+        e["host"] = host
+        e["title"] = scrub(e["title"])
+        body = scrub(e["body"][:20000])
+        e["body"] = body[:BODY] + (f"\n… ({len(e['body']) - BODY} more characters not shown)" if len(e["body"]) > BODY else "")
+    return {"host": host, "at": now, "hours": hours, "feeds": feeds, "events": events}
+
+
+# ------------------------------------------------------------------ selfcheck
+def selfcheck():
+    import tempfile
+    fails = []
+
+    def check(name, ok):
+        print(("ok   " if ok else "FAIL ") + name)
+        if not ok:
+            fails.append(name)
+    now = time.time()
+    iso = lambda dt=0: datetime.datetime.fromtimestamp(now + dt, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    key = "sk-ant-" + "a1B2" * 8
+    with tempfile.TemporaryDirectory() as home:
+        def put(rel, lines, age=0):
+            p = os.path.join(home, rel)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
+                f.write("".join((l if isinstance(l, str) else json.dumps(l)) + "\n" for l in lines))
+            if age:
+                os.utime(p, (now - age, now - age))
+        put(".claude/projects/-x/abcdef123456.jsonl", [
+            {"type": "user", "timestamp": iso(-50), "message": {"content": "fix the thing"}},
+            {"type": "assistant", "timestamp": iso(-40), "message": {"content": [
+                {"type": "thinking", "thinking": "PRIVATE-REASONING"},
+                {"type": "text", "text": "On it."},
+                {"type": "tool_use", "name": "Bash", "input": {"command": f"curl -H 'x: {key}' example"}}]}},
+            {"type": "user", "timestamp": iso(-30), "message": {"content": [{"type": "tool_result", "content": "done ok"}]}},
+            {"type": "user", "isCompactSummary": True, "timestamp": iso(-20), "message": {"content": "SUMMARY-TEXT"}},
+            "not json at all",
+        ])
+        put(".claude/projects/-x/old.jsonl", [{"type": "user", "timestamp": iso(-90000), "message": {"content": "ancient"}}], age=90000)
+        put(".grok/sessions/a/b/chat_history.jsonl", [
+            {"type": "user", "content": "hello grok", "timestamp": "2026-11-01T17:35:18.687029Z"},
+            {"type": "assistant", "content": "hi", "ts": iso(-10)},
+            {"type": "reasoning", "summary": [{"text": "GROK-REASONING"}], "ts": iso(-9)}])
+        put(".codex/sessions/2026/11/11/r.jsonl", [
+            {"type": "event_msg", "timestamp": iso(-8), "payload": {"type": "item_completed", "thread_id": "t1",
+             "item": {"type": "McpToolCall", "server": "hq", "tool": "read", "status": "ok", "arguments": "CODEX-ARGS"}}},
+            {"type": "event_msg", "timestamp": iso(-8), "payload": {"type": "agent_message", "message": "CODEX-MESSAGE"}}])
+        put(".ragnarok/user-commands.jsonl", [{"ts": iso(-7.5), "cmd": "ls", "exit": 0, "cwd": "/tmp"}] * 2 +
+            [{"ts": iso(-7), "cmd": "export API_TOKEN=supersecretvalue1", "exit": 0},
+             {"ts": iso(-6.5), "cmd": "ls", "exit": 0, "cwd": "/tmp"}, {"ts": iso(-4000), "cmd": "ls", "exit": 0, "cwd": "/tmp"}])
+        put(".ragnarok/heimdall-chat.jsonl", [{"ts": iso(-5), "role": "user", "content": "hey", "session": "c1"},
+                                              {"ts": iso(-4), "role": "assistant", "content": "yo", "session": "c1"}])
+        put(".ragnarok/receipts-spool.jsonl", [{"at": iso(-3), "actor": "claude-code", "tool": "Bash", "kind": "command",
+                                                "command": "git status", "exit_code": 0, "session": "0123456789"}])
+        put(".ragnarok/heimdall-edits.jsonl", [{"ts": iso(-2), "who": "manual", "step": "build", "ok": False, "detail": "boom"}])
+        big = os.path.join(home, ".ragnarok/ragnarok-heal.jsonl")
+        with open(big, "w") as f:
+            f.write(json.dumps({"ts": iso(-1), "who": "grok", "step": "test", "detail": "CUT-LINE " + "x" * TAIL}) + "\n")
+            f.write(json.dumps({"ts": iso(-1), "who": "grok", "step": "test", "detail": "kept line", "project": "/a/proj"}) + "\n")
+        out = gather(home, "testbox", 24, room=False)
+        evs, text = out["events"], json.dumps(out)
+        by = lambda src: [e for e in evs if e["source"] == src]
+        check("claude: prompt, reply, tool and result are read", [e["kind"] for e in by("claude-code")] == ["prompt", "said", "tool", "result"])
+        check("claude: thinking and compaction summaries are never read", "PRIVATE-REASONING" not in text and "SUMMARY-TEXT" not in text)
+        check("a key in a command is hidden", key not in text and "[hidden:anthropic-key]" in text)
+        check("a secret assignment is hidden", "supersecretvalue1" not in text)
+        check("a file untouched for longer than the window is skipped", "ancient" not in text)
+        check("grok: old line (microsecond time) is outside the window, new one is in", [e["title"] for e in by("grok-cli")] == ["hi"])
+        check("grok: reasoning is never read", "GROK-REASONING" not in text)
+        check("codex: tool name only, no arguments or messages", [e["title"] for e in by("codex-tools")] == ["MCP: hq.read · ok"]
+              and "CODEX-ARGS" not in text and "CODEX-MESSAGE" not in text)
+        shell = by("zsh")
+        check("a repeated command shows once with a count, even with another line in between; an hour-old one stays separate",
+              [(e["title"][:4], e["n"]) for e in shell] == [("$ ls", 1), ("$ ex", 1), ("$ ls", 3)] and "3 times" in shell[2]["body"])
+        check("chat: owner and Alexus", [(e["actor"], e["kind"]) for e in by("alexus-chat")] == [("owner", "prompt"), ("alexus", "said")])
+        check("receipts: actor and exit code", [e["title"] for e in by("mac-receipts")] == ["Bash exit 0: git status"] and by("mac-receipts")[0]["actor"] == "claude")
+        check("edits: a failed step is marked", [e["title"] for e in by("heimdall-edit")] == ["✗ edit build: boom"])
+        check("a line cut by the read window is dropped, the next is kept", [e["title"] for e in by("ragnarok-heal")] == ["heal proj test: kept line"])
+        check("events are oldest first and all carry the host", evs == sorted(evs, key=lambda e: e["t"]) and all(e["host"] == "testbox" for e in evs))
+        check("a feed with no files says so", any(f["name"] == "Argon / Antigravity" and "no files" in f["status"] for f in out["feeds"]))
+        newer = gather(home, "testbox", 24, since=now - 4.5, room=False)["events"]
+        check("--since returns only newer events", bool(newer) and all(e["t"] > now - 4.5 for e in newer) and len(newer) < len(evs))
+        os.chmod(os.path.join(home, ".ragnarok/heimdall-chat.jsonl"), 0)
+        if os.geteuid() != 0:
+            bad = [f for f in gather(home, "testbox", 24, room=False)["feeds"] if f["name"] == "Alexus chat"][0]
+            check("a feed it cannot read says so and is marked not ok", not bad["ok"] and "problem" in bad["status"])
+    line = ('type=SYSCALL msg=audit(1794398450.594:427859): arch=c000003e syscall=59 auid=4294967295 uid=997 comm="awk" '
+            'exe="/usr/bin/gawk" subj=unconfined key="ai_exec"ARCH=x86_64 AUID="unset"')
+    a = p_audit("", line, 0)
+    check("auditd: time, key and program", len(a) == 1 and a[0]["t"] == 1794398450.594 and a[0]["title"] == "ai_exec: /usr/bin/gawk" and a[0]["actor"] == "os")
+    check("auditd: lines without an ai_ key are ignored", p_audit("", "type=USER_START msg=audit(1.0:2): pid=1", 0) == [])
+    r = p_ssh_receipts("", json.dumps({"ts": "2026-11-11T12:00:16Z", "actor": "claude@newserver", "status": "Applied (exit=0)", "cmd": "ls"}), 0)
+    check("ssh receipts: who and what", r[0]["actor"] == "claude" and r[0]["title"] == "$ ls  (Applied (exit=0))" and r[0]["t"] == 1794398416.0)
+    m = p_room("", json.dumps({"ts": "2026-11-11T11:12:00.725Z", "id": "d527e1ca", "type": "say", "text": "hi", "by": "grok", "unverified": True}), 0)
+    check("room: an unverified author is shown as unknown", m[0]["actor"] == "unknown" and m[0]["title"].startswith("⚠︎ unverified (grok)"))
+    check("hex (commit hashes) is not treated as a secret", scrub("commit " + "ab12" * 10) == "commit " + "ab12" * 10)
+    print(f"\n{'all checks passed' if not fails else str(len(fails)) + ' FAILED'}")
+    return 1 if fails else 0
+
+
+def main():
+    if sys.argv[1:2] == ["selfcheck"]:
+        sys.exit(selfcheck())
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--host", default="mac" if sys.platform == "darwin" else socket.gethostname().split(".")[0],
+                    help="the name this machine's events carry (default: mac on macOS, else the hostname)")
+    ap.add_argument("--hours", type=float, default=24, help="how far back to look (default 24)")
+    ap.add_argument("--since", type=float, default=0, help="only events after this epoch time")
+    ap.add_argument("--limit", type=int, default=1500, help="newest events kept (default 1500)")
+    a = ap.parse_args()
+    json.dump(gather(os.path.expanduser("~"), a.host, max(0.1, min(a.hours, 24 * 14)), a.since, max(1, a.limit)),
+              sys.stdout, ensure_ascii=False)
+    print()
+
+
+if __name__ == "__main__":
+    main()

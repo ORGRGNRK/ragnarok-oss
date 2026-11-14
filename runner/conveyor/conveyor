@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+# conveyor — the one front door. Wraps the belt's own scripts so a person (or
+# their AI assistant) never has to know which file does what.
+#
+#   ./conveyor setup     install missing dependencies
+#   ./conveyor doctor    check everything is ready; say exactly what to fix
+#   ./conveyor add "title" [--plan] [--attach FILE]... [-m "body"]   (or body on stdin)
+#                        --plan: plan it first (planner + critic seats, see SPEC-planning.md)
+#                        --plan-format json|markdown (default json: see task-schema/README.md)
+#   ./conveyor run [--max N]             work the queue until empty, stuck, or N legs
+#   ./conveyor status
+#
+# WHY A WRAPPER AND NOT A PORT. The runner is written for GNU userland (date -Is,
+# timeout, flock, sed -i, stat -c, bash 4). macOS ships BSD tools and bash 3.2.
+# Rewriting 1,400 lines of tested shell for BSD would fork the behaviour this
+# belt exists to guarantee. Instead, on macOS this puts Homebrew's GNU tools
+# first on PATH for the belt's processes only. Nothing global changes.
+#
+# This file itself must run on bash 3.2, because on a fresh Mac that is the
+# only bash there is when `setup` is first called.
+set -eu
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+OS="$(uname -s)"
+
+gnu_path() {
+  if [ "$OS" = Darwin ] && command -v brew >/dev/null 2>&1; then
+    local bp; bp="$(brew --prefix)"
+    for d in "$bp/bin" "$bp/opt/flock/bin" "$bp/opt/gnu-sed/libexec/gnubin" \
+             "$bp/opt/coreutils/libexec/gnubin"; do
+      [ -d "$d" ] && PATH="$d:$PATH"
+    done
+    export PATH
+  fi
+}
+
+# YOUR SETTINGS, NOT THE CODE'S (json-tasks). Every CONVEYOR_* setting has a
+# default in the scripts; to change one for this belt, put it in conveyor.env
+# beside this file (or point CONVEYOR_CONFIG at another file). It is plain
+# shell: KEY=value lines. conveyor.env.example lists them. Not tracked by git,
+# so a key or a machine name in it never ships. Values already set in the
+# environment win over the file.
+load_config() {
+  local cfg="${CONVEYOR_CONFIG:-$HERE/conveyor.env}" line key
+  [ -r "$cfg" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|'#'*) continue ;; esac
+    line="${line#export }"
+    key="${line%%=*}"
+    case "$key" in *[!A-Za-z0-9_]*|'') continue ;; esac
+    case "$key" in CONVEYOR_*|ANTHROPIC_*|XAI_*|OPENAI_*) ;; *) continue ;; esac
+    [ -n "$(eval "printf '%s' \"\${$key:-}\"")" ] && continue
+    eval "export $line"
+  done < "$cfg"
+}
+
+belt_env() {
+  gnu_path
+  load_config
+  export CONVEYOR_ROOT="${CONVEYOR_ROOT:-$HERE}"
+  export CONVEYOR_STANDALONE=1
+  export CONVEYOR_DRIVER_SEAT="${CONVEYOR_DRIVER_SEAT:-claude}"
+  export CONVEYOR_VERIFIER_SEAT="${CONVEYOR_VERIFIER_SEAT:-claude}"
+  # Grok Build's installer puts grok in ~/.grok/bin, which a shell that never
+  # sourced its profile (the Mac app, cron) does not have on PATH.
+  if [ -x "$HOME/.grok/bin/grok" ]; then
+    case ":$PATH:" in *":$HOME/.grok/bin:"*) ;; *) PATH="$PATH:$HOME/.grok/bin"; export PATH ;; esac
+  fi
+  local b
+  for s in claude codex gemini grok; do
+    b="$(command -v "$s" 2>/dev/null || true)"
+    [ -n "$b" ] || continue
+    case "$s" in
+      claude) export CONVEYOR_CLAUDE="${CONVEYOR_CLAUDE:-$b}" ;;
+      codex)  export CONVEYOR_CODEX="${CONVEYOR_CODEX:-$b}" ;;
+      gemini) export CONVEYOR_GEMINI="${CONVEYOR_GEMINI:-$b}" ;;
+      grok)   export CONVEYOR_GROK="${CONVEYOR_GROK:-$b}" ;;
+    esac
+  done
+}
+
+cmd_setup() {
+  case "$OS" in
+    Darwin)
+      command -v brew >/dev/null 2>&1 || {
+        echo "Homebrew is needed first. Install it from https://brew.sh, then run ./conveyor setup again." >&2
+        exit 1; }
+      # jq and python3 only when missing: a second python3 on PATH would
+      # change which one the person's other tools pick up.
+      local extra=""
+      command -v jq >/dev/null 2>&1 || extra="$extra jq"
+      command -v python3 >/dev/null 2>&1 || extra="$extra python3"
+      brew install bash coreutils gnu-sed flock $extra ;;
+    Linux)
+      local sudo=""; [ "$(id -u)" = 0 ] || sudo="sudo"
+      if command -v apt-get >/dev/null 2>&1; then
+        $sudo apt-get update -qq && $sudo apt-get install -y jq curl util-linux coreutils python3
+      elif command -v dnf >/dev/null 2>&1; then
+        $sudo dnf install -y jq curl util-linux coreutils python3
+      elif command -v pacman >/dev/null 2>&1; then
+        $sudo pacman -Syu --needed --noconfirm jq curl util-linux coreutils python
+      else
+        echo "Unknown package manager. Install: jq curl flock (util-linux) coreutils python3" >&2; exit 1
+      fi ;;
+    *) echo "Unsupported OS: $OS (use macOS, Linux, or WSL on Windows)" >&2; exit 1 ;;
+  esac
+  chmod +x "$HERE"/conveyor-* "$HERE"/conveyor "$HERE"/standalone/*-local "$HERE"/install.sh 2>/dev/null || true
+  echo
+  cmd_doctor
+}
+
+# The local seat's model server (OpenAI-compatible). The key, if any, goes to
+# curl on stdin, never on its command line.
+local_ok() {
+  { [ -n "${CONVEYOR_LOCAL_API_KEY:-}" ] && printf 'header = "Authorization: Bearer %s"\n' "$CONVEYOR_LOCAL_API_KEY" || true; } \
+    | curl -fsS -m 5 -K - "${CONVEYOR_LOCAL_BASE_URL:-http://127.0.0.1:1234/v1}/models" >/dev/null 2>&1
+}
+
+cmd_doctor() {
+  belt_env
+  local bad=0
+  ok()  { printf '  ok    %s\n' "$1"; }
+  fix() { printf '  FIX   %s\n' "$1"; bad=1; }
+  echo "conveyor doctor ($OS)"
+  local bv; bv="$(bash -c 'echo ${BASH_VERSINFO[0]}')"
+  [ "$bv" -ge 4 ] && ok "bash $bv" || fix "bash $bv is too old (need 4+): run ./conveyor setup"
+  for t in jq curl flock timeout python3; do
+    command -v "$t" >/dev/null 2>&1 && ok "$t" || fix "$t missing: run ./conveyor setup"
+  done
+  date -Is >/dev/null 2>&1 && ok "GNU date" || fix "date is not GNU date: run ./conveyor setup"
+  sed --version >/dev/null 2>&1 && ok "GNU sed" || fix "sed is not GNU sed: run ./conveyor setup"
+  stat -c %s "$HERE/conveyor" >/dev/null 2>&1 && ok "GNU stat" || fix "stat is not GNU stat: run ./conveyor setup"
+  local seat any=0
+  for seat in claude codex gemini grok; do
+    if command -v "$seat" >/dev/null 2>&1; then ok "seat available: $seat"; any=1; fi
+  done
+  [ "$any" = 1 ] || fix "no AI CLI found: install Claude Code (claude), Codex CLI (codex), Gemini CLI (gemini) or Grok Build (grok) and log in"
+  local seats="$CONVEYOR_DRIVER_SEAT"
+  [ "$CONVEYOR_VERIFIER_SEAT" = "$seats" ] || seats="$seats $CONVEYOR_VERIFIER_SEAT"
+  for seat in $seats; do
+    if [ "$seat" = local ]; then
+      local_ok && ok "local model answers at ${CONVEYOR_LOCAL_BASE_URL:-http://127.0.0.1:1234/v1}" \
+        || fix "local seat selected but ${CONVEYOR_LOCAL_BASE_URL:-http://127.0.0.1:1234/v1}/models does not answer (start the model server, or set CONVEYOR_LOCAL_BASE_URL)"
+      continue
+    fi
+    command -v "$seat" >/dev/null 2>&1 || fix "selected seat '$seat' is not installed (set CONVEYOR_DRIVER_SEAT / CONVEYOR_VERIFIER_SEAT)"
+  done
+  # Planning first is opt-in (./conveyor add --plan), so its seats are a note,
+  # never a FIX: a belt that never plans does not need them.
+  local planner="${CONVEYOR_PLANNER_SEAT:-claude}" critic="${CONVEYOR_CRITIC_SEAT:-}"
+  [ -n "$critic" ] || { critic=grok; [ "$planner" = grok ] && critic=claude; }
+  for seat in "$planner" "$critic" ${CONVEYOR_ESCALATE_SEAT:-}; do
+    if [ "$seat" = local ]; then local_ok || printf '  note  plan stage: the local model does not answer (only matters for --plan tasks)\n'
+    elif ! command -v "$seat" >/dev/null 2>&1; then
+      printf "  note  plan stage: seat '%s' is not installed (only matters for --plan tasks)\n" "$seat"
+    fi
+  done
+  printf '  info  plan stage (--plan tasks only): planner %s, critic %s, stuck step goes to %s\n' \
+    "$planner" "$critic" "${CONVEYOR_ESCALATE_SEAT:-you}"
+  printf '  info  plan format for new --plan tasks: %s (json = schema-checked task, a critic pass goes straight to the queue)\n' \
+    "${CONVEYOR_PLAN_FORMAT:-json}"
+  python3 "$HERE/conveyor-taskjson" validate "$HERE/task-schema/example-task.json" >/dev/null 2>&1 \
+    && ok "task schema validator" || fix "task-schema/ or conveyor-taskjson is missing or broken (needed for --plan json tasks)"
+  echo
+  if [ "$bad" = 0 ]; then echo "Ready. Add a task with ./conveyor add, then ./conveyor run."; else echo "Not ready yet: fix the lines marked FIX."; exit 1; fi
+}
+
+cmd_status() { belt_env; "$HERE/conveyor-status"; }
+
+count() { find "$CONVEYOR_ROOT/$1" -maxdepth 1 -name '*.md' 2>/dev/null | wc -l | tr -d ' '; }
+
+# What the belt looks like, to tell whether a leg moved anything. The receipt
+# count is in it because a leg can change a task without moving it: a plan
+# round that sends the task back to plan/ for revision, or a check-fail bounce.
+fingerprint() {
+  { ls -R "$CONVEYOR_ROOT"/{plan,queue,running,verify,human,done,failed} 2>/dev/null
+    wc -l < "$CONVEYOR_ROOT/logs/receipts.jsonl" 2>/dev/null; } | if command -v md5sum >/dev/null 2>&1; then md5sum; else cksum; fi
+}
+
+cmd_run() {
+  belt_env
+  local max=50
+  [ "${1:-}" = "--max" ] && max="${2:?--max needs a number}"
+  local i=0 before after
+  while [ "$i" -lt "$max" ]; do
+    if [ "$(count plan)" = 0 ] && [ "$(count queue)" = 0 ] && [ "$(count verify)" = 0 ] && [ "$(count running)" = 0 ]; then
+      echo "conveyor: nothing left to run."; break
+    fi
+    before="$(fingerprint)"
+    i=$((i + 1))
+    echo "conveyor: leg $i"
+    "$HERE/conveyor-run.sh" || echo "conveyor: the runner exited nonzero (see logs/); continuing only if something moved"
+    after="$(fingerprint)"
+    if [ "$before" = "$after" ]; then
+      echo "conveyor: nothing moved on that leg (waiting on a backoff, a seat, or you). Stopping."
+      break
+    fi
+  done
+  echo
+  cmd_status
+}
+
+case "${1:-help}" in
+  setup)  cmd_setup ;;
+  doctor) cmd_doctor ;;
+  add)    shift; belt_env; exec "$HERE/conveyor-add" "$@" ;;
+  run)    shift; cmd_run "$@" ;;
+  status) cmd_status ;;
+  help|-h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) echo "unknown command: $1 (try ./conveyor help)" >&2; exit 2 ;;
+esac

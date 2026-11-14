@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Ships finished screen recordings from ~/Screen-Recordings to alexus. Source: ops/mac-scripts/screen-recording-ship.sh -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>co.rgnrk.screen-recording-ship</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>@HOME@/scripts/screen-recording-ship.sh</string>
+  </array>
+  <key>WatchPaths</key>
+  <array>
+    <string>@HOME@/Screen-Recordings</string>
+  </array>
+  <key>StartInterval</key><integer>30</integer>
+  <key>RunAtLoad</key><true/>
+  <key>Nice</key><integer>10</integer>
+  <key>LowPriorityIO</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardErrorPath</key><string>@HOME@/Library/Logs/screen-recording-ship.log</string>
+  <key>StandardOutPath</key><string>@HOME@/Library/Logs/screen-recording-ship.log</string>
+</dict></plist>

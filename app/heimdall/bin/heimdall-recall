@@ -1,0 +1,211 @@
+#!/usr/bin/env -S python3 -I
+"""heimdall-recall — look things up in the owner's own files and past failures, without reading whole repos.
+
+  heimdall-recall "what you're looking for" [k]        parts of ~/Developer that match by meaning (default 6)
+  heimdall-recall --failures "what you're about to do" [k]   past failures on this Mac that look related (default 5)
+
+Code search: the owner's search-fast.py over the index built by recall/build-corpus.sh (nomic-embed-text on Alexus).
+Failures: ~/.ragnarok/heimdall-edits.jsonl (failed edit steps, crashes, rollbacks, with the files that edit touched)
+and ~/.ragnarok/terminal-receipts.jsonl (terminal answers whose claims didn't match the disk, or that failed).
+Read-only. Prints plain text; exit 0 even when nothing is found.
+"""
+import json, os, re, subprocess, sys, time
+from datetime import datetime, timezone
+
+HOME = os.path.expanduser("~")
+PY = f"{HOME}/Developer/scripts/recall/.venv/bin/python"
+SEARCH = f"{HOME}/Developer/scripts/recall/search-fast.py"
+CORPUS = f"{HOME}/Library/Application Support/Heimdall/corpus/chunks.jsonl"
+EDITS = f"{HOME}/.ragnarok/heimdall-edits.jsonl"
+RECEIPTS = f"{HOME}/.ragnarok/terminal-receipts.jsonl"
+
+def _local_conf(key, default):
+    """ALEXUS_HOST / ALEXUS_TAILSCALE from ~/.ragnarok/local.conf (KEY=value, read only)."""
+    val = None
+    try:
+        with open(f"{HOME}/.ragnarok/local.conf", encoding="utf-8") as f:
+            for line in f:
+                k, sep, v = line.strip().partition("=")
+                if sep and not k.startswith("#") and k.strip() == key:
+                    val = v.strip().strip("\"'")
+    except OSError:
+        pass
+    if val and not val.startswith("-") and len(val) <= 253 and re.fullmatch(r"[A-Za-z0-9.:-]+", val):
+        return val
+    return default
+
+
+def _alexus_host():
+    return _local_conf("ALEXUS_HOST", "alexus.local")
+
+
+def _alexus_tailscale():
+    return _local_conf("ALEXUS_TAILSCALE", "alexus")
+
+
+EMBED = os.environ.get("RECALL_EMBED_URL", f"http://{_alexus_host()}:11434/v1/embeddings")
+FALLBACK_EMBED = f"http://{_alexus_tailscale()}:11434/v1/embeddings"
+
+HEADER = ("## FROM HIS OWN NOTES AND FILES (found by meaning, most relevant first)\n\n"
+          "These are real excerpts from their computer. Use them. If they do not answer it, say so.\n\n")
+FAIL_HEADER = ("## PAST FAILURES ON THIS MAC (from Heimdall's own logs, most related first)\n\n"
+               "These really happened. Don't repeat them; if one looks related, say how you'll avoid it.\n\n")
+
+
+def code(query, k):
+    try:
+        r = subprocess.run([PY, "-I", SEARCH, CORPUS, query, str(k)], capture_output=True, text=True, timeout=30,
+                           env={**os.environ, "RECALL_EMBED_URL": EMBED})
+        if r.returncode != 0 and FALLBACK_EMBED != EMBED:
+            r = subprocess.run([PY, "-I", SEARCH, CORPUS, query, str(k)], capture_output=True, text=True, timeout=30,
+                               env={**os.environ, "RECALL_EMBED_URL": FALLBACK_EMBED})
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return f"(code search unavailable: {e})"
+    if r.returncode != 0:
+        return "(code search unavailable: " + (r.stderr.strip().splitlines() or ["exit %d" % r.returncode])[-1] + ")"
+    try:
+        got = json.loads(r.stdout)
+        hits = [h for h in (got.get("hits") or []) if isinstance(h, dict)
+                and not ("/logs/" in str(h.get("path") or "") or str(h.get("path") or "").endswith(".jsonl"))]
+    except (ValueError, AttributeError):
+        return "(code search unavailable: the search helper didn't return JSON)"
+    if not hits:
+        return "(nothing in their files matched)"
+    body = "\n\n---\n\n".join(f"[{as_float(h.get('score')):.2f}] {str(h.get('path') or h.get('name') or 'note').replace(HOME, '~')}\n{h.get('text', '')}"
+                              for h in hits)
+    return HEADER + body
+
+
+PROBLEMS = []   # F1/F2: unreadable files and skipped records are reported, never a traceback or a silent "none"
+
+
+def as_float(x):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def lines(path):
+    bad = 0
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    bad += 1; continue
+                if isinstance(d, dict):
+                    yield d
+                else:
+                    bad += 1
+    except FileNotFoundError:
+        return
+    except OSError as e:
+        PROBLEMS.append(f"can't read {os.path.basename(path)}: {e.strerror or e}")
+        return
+    if bad:
+        PROBLEMS.append(f"skipped {bad} unreadable record{'s' if bad != 1 else ''} in {os.path.basename(path)}")
+
+
+def text(x):
+    return x if isinstance(x, str) else ("" if x is None else str(x))
+
+
+def failures():
+    """Every failure we have a record of, as dicts: ts, what, files, text (for matching)."""
+    out, diffs, starts = [], {}, {}
+    rows = list(lines(EDITS))
+    for d in rows:
+        if d.get("step") == "diff":
+            diffs[d.get("edit")] = " ".join(re.findall(r"[\w./-]+\.\w+", text(d.get("detail"))))
+        if d.get("step") == "start" and d.get("detail"):
+            starts[d.get("edit")] = text(d["detail"])
+    seen = set()
+    for d in rows:
+        bad = d.get("ok") is False or d.get("step") in ("rollback", "fallback")
+        if not bad:
+            continue
+        detail = text(d.get("detail")).strip()
+        # selftest dumps every line; keep the failing ones
+        if "\n" in detail:
+            fl = [l for l in detail.splitlines() if l.startswith("FAIL")]
+            detail = "; ".join(fl) if fl else detail.splitlines()[-1]
+        key = (d.get("step"), detail[:120])
+        if key in seen:
+            continue
+        seen.add(key)
+        edit = d.get("edit", "")
+        who = d.get("who", "?")
+        step = d.get("step")
+        verb = f"{step}:" if step in ("rollback", "fallback", "crash") else f"{step} failed:"
+        what = f"heimdall {'launcher' if edit == 'launcher' else 'edit by ' + who}: {verb} {detail[:300]}"
+        if edit in starts and edit != "launcher":   # launcher lines share one id, so its "start" isn't this event's
+            what += f" (task: {starts[edit][:200]})"
+        files = diffs.get(edit, "")
+        out.append({"ts": text(d.get("ts")), "what": what, "files": files, "text": f"{what} {files}"})
+    for d in lines(RECEIPTS):
+        if d.get("verdict") not in ("mismatch", "failed"):
+            continue
+        claims = d.get("claims") if isinstance(d.get("claims"), list) else []
+        bad = [c for c in claims if isinstance(c, dict) and not c.get("ok")]
+        why = "; ".join(f"said {c.get('verb')} {c.get('path')} but {c.get('why')}" for c in bad) or f"exit {d.get('exit')}"
+        what = f"terminal ({d.get('provider')}): {why} — asked: {text(d.get('question'))[:200]}"
+        files = " ".join(text(c.get("path")) for c in bad)
+        out.append({"ts": text(d.get("ts")), "what": what, "files": files, "text": f"{what} {files}"})
+    return out
+
+
+WORD = re.compile(r"[a-z0-9][a-z0-9_.-]{2,}")
+STOP = set("the and for with that this you are was can not but from have has its into out what when your his how why "
+           "will just make made like then them they there here about over also more some any all".split())
+
+
+def score(query_words, f, now):
+    words = set(WORD.findall(f["text"].lower())) - STOP
+    overlap = len(query_words & words)
+    try:
+        t = datetime.fromisoformat(f["ts"].replace("Z", "+00:00"))
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)   # F1: a timestamp with no zone counts as UTC
+        age_days = (now - t).total_seconds() / 86400
+    except (ValueError, TypeError):
+        age_days = 365
+    return overlap * 2 + max(0.0, 1 - age_days / 30)   # related first; newer breaks ties
+
+
+def fails(query, k):
+    fs = failures()
+    if not fs:
+        return "(" + "; ".join(PROBLEMS) + ")" if PROBLEMS else "(no failures on record)"
+    qw = set(WORD.findall(query.lower())) - STOP
+    now = datetime.now(timezone.utc)
+    ranked = sorted(fs, key=lambda f: score(qw, f, now), reverse=True)
+    if qw:
+        related = [f for f in ranked if set(WORD.findall(f["text"].lower())) & qw]
+        ranked = related or ranked[:2]
+    rows = []
+    for f in ranked[:k]:
+        when = f["ts"][:16].replace("T", " ")
+        rows.append(f"- {when} UTC · {f['what']}" + (f" · files: {f['files'][:200]}" if f["files"] else ""))
+    return FAIL_HEADER + "\n".join(rows) + ("\n(" + "; ".join(PROBLEMS) + ")" if PROBLEMS else "")
+
+
+def main(argv):
+    if len(argv) < 2 or argv[1] in ("-h", "--help"):
+        print(__doc__.strip()); return 0
+    def count(i, default):   # F1: k must be a positive whole number
+        if len(argv) <= i:
+            return default
+        if not argv[i].isdigit() or int(argv[i]) < 1:
+            print(f"heimdall-recall: the count must be a positive whole number, not {argv[i]!r}", file=sys.stderr)
+            sys.exit(2)
+        return min(int(argv[i]), 50)
+    if argv[1] == "--failures":
+        q = argv[2] if len(argv) > 2 else ""
+        print(fails(q, count(3, 5))); return 0
+    print(code(argv[1], count(2, 6))); return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

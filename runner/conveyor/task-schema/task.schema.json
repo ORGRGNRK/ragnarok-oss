@@ -1,0 +1,274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:conveyor:task-schema:0.1",
+  "title": "Conveyor task (draft 0.1)",
+  "description": "One small, testable job for a conveyor belt. A planner task may go straight to the queue; provenance is kept as an audit record. Kept to the subset llama.cpp json-schema-to-grammar understands (no contains/not/if, simple patterns).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "title",
+    "goal",
+    "project",
+    "root",
+    "files_to_touch",
+    "steps",
+    "constraints",
+    "acceptance",
+    "limits",
+    "depends_on",
+    "status",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "conveyor-task/0.1"
+    },
+    "id": {
+      "description": "Slug. The belt filename becomes <YYYYMMDD-HHMMSS>-<id>.md, stamped by code, not the model.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{2,59}$"
+    },
+    "title": {
+      "description": "Becomes the '# ' heading line (what belt-view shows).",
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 80
+    },
+    "goal": {
+      "description": "ONE sentence: what is true when this is done.",
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 200
+    },
+    "project": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$"
+    },
+    "root": {
+      "description": "Absolute repo/path root. All file paths are relative to it.",
+      "type": "string",
+      "pattern": "^/[A-Za-z0-9._/-]{1,200}$"
+    },
+    "files_to_touch": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "action"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._][A-Za-z0-9._/-]{0,150}$"
+          },
+          "action": {
+            "enum": [
+              "create",
+              "edit",
+              "read"
+            ]
+          },
+          "why": {
+            "type": "string",
+            "maxLength": 120
+          }
+        }
+      }
+    },
+    "steps": {
+      "description": "Short ordered instructions for the coder seat. Each one small.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 6,
+      "items": {
+        "type": "string",
+        "minLength": 5,
+        "maxLength": 160
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "network",
+        "secrets",
+        "write_scope"
+      ],
+      "properties": {
+        "network": {
+          "enum": [
+            "none",
+            "localhost_only",
+            "public_read_only"
+          ]
+        },
+        "secrets": {
+          "const": "none",
+          "description": "Never read, print or write tokens/passwords/.env values."
+        },
+        "write_scope": {
+          "description": "Relative paths (under root) the job may write. Everything else is read-only.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._][A-Za-z0-9._/-]{0,150}$"
+          }
+        },
+        "notes": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "maxLength": 160
+          }
+        }
+      }
+    },
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checks",
+        "expected_result"
+      ],
+      "properties": {
+        "checks": {
+          "description": "Maps 1:1 to conveyor-check lines: '- [ ] <claim> :: verify: <verify> [:: expect: <expect>]'. verify is a shell command run from root, or exactly HUMAN.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "claim",
+              "verify"
+            ],
+            "properties": {
+              "claim": {
+                "type": "string",
+                "minLength": 5,
+                "maxLength": 90,
+                "pattern": "^[^\\n:\"\\\\]+$"
+              },
+              "verify": {
+                "type": "string",
+                "minLength": 4,
+                "maxLength": 300,
+                "description": "Shell command run from root, or exactly HUMAN. One line, no \" :: \" (checked by validate.py)."
+              },
+              "expect": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              }
+            }
+          }
+        },
+        "expected_result": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 200
+        }
+      }
+    },
+    "limits": {
+      "description": "Size hints that keep the job small enough for a local coder model.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_files_changed",
+        "max_lines_changed"
+      ],
+      "properties": {
+        "max_files_changed": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "max_lines_changed": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300
+        },
+        "timeout_s": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 1800
+        }
+      }
+    },
+    "depends_on": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]{2,59}$"
+      }
+    },
+    "status": {
+      "description": "Lane on the belt. A planner task may start at queue. proposed is optional: a task held back for review before it goes on the belt.",
+      "enum": [
+        "proposed",
+        "queue",
+        "running",
+        "verify",
+        "human",
+        "done",
+        "failed"
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "proposed_by",
+        "source",
+        "proposed_at"
+      ],
+      "properties": {
+        "proposed_by": {
+          "description": "Model or person that wrote this, e.g. 'planner:<seat>'. The belt fills this in itself.",
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "source": {
+          "enum": [
+            "planner",
+            "finding",
+            "intent",
+            "operator",
+            "chris",
+            "session"
+          ]
+        },
+        "proposed_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([+-][0-9]{2}:[0-9]{2}|Z)$"
+        },
+        "approved_by": {
+          "description": "Optional audit note: who approved it, if anyone did. Not required for any status.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 40
+        },
+        "ask": {
+          "description": "The operator's own words, if the task came from them.",
+          "type": "string",
+          "maxLength": 300
+        }
+      }
+    }
+  }
+}

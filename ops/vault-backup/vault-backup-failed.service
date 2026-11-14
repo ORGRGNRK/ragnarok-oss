@@ -1,0 +1,5 @@
+[Unit]
+Description=Tell the room the vault backup failed
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c "python3 %h/Developer/ragnarok-room/bin/room say \"[automatic, vault-backup on Alexus] Vault backup FAILED. Check: journalctl --user -u vault-backup\""

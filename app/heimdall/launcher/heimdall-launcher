@@ -1,0 +1,158 @@
+#!/bin/bash
+# The stable part of Ragnarok (built as Heimdall). Lives in a hidden helper, ~/Library/Application Support/Heimdall/
+# Ragnarok Launcher.app (no Dock icon), and runs the real app, ~/Applications/Ragnarok.app; edits never touch it.
+# Keeps the current build running:
+#   - exit 0          the owner quit: stop
+#   - exit 75         the owner clicked Restart after an update: start the new current build
+#   - exit 143/129    stopped by a signal from outside (logout, kill): stop, not a crash
+#   - anything else   crash: start it again; if a build that hasn't passed its check (HEIMDALL_VERIFY_AFTER, 20 s) yet
+#                     crashes within that window, swap back to the previous build first (rollback).
+#   - exit-75 loops back off (3 in 30 s) and give up after 10 in 5 minutes
+#   - if the launcher itself is stopped, it stops the app too; an app left running by a dead launcher is asked to Quit
+#   - 5 crashes in 2 minutes: fall back to the saved known-good copy (Heimdall-known-good/Heimdall.app);
+#     if that is already running, or there is none, give up and say so
+#   - only one launcher runs; a second one brings the app forward and exits
+#   - every start first closes any other running Heimdall (old builds, build/ test copy)
+#   - once a build has run 20 s, previous.app and broken.app.* are deleted (build/Heimdall.app too if its commit is on the branch)
+# Every start, crash and rollback goes to ~/.ragnarok/heimdall-edits.jsonl (shown in Heimdall).
+SUPPORT="$HOME/Library/Application Support/Heimdall"
+# The app itself (the one in the Dock). previous/incoming/broken builds and this launcher live in $SUPPORT.
+CURRENT="${HEIMDALL_CURRENT:-$HOME/Applications/Ragnarok.app}"
+LOG="$HOME/.ragnarok/heimdall-edits.jsonl"
+BUNDLE_ID="${HEIMDALL_BUNDLE_ID-co.rgnrk.heimdall}"   # overridable (empty = no AppleScript) only for tests
+mkdir -p "$HOME/.ragnarok" "$SUPPORT"; [ -e "$LOG" ] || install -m 600 /dev/null "$LOG"   # C1: the lock's folder must exist first
+
+log() {
+  /usr/bin/python3 -c 'import json,sys,datetime
+print(json.dumps({"ts":datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00","Z"),
+ "edit":"launcher","who":"launcher","by":sys.argv[1],"step":sys.argv[2],"ok":sys.argv[3]=="1","detail":sys.argv[4]}))' \
+    "$(id -un)" "$1" "$2" "$3" >> "$LOG"
+}
+notify() { [ -n "$BUNDLE_ID" ] || return 0; /usr/bin/osascript -e "display notification \"$1\" with title \"Ragnarok\"" >/dev/null 2>&1; }
+
+if [ ! -d "$CURRENT" ]; then
+  log start 0 "no build installed at $CURRENT (run make-app.sh --install)"
+  notify "No Heimdall build installed yet."; exit 1
+fi
+
+# One launcher at a time. Opening the app (Dock, Spotlight, the app's own hand-off) while it already runs used to
+# start a second launcher; the two closed each other's copy and the newest build got rolled back as "crashed on
+# start" (2026-11-01 12:36). Now a second launcher just brings the running app forward and leaves.
+LOCK="$SUPPORT/launcher.pid"
+for _ in 1 2; do
+  ( set -C; echo $$ > "$LOCK" ) 2>/dev/null && break
+  other=$(cat "$LOCK" 2>/dev/null)
+  if [ -n "$other" ] && [ "$other" != "$$" ] && kill -0 "$other" 2>/dev/null && ps -o command= -p "$other" | grep -q heimdall-launcher; then
+    log start 1 "launcher already running (pid $other); not starting a second one"
+    [ -n "$BUNDLE_ID" ] && pgrep -f "${HEIMDALL_MATCH:-/Contents/MacOS/Heimdall\$}" >/dev/null && /usr/bin/osascript -e "tell application id \"$BUNDLE_ID\" to activate" >/dev/null 2>&1
+    exit 0
+  fi
+  rm -f "$LOCK"   # left by a launcher that is gone
+done
+trap '[ "$(cat "$LOCK" 2>/dev/null)" = "$$" ] && rm -f "$LOCK" "$SUPPORT/app.pid"' EXIT
+# C2: if the launcher is stopped (logout, kill), the app is stopped with it instead of being left unsupervised
+pid=""
+on_signal() {
+  log stop 1 "launcher got a stop signal; closing the app with it"
+  [ -n "${vpid:-}" ] && kill "$vpid" 2>/dev/null
+  [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null && wait "$pid" 2>/dev/null
+  exit 0
+}
+trap on_signal TERM HUP INT
+
+if [ -n "${HEIMDALL_REPO:-}" ]; then
+  REPO="$HEIMDALL_REPO"
+elif [ -d "$HOME/Developer/ragnarok/app/heimdall" ]; then
+  REPO="$HOME/Developer/ragnarok/app/heimdall"
+else
+  REPO="$HOME/Developer/heimdall"
+fi
+PAT="${HEIMDALL_MATCH:-/Contents/MacOS/Heimdall\$}"   # overridable only for tests
+WAIT="${HEIMDALL_VERIFY_AFTER:-20}"   # C4: one setting for both the verify delay and the "crashed on start" window
+KNOWN="$HOME/Library/Application Support/Heimdall-known-good/Heimdall.app"
+
+# Close every other running Heimdall window-app (old builds, the build/ test copy). Never touches `Heimdall --selftest`.
+close_others() {
+  local pids; pids=$(pgrep -f "$PAT" | tr '\n' ' ')
+  [ -n "${pids// /}" ] || return 0
+  # C2: an app left running by a launcher that died gets a normal Quit first (it saves unsaved editor text), not a kill
+  [ -n "$BUNDLE_ID" ] && /usr/bin/perl -e 'alarm 8; exec @ARGV' /usr/bin/osascript -e "with timeout of 6 seconds" -e "tell application id \"$BUNDLE_ID\" to quit" -e "end timeout" >/dev/null 2>&1
+  for _ in 1 2 3 4 5 6; do pgrep -f "$PAT" >/dev/null || { log close 1 "asked the running Heimdall to quit; it did"; return 0; }; sleep 0.5; done
+  pids=$(pgrep -f "$PAT" | tr '\n' ' ')
+  log close 1 "closing old Heimdall: $(ps -o pid=,command= -p "${pids// /,}" | tr '\n' ';' | sed 's/;$//')"
+  kill $pids 2>/dev/null
+  for _ in 1 2 3 4 5 6 7 8 9 10; do pgrep -f "$PAT" >/dev/null || return 0; sleep 0.5; done
+  pkill -9 -f "$PAT"; log close 1 "force-closed old Heimdall that did not quit in 5 s"
+}
+
+# After the new build has run $WAIT s it counts as proven: previous.app and broken copies are deleted (C5: whatever branch
+# it was built from; the old builds are not kept around to be rolled back to days later). build/Heimdall.app is deleted
+# only when that commit is on the repo's current branch.
+verify_and_clean() {
+  sleep "$WAIT"
+  kill -0 "$1" 2>/dev/null || return 0
+  local c br onbr=0 gone=""; c=$(cat "$CURRENT/Contents/Resources/commit" 2>/dev/null)
+  br=$(git -C "$REPO" symbolic-ref -q --short HEAD 2>/dev/null || echo main)
+  [ -n "$c" ] && git -C "$REPO" merge-base --is-ancestor "$c" "$br" 2>/dev/null && onbr=1
+  for old in "$SUPPORT/previous.app" "$SUPPORT"/broken.app.*; do [ -e "$old" ] && rm -rf "$old" && gone="$gone ${old##*/}"; done
+  if [ $onbr = 1 ] && [ -d "$REPO/build/Heimdall.app" ] && ! pgrep -f "$REPO/build/Heimdall.app/" >/dev/null; then
+    rm -rf "$REPO/build/Heimdall.app" && gone="$gone build/Heimdall.app"
+  fi
+  log verified 1 "build ${c:-?} has run $WAIT s$([ $onbr = 1 ] && echo " (on $br)" || echo " (not on $br)"); deleted:${gone:- nothing old left}"
+}
+
+export HEIMDALL_LAUNCHER=1
+crashes=(); restarts=()
+while true; do
+  close_others
+  # the build about to start is the one the "update ready" note points at: the note is done
+  [ "$(head -1 "$SUPPORT/update-ready" 2>/dev/null)" = "$(cat "$CURRENT/Contents/Resources/commit" 2>/dev/null)" ] && rm -f "$SUPPORT/update-ready"
+  started=$(date +%s)
+  log start 1 "current build $(cat "$CURRENT/Contents/Resources/commit" 2>/dev/null)"
+  "$CURRENT/Contents/MacOS/Heimdall" & pid=$!
+  echo "$pid" > "$SUPPORT/app.pid"
+  verify_and_clean "$pid" & vpid=$!
+  wait "$pid"; rc=$?
+  # a trapped signal interrupts wait with rc>128 while the app still runs; on_signal handles it, so wait again
+  while [ $rc -gt 128 ] && kill -0 "$pid" 2>/dev/null; do wait "$pid"; rc=$?; done
+  kill "$vpid" 2>/dev/null; wait "$vpid" 2>/dev/null
+  now=$(date +%s)
+  case $rc in
+    0)  log quit 1 "The owner quit"; exit 0 ;;
+    75) rm -f "$SUPPORT/update-ready"
+        # C3: an app that exits 75 every time must not spin: back off, then give up
+        restarts+=("$now"); r30=0; r300=0
+        for t in "${restarts[@]}"; do [ $((now - t)) -lt 30 ] && r30=$((r30 + 1)); [ $((now - t)) -lt 300 ] && r300=$((r300 + 1)); done
+        if [ $r300 -ge 10 ]; then log giveup 0 "update restart loop: 10 restarts in 5 minutes; not restarting"
+          notify "Ragnarok kept asking to restart. Stopped."; exit 1; fi
+        if [ $r30 -ge 3 ]; then d=$(( 5 * (r30 - 2) )); log restart 0 "update restart loop ($r30 in 30 s); waiting $d s"; sleep $d
+        else log restart 1 "restart for update"; fi
+        continue ;;
+    143|129) log quit 1 "Heimdall was stopped (exit $rc, a stop signal from outside); not restarting"; exit 0 ;;   # C1: not a crash
+  esac
+  log crash 0 "exit $rc after $((now - started)) s"
+  # previous.app only exists until the current build passes its $WAIT s check, so it marks "not proven yet"
+  if [ $((now - started)) -lt "$WAIT" ] && [ -d "$SUPPORT/previous.app" ]; then
+    # in place, so the Dock icon (which follows the folder) stays valid
+    cp -R "$CURRENT" "$SUPPORT/broken.app.$now" && rsync -a --delete --ignore-times "$SUPPORT/previous.app/" "$CURRENT/" && rm -rf "$SUPPORT/previous.app"
+    echo 0 > "$SUPPORT/installed-at"; rm -f "$SUPPORT/update-ready"
+    log rollback 1 "new build crashed on start; back on the previous build (broken one kept as broken.app.$now)"
+    notify "New build crashed. Rolled back to the previous one."
+  fi
+  crashes+=("$now"); recent=0
+  for t in "${crashes[@]}"; do [ $((now - t)) -lt 120 ] && recent=$((recent + 1)); done
+  if [ $recent -ge 5 ]; then
+    cur=$(cat "$CURRENT/Contents/Resources/commit" 2>/dev/null)
+    good=$(cat "$KNOWN/Contents/Resources/commit" 2>/dev/null)
+    if [ -d "$KNOWN" ] && [ -n "$good" ] && [ "$cur" != "$good" ]; then
+      cp -R "$CURRENT" "$SUPPORT/broken.app.$now" && rsync -a --delete --ignore-times "$KNOWN/" "$CURRENT/"
+      rm -f "$SUPPORT/update-ready"; crashes=()
+      log fallback 1 "build ${cur:-?} crashed 5 times in 2 minutes; switched to the saved known-good build $good (broken one kept as broken.app.$now)"
+      notify "Heimdall kept crashing. Switched to the saved working build."
+      sleep 1; continue
+    fi
+    log giveup 0 "5 crashes in 2 minutes (known-good ${good:-missing} did not help); not restarting"
+    notify "Heimdall keeps crashing. Stopped restarting it."; exit 1
+  fi
+  sleep 1
+done

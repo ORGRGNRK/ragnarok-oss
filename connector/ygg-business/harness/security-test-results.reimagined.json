@@ -1,0 +1,117 @@
+{
+  "generated_utc": "2026-11-03T23:50:46.724658+00:00",
+  "target": "Ragnarok secure-mcp-platform (disposable reimagined instance)",
+  "config_file": "security-test.reimagined.json",
+  "results": [
+    {
+      "test_id": "T01",
+      "title": "Platform reports sealed",
+      "verdict": "PASS",
+      "expectation": "Status endpoint explicitly reports locked/sealed",
+      "reality": "{'platform': 'secure-mcp-platform', 'locked': True, 'method': None, 'unlockedAt': None, 'expiresAt': None, 'remainingMinutes': 0}",
+      "evidence_hash": "49a842d5fe93d472d1785159d1f92e2dd8d28d304458a5a267f556e2a87125b8"
+    },
+    {
+      "test_id": "T02",
+      "title": "Business tool denied while sealed",
+      "verdict": "PASS",
+      "expectation": "Protected tool rejected when locked",
+      "reality": "HTTP 200: {'result': {'content': [{'type': 'text', 'text': 'Error [locked] platform_list_items rejected. Why: Docker platform is locked. Physical hardware presence (YubiKey touch or Apple Secure Enclave) is required.. Retry safe: yes. Fix: Unlock via ./unlock.sh or invoke platform_unlock.'}], 'structuredContent': {'error': {'code': 'locked', 'what': 'platform_list_items rejected', 'why': 'Docker platform is locked. Physical hardware presence (YubiKey touch or Apple Secure Enclave) is required.', 'retry_safe': True, 'fix': 'Unlock via ./unlock.sh or invoke platform_unlock.'}}, 'isError': True}, 'jsonrpc': '2.0', 'id': 1}",
+      "evidence_hash": "266318a344092541ef44904fe11525e3ca3a0a89c62580ca1aa9403a75dc74f6"
+    },
+    {
+      "test_id": "T03",
+      "title": "Postgres host reachability",
+      "verdict": "FAIL",
+      "expectation": "No direct DB route from agent/client network",
+      "reality": "TCP connect succeeded to 127.0.0.1:5557 - verify if this host mapping is intentional",
+      "evidence_hash": "537b7203788d5a4707b86e61b2630f04f3861d0c1e3dbcde2696044ab41cb119"
+    },
+    {
+      "test_id": "T04",
+      "title": "Manual lock endpoint works",
+      "verdict": "PASS",
+      "expectation": "Lock endpoint accepts request",
+      "reality": "HTTP 200: {'ok': True, 'message': 'Platform locked', 'status': {'locked': True, 'method': None, 'unlockedAt': None, 'expiresAt': None, 'remainingMinutes': 0}}",
+      "evidence_hash": "9430378a2af9074f9b2d35b996c3a2bb5a43c6e3437dddd317ec382a41ecefd5"
+    },
+    {
+      "test_id": "T05",
+      "title": "Post-lock denial",
+      "verdict": "PASS",
+      "expectation": "Tool denied immediately after manual lock",
+      "reality": "HTTP 200: {'result': {'content': [{'type': 'text', 'text': 'Error [locked] platform_list_items rejected. Why: Docker platform is locked. Physical hardware presence (YubiKey touch or Apple Secure Enclave) is required.. Retry safe: yes. Fix: Unlock via ./unlock.sh or invoke platform_unlock.'}], 'structuredContent': {'error': {'code': 'locked', 'what': 'platform_list_items rejected', 'why': 'Docker platform is locked. Physical hardware presence (YubiKey touch or Apple Secure Enclave) is required.', 'retry_safe': True, 'fix': 'Unlock via ./unlock.sh or invoke platform_unlock.'}}, 'isError': True}, 'jsonrpc': '2.0', 'id': 1}",
+      "evidence_hash": "461ab06a0c7e939e79160b20328e63fd68de7eb3f0a1729e1398be6ddc5e1c7e"
+    },
+    {
+      "test_id": "T06",
+      "title": "Lease expiry uses monotonic clock",
+      "verdict": "INCONCLUSIVE",
+      "expectation": "Lease expires safely",
+      "reality": "Needs test-only short TTL fixture and observation; will not manipulate system clock",
+      "evidence_hash": "f92620eaff6403ae760703aaa5480e8cb14ed5e2e889aa675c2a157adc0012b0"
+    },
+    {
+      "test_id": "T07",
+      "title": "Hardware auth replay resistance",
+      "verdict": "INCONCLUSIVE",
+      "expectation": "Old challenge/response cannot re-unlock",
+      "reality": "Needs instrumented test authenticator + captured non-prod challenge; no replay attempted",
+      "evidence_hash": "2579d948c44263bc1585198cf9f01a029bb3a9a7edf7096503e062fc36495fe7"
+    },
+    {
+      "test_id": "T08",
+      "title": "Agent credential isolation",
+      "verdict": "INCONCLUSIVE",
+      "expectation": "Agent cannot read DB creds / host secrets",
+      "reality": "Needs repo/container-specific inspection inside actual agent container",
+      "evidence_hash": "d10432b703c020ec2bb3e46ba04665c52a868f0c3ff58e3e7a68a854c01d359b"
+    },
+    {
+      "test_id": "T12",
+      "title": "Ledger tamper detection",
+      "verdict": "INCONCLUSIVE",
+      "expectation": "Modified test receipt is detected",
+      "reality": "Needs disposable ledger fixture; never mutates production receipts",
+      "evidence_hash": "a94e9884673df9912efd756b829ac6acbfbc39d32d2185f3bd862f7251235843"
+    },
+    {
+      "test_id": "T09",
+      "title": "Restart defaults to locked",
+      "verdict": "PASS",
+      "expectation": "After restart platform is locked",
+      "reality": "{'platform': 'secure-mcp-platform', 'locked': True, 'method': None, 'unlockedAt': None, 'expiresAt': None, 'remainingMinutes': 0}",
+      "evidence_hash": "6b813410bcbc4085f62ef4ceb21b92b4e3924418c4cca3954144cacb50d33b5f"
+    },
+    {
+      "test_id": "T10",
+      "title": "Forged hardware unlock rejected",
+      "verdict": "PASS",
+      "expectation": "Forged unlock proof rejected with HTTP 401",
+      "reality": "HTTP 401: {'ok': False, 'error': 'Unauthorized: Invalid hardware authorization secret or proof', 'status': {'locked': True, 'method': None, 'unlockedAt': None, 'expiresAt': None, 'remainingMinutes': 0}}",
+      "evidence_hash": "067791a2382e701f4d5b056cc3eaeff967a9cf23ca6ca731f01b7403d5e1354a"
+    },
+    {
+      "test_id": "T11",
+      "title": "Receipt chain verification",
+      "verdict": "PASS",
+      "expectation": "Verifier exits 0",
+      "reality": "t|92|chain intact\n",
+      "evidence_hash": "d7e760f166c2d939485db3651742ba7bcdb19ae8dbf88539554c4a8e88112bb7"
+    },
+    {
+      "test_id": "T13",
+      "title": "Sensitive credential leakage probe",
+      "verdict": "PASS",
+      "expectation": "Zero secrets or keys leaked in public endpoints",
+      "reality": "Sanitized cleanly; no credentials found",
+      "evidence_hash": "bb5b6723fe1f981c11d7cfa2403e918b849ade9bcd59d725e7db25345789e09e"
+    }
+  ],
+  "summary": {
+    "PASS": 8,
+    "FAIL": 1,
+    "INCONCLUSIVE": 4
+  },
+  "report_sha256": "79a607371fd6d7f10b790203aadab915bf5897017054e81ccc1d1052b072a480"
+}

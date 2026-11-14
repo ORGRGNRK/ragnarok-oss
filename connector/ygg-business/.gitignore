@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.log
+.env
+.env.*
+*.dump
+dumps/
+.env.bak*
+deploy/auth/auth-gate
+

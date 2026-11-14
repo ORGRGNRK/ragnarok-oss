@@ -1,0 +1,11 @@
+{
+  "status": "Inventoried read-only — runtime Unverified",
+  "scope": "All 18 top-level Seagate entries listed; four source-oriented archive groups traversed to depth five (34 directories); member headers inspected in 31 selected consolidated project packages. Data exports, secret material, system images and transcript contents were excluded.",
+  "finding": "The November 4 archive inventory recorded a read-only mount (ro, norecovery). Its consolidation snapshot contains historical project packages, including versions related by name to current work and packages not present in the current Developer inventory. The catalog separates these from current source. Similar names do not establish byte-for-byte equivalence. Background catalog refreshes do not recheck the mount or inspect additional archive payloads.",
+  "contents_read": "Archive member metadata only; no project was executed and no payload was extracted to disk.",
+  "next_step": "Choose an archived project for a separate source review and isolated functional test before treating it as runnable or commercially ready.",
+  "top_level_entries": 18,
+  "selected_packages": 31,
+  "mount_verified_read_only": true,
+  "inventory_date": "2026-11-04"
+}

@@ -1,0 +1,15 @@
+{
+  "id": "expert-lexus-is-fsport",
+  "domain": "Lexus IS F-Sport (XE30 / 2GR-FSE & 2GR-FKS) Powertrain & Chassis Engineering",
+  "description": "Specialized expert in 3rd Gen Lexus IS350 / IS300 F-Sport (XE30 chassis), Toyota 2GR-FSE / 2GR-FKS 3.5L V6 engines, D-4S dual fuel injection, A760H (AWD) & AA81E (RWD) transmissions, fluid temperature check protocols, and 4-piston monoblock front brake torque specs.",
+  "standards": ["Toyota Techstream Diagnostics", "SAE J1349", "Lexus Factory Repair Manual XE30"],
+  "negative_exclusions": ["carburetor", "two_stroke", "drum_brakes", "air_cooled"],
+  "knowledge_rules": [
+    "D-4S Dual Fuel Injection Architecture: Operates two injectors per cylinder (direct injector high pressure 20 MPa / 2900 psi + port injector low pressure 0.4 MPa / 58 psi). At cold start and idle, direct injection dominates; under high load and high RPM, both direct and port injectors fire simultaneously to maximize volumetric efficiency.",
+    "Engine Oil Capacity & Spec: 6.8 US qt (6.4L) with filter change, 0W-20 Full Synthetic API SP / ILSAC GF-6A. Drain bolt torque: 30 lb-ft (41 Nm) with OEM aluminum crush gasket.",
+    "Automatic Transmission Fluid Check (A760H 6-Speed AWD / AA81E 8-Speed RWD): Toyota ATF WS only. Fluid level must be verified via the overflow check plug strictly between 104°F - 113°F (40°C - 45°C) using OBD2 ATF temperature monitoring.",
+    "Front Brake Specs (F-Sport 4-Piston Monoblock Aluminum Calipers): Caliper mounting bolt torque: 58 lb-ft (78 Nm); caliper slide pin bolts: 25 lb-ft (34 Nm); rotor diameter: 334 mm (13.1 in).",
+    "Chassis & Wheel Fitment: Hub center bore: 60.1 mm; lug nut torque: 76 lb-ft (103 Nm); bolt pattern: 5x114.3. Staggered OEM fitment: 18x8.0J +45 front (225/40R18), 18x8.5J +50 rear (255/35R18)."
+  ],
+  "verification_command": "python3 ~/Developer/alexus-core/tests/verify_lexus_2gr.py"
+}

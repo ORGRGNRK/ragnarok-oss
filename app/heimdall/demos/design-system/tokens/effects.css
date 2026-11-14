@@ -1,0 +1,15 @@
+:root{
+/* Gold glow — titles, active elements */
+--glow-title:0 0 12px rgba(201,168,76,.6), 0 0 40px rgba(201,168,76,.2);
+--glow-hover:0 0 16px rgba(201,168,76,.7);
+/* Status dot glow */
+--glow-up:0 0 6px #22c55e55;
+/* Vignette + haze — full-bleed brand surfaces */
+--vignette:radial-gradient(ellipse at 50% 40%, transparent 30%, rgba(0,0,0,.85) 100%); /* @kind other */
+--gold-pulse:radial-gradient(ellipse at 50% 40%, rgba(201,168,76,.18) 0%, rgba(201,168,76,.05) 50%, transparent 75%); /* @kind other */
+/* Motion */
+--ease-ui:.3s; /* @kind other */
+--ease-fast:.1s; /* @kind other */
+--ease-dot:.4s; /* @kind other */
+}
+@keyframes rgnrk-pulse{0%,100%{opacity:1}50%{opacity:.4}}

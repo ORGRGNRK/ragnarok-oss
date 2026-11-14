@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+"""Send text or a file to Intake, or search what is already there.
+
+Config is ~/.ragnarok/intake.env (or RAGNAROK_INTAKE_CONF): URL and TOKEN.
+On the machine that holds this client's .env, that file is the fallback.
+The token is never printed. Nothing sent here is executed.
+"""
+import argparse
+import http.client
+import json
+import mimetypes
+import os
+import socket
+import sys
+import urllib.parse
+from pathlib import Path
+
+PHOTO = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".tif", ".tiff", ".bmp"}
+
+
+def die(msg, code=1):
+    sys.stderr.write(str(msg).rstrip() + "\n")
+    raise SystemExit(code)
+
+
+def read_env(path):
+    out = {}
+    file = Path(path)
+    if not file.is_file():
+        return out
+    for raw in file.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        val = val.strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+            val = val[1:-1]
+        out[key.strip()] = val
+    return out
+
+
+def redact(text, token):
+    if token and token in text:
+        return text.replace(token, "[token]")
+    return text
+
+
+def load_conf():
+    path = os.environ.get("RAGNAROK_INTAKE_CONF") or str(Path.home() / ".ragnarok" / "intake.env")
+    kv = read_env(path)
+    url = kv.get("URL", "").rstrip("/")
+    token = kv.get("TOKEN", "")
+    if url and token:
+        return url, token
+    env = Path(__file__).resolve().parents[3] / "clients" / "intake" / ".env"
+    kv = read_env(env)
+    token = kv.get("MCP_TOKEN", "")
+    port = kv.get("MCP_PORT", "")
+    if token and port.isdigit():
+        return "http://127.0.0.1:" + port, token
+    die("Intake is not set up. ~/.ragnarok/intake.env needs a URL and a TOKEN.")
+
+
+def connect(url, timeout):
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        die("Intake URL must be http or https with a host.")
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    if parts.scheme == "https":
+        return http.client.HTTPSConnection(parts.hostname, port, timeout=timeout)
+    return http.client.HTTPConnection(parts.hostname, port, timeout=timeout)
+
+
+def header_ok(value):
+    return "\r" not in value and "\n" not in value and "\0" not in value
+
+
+def kind_for(name, mime):
+    if str(mime or "").lower().startswith("image/"):
+        return "photo"
+    if Path(name).suffix.lower() in PHOTO:
+        return "photo"
+    return "file"
+
+
+def looks_like_missing_path(raw):
+    """A single path that is not there, rather than a sentence or a URL."""
+    s = raw.strip()
+    if not s or any(ch.isspace() for ch in s):
+        return False
+    if "://" in s:
+        return False
+    if s.startswith(("~", "/", ".", "\\")):
+        return True
+    return "/" in s or "\\" in s
+
+
+def classify(raw, kind):
+    """'file' when that path is a file. 'text' for words, including a URL.
+    --kind text is always the words, even when a file of that name exists.
+    """
+    if kind == "text":
+        return "text"
+    path = Path(raw).expanduser()
+    try:
+        is_file = path.is_file()
+    except OSError:
+        is_file = False
+    if is_file:
+        return "file"
+    if kind in ("file", "photo") or looks_like_missing_path(raw):
+        die("No file at %s" % raw)
+    return "text"
+
+
+def utf8_header(value):
+    """Latin-1 header values cannot carry every name. UTF-8 percent-encoding can."""
+    if not header_ok(value):
+        die("A header value has a newline. Nothing was stored.")
+    return "UTF-8''" + urllib.parse.quote(value, safe="")
+
+
+def plain_header(value):
+    if not header_ok(value):
+        die("A header value has a newline. Nothing was stored.")
+    try:
+        value.encode("latin-1")
+    except UnicodeEncodeError:
+        return None
+    return value
+
+
+def add_meta(headers, key, value):
+    if value is None or value == "":
+        return
+    headers[key + "-Utf8"] = utf8_header(value)
+    plain = plain_header(value)
+    if plain is not None:
+        headers[key] = plain
+
+
+def finish(status, raw, token):
+    text = raw.decode("utf-8", "replace")
+    try:
+        body = json.loads(text) if text.strip() else {}
+    except json.JSONDecodeError:
+        body = {}
+    if status == 201 and isinstance(body, dict) and body.get("sha256"):
+        print("id: %s" % body.get("id"))
+        print("sha256: %s" % body.get("sha256"))
+        print("kind: %s" % body.get("kind"))
+        print("bytes: %s" % body.get("size"))
+        print("stored: %s" % ("new" if body.get("blob_new") else "already there"))
+        return
+    err = body.get("error") if isinstance(body, dict) else None
+    if status == 0:
+        die(redact("Alexus is unreachable. Intake did not answer, so nothing was stored.", token))
+    die(redact(err or "Intake did not store that (HTTP %s)." % status, token))
+
+
+def call(url, token, method, path, headers, payload=None, timeout=60):
+    for value in headers.values():
+        if not header_ok(value):
+            die("A header value has a newline. Nothing was stored.")
+    conn = connect(url, timeout)
+    try:
+        conn.request(method, path, body=payload, headers=headers)
+        resp = conn.getresponse()
+        raw = resp.read()
+        return resp.status, raw
+    except (OSError, http.client.HTTPException) as exc:
+        die(redact("Alexus is unreachable. Intake did not answer, so nothing was stored. (%s)" % exc.__class__.__name__, token))
+    finally:
+        conn.close()
+
+
+def send_text(url, token, text, args):
+    payload = {
+        "kind": args.kind or "text",
+        "body": text,
+        "sender": args.sender,
+        "source_machine": socket.gethostname(),
+    }
+    if args.title:
+        payload["title"] = args.title
+    if args.tag:
+        payload["tags"] = args.tag
+    if args.project:
+        payload["project"] = args.project
+    data = json.dumps(payload).encode("utf-8")
+    headers = {
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json",
+        "Content-Length": str(len(data)),
+    }
+    status, raw = call(url, token, "POST", "/intake/items", headers, data, timeout=120)
+    finish(status, raw, token)
+
+
+def send_file(url, token, path, args):
+    size = path.stat().st_size
+    mime = args.mime or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    try:
+        mime.encode("latin-1")
+    except UnicodeEncodeError:
+        mime = "application/octet-stream"
+    kind = args.kind or kind_for(path.name, mime)
+    if not header_ok(path.name):
+        die("That filename is not allowed. Nothing was stored.")
+    headers = {
+        "Authorization": "Bearer " + token,
+        "Content-Type": mime,
+        "Content-Length": str(size),
+    }
+    add_meta(headers, "X-Intake-Filename", path.name)
+    add_meta(headers, "X-Intake-Kind", kind)
+    add_meta(headers, "X-Intake-Sender", args.sender)
+    add_meta(headers, "X-Intake-Source-Machine", socket.gethostname())
+    add_meta(headers, "X-Intake-Mime", mime)
+    add_meta(headers, "X-Intake-Title", args.title)
+    add_meta(headers, "X-Intake-Tags", args.tag)
+    add_meta(headers, "X-Intake-Project", args.project)
+    conn = connect(url, 6 * 60 * 60)
+    try:
+        conn.putrequest("POST", "/intake/items")
+        for key, value in headers.items():
+            conn.putheader(key, value)
+        conn.endheaders()
+        with path.open("rb") as handle:
+            while True:
+                chunk = handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                conn.send(chunk)
+        resp = conn.getresponse()
+        raw = resp.read()
+        finish(resp.status, raw, token)
+    except UnicodeError:
+        die("That name cannot be sent. Nothing was stored.")
+    except (OSError, http.client.HTTPException) as exc:
+        die(redact("Alexus is unreachable. Intake did not answer, so nothing was stored. (%s)" % exc.__class__.__name__, token))
+    finally:
+        conn.close()
+
+
+def search(url, token, query, args):
+    q = urllib.parse.urlencode({"q": query, "kind": args.kind or "", "sender": args.sender if args.sender_set else "", "tag": args.tag or "", "limit": "50"})
+    headers = {"Authorization": "Bearer " + token}
+    status, raw = call(url, token, "GET", "/intake/items?" + q, headers, timeout=60)
+    text = raw.decode("utf-8", "replace")
+    if status == 0:
+        die("Alexus is unreachable. Intake did not answer.")
+    if status != 200:
+        die(redact(text[:300], token))
+    try:
+        body = json.loads(text)
+    except json.JSONDecodeError:
+        die("Intake did not return a list.")
+    items = body.get("items") or []
+    if not items:
+        print("No matching Intake items.")
+        return
+    for item in items:
+        print("#%s %s %s sha256:%s" % (item.get("id"), item.get("kind"), item.get("title"), item.get("sha256")))
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Send text or a file to Intake, or search it.")
+    parser.add_argument("item", nargs="*", help="Text to store, or one file path")
+    parser.add_argument("--title", default="")
+    parser.add_argument("--tag", default="", help="Comma-separated tags")
+    parser.add_argument("--project", default="")
+    parser.add_argument("--sender", default=os.environ.get("RAGNAROK_ACTOR") or os.environ.get("USER") or "intake")
+    parser.add_argument("--kind", default="", choices=["", "text", "file", "photo"])
+    parser.add_argument("--mime", default="")
+    parser.add_argument("--search", action="store_true", help="Search instead of storing")
+    args = parser.parse_args()
+    args.sender_set = any(a == "--sender" or a.startswith("--sender=") for a in sys.argv)
+    url, token = load_conf()
+    if args.search:
+        search(url, token, " ".join(args.item), args)
+        return
+    if not args.item:
+        parser.print_help()
+        raise SystemExit(2)
+    if len(args.item) == 1:
+        raw = args.item[0]
+        if classify(raw, args.kind) == "file":
+            send_file(url, token, Path(raw).expanduser(), args)
+            return
+        send_text(url, token, raw, args)
+        return
+    send_text(url, token, " ".join(args.item), args)
+
+
+if __name__ == "__main__":
+    main()

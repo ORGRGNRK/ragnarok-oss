@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- App icon: copy of ~/Desktop/Alexus_System_Assets/logo_master_vector.svg (Alexus insignia, same art as app_icon_hd.png). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <radialGradient id="bg-vignette" cx="50%" cy="50%" r="70%" fx="50%" fy="50%">
+      <stop offset="0%" stop-color="#161718" />
+      <stop offset="55%" stop-color="#111213" />
+      <stop offset="100%" stop-color="#0a0a0b" />
+    </radialGradient>
+    <radialGradient id="core-bloom" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="1.0" />
+      <stop offset="6%" stop-color="#f4f8f6" stop-opacity="0.88" />
+      <stop offset="16%" stop-color="#dce6e2" stop-opacity="0.42" />
+      <stop offset="35%" stop-color="#b8c8c2" stop-opacity="0.14" />
+      <stop offset="65%" stop-color="#8fa49c" stop-opacity="0.03" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.0" />
+    </radialGradient>
+    <radialGradient id="ambient-field" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#d8e4e0" stop-opacity="0.14" />
+      <stop offset="45%" stop-color="#a6b8b0" stop-opacity="0.05" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.0" />
+    </radialGradient>
+    <linearGradient id="horizon-flare" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.0" />
+      <stop offset="12%" stop-color="#d0dcd8" stop-opacity="0.08" />
+      <stop offset="26%" stop-color="#e4ece9" stop-opacity="0.58" />
+      <stop offset="44%" stop-color="#f5faf8" stop-opacity="0.88" />
+      <stop offset="50%" stop-color="#ffffff" stop-opacity="1.0" />
+      <stop offset="56%" stop-color="#f5faf8" stop-opacity="0.88" />
+      <stop offset="74%" stop-color="#e4ece9" stop-opacity="0.58" />
+      <stop offset="88%" stop-color="#d0dcd8" stop-opacity="0.08" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.0" />
+    </linearGradient>
+    <filter id="volumetric-glow" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="12" result="wide-blur" />
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4.5" result="medium-blur" />
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.4" result="tight-blur" />
+      <feMerge>
+        <feMergeNode in="wide-blur" />
+        <feMergeNode in="medium-blur" />
+        <feMergeNode in="tight-blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+    <filter id="flare-soft" x="-30%" y="-500%" width="160%" height="1100%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" />
+    </filter>
+  </defs>
+  <rect id="background" width="1024" height="1024" fill="url(#bg-vignette)" />
+  <circle id="ambient-aura" cx="512" cy="512" r="280" fill="url(#ambient-field)" />
+  <g id="alexus-core-geometry" transform="translate(512, 512)">
+    <g id="lemniscate-glow" filter="url(#volumetric-glow)" opacity="0.72" fill="none" stroke="#dce8e4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M 0,0 C 59,-88 45,-186 0,-186 C -45,-186 -59,-88 0,0 C 59,88 45,186 0,186 C -45,186 -59,88 0,0 Z" />
+      <path d="M 0,0 C 88,-59 186,-45 186,0 C 186,45 88,59 0,0 C -88,-59 -186,-45 -186,0 C -186,45 -88,59 0,0 Z" />
+    </g>
+    <g id="lemniscate-wireframe" fill="none" stroke="#f0f5f3" stroke-width="1.65" stroke-opacity="0.92" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M 0,0 C 59,-88 45,-186 0,-186 C -45,-186 -59,-88 0,0 C 59,88 45,186 0,186 C -45,186 -59,88 0,0 Z" />
+      <path d="M 0,0 C 88,-59 186,-45 186,0 C 186,45 88,59 0,0 C -88,-59 -186,-45 -186,0 C -186,45 -88,59 0,0 Z" />
+    </g>
+    <g id="optical-horizon">
+      <ellipse cx="0" cy="0" rx="265" ry="3.2" fill="url(#horizon-flare)" filter="url(#flare-soft)" opacity="0.75" />
+      <line x1="-285" y1="0" x2="285" y2="0" stroke="url(#horizon-flare)" stroke-width="1.6" stroke-linecap="round" />
+      <line x1="-186" y1="0" x2="186" y2="0" stroke="url(#horizon-flare)" stroke-width="2.2" stroke-linecap="round" opacity="0.85" />
+    </g>
+    <g id="nexus-singularity">
+      <circle cx="0" cy="0" r="88" fill="url(#core-bloom)" />
+      <circle cx="0" cy="0" r="24" fill="url(#core-bloom)" />
+      <circle cx="0" cy="0" r="3.2" fill="#ffffff" />
+    </g>
+  </g>
+</svg>

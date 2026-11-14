@@ -1,0 +1,18 @@
+# Belt state is this installation's, never the release's.
+plan/*
+queue/*
+running/*
+verify/*
+human/*
+done/*
+failed/*
+logs/*
+attachments/*
+outputs/*
+!*/.gitkeep
+.lock
+__pycache__/
+.DS_Store
+._*
+*.log
+conveyor.env

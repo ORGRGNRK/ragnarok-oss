@@ -1,0 +1,10 @@
+1	47	select count(*) from public."Business" where "Status" = $$Sold$$
+2	INV-2026-082	select "UID" from public."Business" where "Sold_Price" is not null order by "Sold_Price" desc limit 1
+3	Phone	select "Category" from public.business_with_totals where "Sold_Price" is not null group by 1 order by sum("Net_Profit") desc limit 1
+4	3145.37	select sum("Net_Profit") from public.business_with_totals where "Category" = $$Phone$$ and "Sold_Price" is not null
+5	5	select count(*) from public."Business" where "Category" = $$Pokemon$$ and "Status" = $$Active$$
+6	6	select count(*) from public."Business" where "Category" = $$Phone$$ and "Sold_Date" >= $$2026-04-01$$ and "Sold_Date" < $$2026-05-01$$
+7	INV-2026-013	select "UID" from public."Business" where "Parts_Invested" is not null order by "Parts_Invested" desc limit 1
+8	INV-2026-017,INV-2026-025	select string_agg("UID", $$,$$ order by "UID") from public."Business" where "Status" = $$Listed$$
+9	Non-Liquid	select "Status" from public."Business" where "Category" = $$Gaming$$ group by 1 order by count(*) desc limit 1
+10	5785.37	select coalesce(sum("Net_Profit"), 0) from public.business_with_totals where "Sold_Price" is not null
