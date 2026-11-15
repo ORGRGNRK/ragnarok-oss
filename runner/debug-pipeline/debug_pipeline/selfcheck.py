@@ -1396,7 +1396,7 @@ def prove_docker_archive_scope():
     out.mkdir()
     try:
         redact = load_redactor(repo_root())
-        library = b"passwd = netrcobj.authenticators(host)\n"
+        library = b'DEFAULT_PASSWORD = "anon-ftp-pass99"\n'  # a literal the shared redactor hides
         if not survives(redact, library.decode()):
             return fail("fixture no longer triggers the shared redactor")
         fence = Fence([out, store_path])

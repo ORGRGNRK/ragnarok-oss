@@ -112,6 +112,8 @@ struct HeimdallApp: App {
             }
             RunLoop.main.run()
         }
+        // --fidocheck: is libfido2 loaded, which security keys are plugged in (no touch, no PIN)
+        if CommandLine.arguments.contains("--fidocheck") { FIDOCheck.run() }
         // --fillcheck: fill a test login form with the vault's page script and read it back (test mode)
         if CommandLine.arguments.contains("--fillcheck") { MainActor.assumeIsolated { VaultFillCheck.run() }; RunLoop.main.run() }
         // --webcheck URL: load one page in a real WKWebView (as this app, with its Info.plist) and print what came back (test mode)

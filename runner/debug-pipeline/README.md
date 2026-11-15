@@ -75,3 +75,48 @@ Use the fake runner only for trusted test fixtures. It executes the test on this
 The added handoff proofs are `selfcheck --prove handoff-gaps`, `selfcheck --prove model-receipt`, and `selfcheck --prove env-archive`. They check physical receipt line numbers, frozen validator capture, both model tool wire formats with an injected HTTP reply, baseline failure evidence, plain env values, and secrets created during tests. No live model was called. The first attach to a live Cloudflare KV ticket is also for a person. This build does not do it.
 
 `selfcheck --prove docker-archive-scope` seals a fake Docker export containing a library assignment that the shared scrubber flags. It also proves customer secrets still block sealing in each tmpfs tree. `selfcheck --prove short-env-refresh` proves short neutral `.env` values stay scrubbed after edits and in snapshots on both runner paths, including a two-round fake repair with `--keep-secrets`. Neither proof starts Docker.
+
+## Bounties (`debug-pipeline bounty`)
+
+Four steps around the pipeline for GitHub bounty issues (Algora `/claim` style). Everything for one issue
+lives in `~/.ragnarok/bounties/<owner>-<repo>-<number>/`, and each step adds to `bounty-receipt.jsonl`
+(same hash chain as above).
+
+```
+debug-pipeline bounty triage    https://github.com/OWNER/REPO/issues/N   # GO or SKIP, reads GitHub only
+debug-pipeline bounty reproduce https://github.com/OWNER/REPO/issues/N   # a model writes a test that must FAIL
+debug-pipeline bounty fix       ~/.ragnarok/bounties/owner-repo-n        # the pipeline fixes code until it passes
+debug-pipeline bounty ship      ~/.ragnarok/bounties/owner-repo-n        # local branch + PR text; nothing sent
+debug-pipeline bounty ship      ~/.ragnarok/bounties/owner-repo-n --send # fork, push, open the PR (you type the issue number)
+debug-pipeline bounty selfcheck [--docker]
+```
+
+- **triage** skips: no bounty, closed, already fixed (a commit or merged PR mentions it), crowded (5+ open PRs
+  already reference it), needs hardware / a GPU / a phone / Windows, intermittent, archived, or a stack it
+  can't test (python, node and go are supported). `--force` turns the judgement calls into notes.
+- **reproduce** clones the repo, builds a dependency image in Docker (the project itself is not installed, so
+  the tests use the code in /work), and asks the model for one new test file. The model only picks the file
+  path and contents; the command is built here from the stack. It runs with no network, a read-only root, as
+  nobody, with all capabilities dropped. A passing test, or one that is broken (collection error, syntax error,
+  no tests ran), gets sent back to the model with the reason, up to 3 tries. The kept test is frozen by the
+  pipeline (`is_test_path`: `test_*`, `*_test.py`, `*_test.go`, `*.test.js|ts`, `*.spec.*`, `tests/`, `__tests__/`),
+  so the fixer can't edit it. Read the test before trusting it.
+- **fix** is `pipeline.run` with the dependency image and the reproduced test.
+- **Which model:** the local Ollama model goes first, the same as the rest of the pipeline. It looks at
+  `BOUNTY_OLLAMA_URL`, then `http://127.0.0.1:11434`, then Alexus (`ALEXUS_HOST` in `~/.ragnarok/local.conf`,
+  then the tailnet name `alexus`, port 11434), and picks the first
+  installed model from `qwen2.5-coder:7b`, `qwen2.5-coder:3b`, `llama3.1:8b`, `qwen2.5:7b`, `llama3.2:3b`
+  (or `BOUNTY_LOCAL_MODEL`). reproduce gives it the 3 tries, then gives Grok 4.7 (the subscription login on
+  this machine) 3 more; a local model that doesn't answer is skipped after one try. fix starts the pipeline
+  with the local model, and the pipeline hands the same rounds to Grok if it fails. Grok only sees the code when
+  the local model couldn't do it. `DEBUG_PIPELINE_GROK_FALLBACK=off` keeps everything local; `--model` (fix) or
+  `BOUNTY_MODEL` + `DEBUG_PIPELINE_ENDPOINT` (reproduce) pin one model.
+- **ship** checks the archive hash and the pipeline receipt, applies `diff.patch` to the clean clone, adds the
+  test, commits on `fix/issue-N`, and writes `pr.md` (Fixes #N, how it was reproduced, an AI-assistance line,
+  `/claim #N`). `--send` needs a person at a real terminal who types the issue number; then it forks as the
+  logged-in `gh` user, pushes, and opens the PR. A patch containing `[REDACTED]` is never shipped.
+
+Proved (`bounty selfcheck --docker`, 2026-11-14): triage decisions, path and classify rules, and the real path
+on a local fake repo: dependency image, a broken test and a passing test rejected, a real failing test kept, the
+pipeline fixing it in Docker, ship committing fix + test, and `--send` refused without a terminal, plus model order: local first, a down local model skipped to the fallback, Grok only as fallback. Triage was
+also run on 5 live bounty issues. Not proved: reproduce/fix with a live model on a real repo, and a real `--send`.

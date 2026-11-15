@@ -6,6 +6,12 @@
 #   mcp_ro : the AI's tools in read-only mode. Read only (+ it may add access-log rows).
 #   ui     : what NocoDB logs in as. Read, add, update. No delete, can't touch receipts.
 set -eu
+# Passwords come as files (Docker secrets in /run/secrets), so they never sit in the container's environment.
+# An old-style *_PASSWORD variable still works if the file is missing.
+sec() { if [ -r "/run/secrets/$1" ]; then cat "/run/secrets/$1"; else eval "printf '%s' \"\${$2:-}\""; fi; }
+MCP_DB_PASSWORD="$(sec mcp_db_password MCP_DB_PASSWORD)"
+MCP_RO_DB_PASSWORD="$(sec mcp_ro_db_password MCP_RO_DB_PASSWORD)"
+UI_DB_PASSWORD="$(sec ui_db_password UI_DB_PASSWORD)"
 : "${MCP_DB_USER:?}"; : "${MCP_DB_PASSWORD:?}"
 : "${MCP_RO_DB_USER:?}"; : "${MCP_RO_DB_PASSWORD:?}"
 : "${UI_DB_USER:?}"; : "${UI_DB_PASSWORD:?}"

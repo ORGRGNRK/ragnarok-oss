@@ -38,7 +38,7 @@ SAFE_VALUE = re.compile(r"""(?x)^(
  | \$\(.*                                  # $(cmd)
  | os\.environ.* | os\.getenv.* | process\.env.* | getenv.* | env\[.* | ENV\[.*
  | \[REDACTED\] | <[^>]*> | \.\.\.+ | x{4,} | \*{3,} | None | null | true | false | True | False | undefined
- | input\(.* | getpass.* | args?\..* | self\..* | config\..* | cfg\..* | settings\..* | req.* | request.* | data\[.* | json\..* | str | string | int | bool | Optional.* | \w+\(.*
+ | input\(.* | getpass.* | args?\..* | self\..* | config\..* | cfg\..* | settings\..* | req.* | request.* | data\[.* | json\..* | str | string | int | bool | Optional.* | [A-Za-z_][\w.]*\(.*   # a call: f(...), re.compile(...), hashlib.sha256(...)
 )""")
 BARE_IDENT = re.compile(r"^[A-Za-z_][A-Za-z_\.]*$")   # unquoted, no digits -> variable reference
 QUOTED_SAFE = re.compile(r"^(\$|\{|<|\[REDACTED|x{4,}$|\*{3,}$|\.\.\.|your[_\-]|changeme$|example)", re.I)

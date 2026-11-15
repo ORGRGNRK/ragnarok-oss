@@ -164,7 +164,8 @@ async function makeReceipt({ actor, session, source, tool, command, cwd, exitCod
   const remote = c.kind === "Change" ? remoteHost(command) : null;
   const where = c.target || target || cwd || "?";
   // over ssh with no target of its own, the path is this Mac's folder: say so instead of passing it off as Alexus's
-  const ref = !remote ? `${HOST}:${where}` : where === cwd ? `${remote}:(ssh from ${HOST}:${cwd})` : `${remote}:${where}`;
+  // a URL is its own address, not a path on this Mac
+  const ref = /^[a-z][a-z0-9+.-]*:\/\//i.test(where) ? where : !remote ? `${HOST}:${where}` : where === cwd ? `${remote}:(ssh from ${HOST}:${cwd})` : `${remote}:${where}`;
   const rec = {
     rid: rid || randomUUID(), at: at || new Date().toISOString(), host: HOST,
     kind: c.kind, action: c.action, status: isFail ? "Failed" : verified?.ok ? "Confirmed" : "Observed",

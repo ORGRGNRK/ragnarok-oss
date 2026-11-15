@@ -10,6 +10,7 @@ from debug_pipeline.workers import ModelWorker, sample_worker
 HELP = """debug-pipeline run --ticket TICKET --source FOLDER --test "command"
 debug-pipeline verify RECEIPT.jsonl
 debug-pipeline selfcheck
+debug-pipeline bounty triage|reproduce|fix|ship|selfcheck ...   (GitHub bounty issues; see bounty --help)
 
 The ticket is 6 characters. The test must fail before any fix.
 Results are only OK, FAILED, or NOT VERIFIED.
@@ -61,6 +62,9 @@ def main(argv=None):
     if not argv or argv[0] in ("-h", "--help", "help"):
         print(HELP)
         return 0
+    if argv[0] == "bounty":
+        from debug_pipeline.bounty import main as bounty_main
+        return bounty_main(argv[1:])
     if argv[0] == "selfcheck":
         from debug_pipeline.selfcheck import main as selfcheck_main
         return selfcheck_main(argv[1:])

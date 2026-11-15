@@ -10,15 +10,19 @@ usage() { cat <<'U'
 ./kit status         what's running, record counts, receipt check
 ./kit check          check client/schema.json and client/seed.json for mistakes
 ./kit verify         recompute the receipt hash chain and check the append-only lock
-./kit anchor [W A]   one JSON line: verify result + head seq/hash of both logs (for off-server copies);
-                     W A = previously anchored write_log / access_log seq, to also print the hash now stored there
+./kit anchor [W A [G]]  one JSON line: verify result + head seq/hash of every log (for off-server copies);
+                     W A G = previously anchored write_log / access_log / agent_log seq, to also print the hash now stored there
 ./kit pending        list archive requests waiting for approval
 ./kit approve CODE   approve an archive (soft delete) the AI asked for; a person must type yes
                      at a real terminal (refuses when run from a script, pipe or AI tool)
 ./kit mcp-stdio      what Claude Desktop / Claude Code run locally (stdio MCP)
 ./kit logs [svc]     follow logs (postgres, mcp, nocodb)
 ./kit restart        restart the MCP server (e.g. after changing tokens in .env)
-./kit backup         save a database dump into backups/
+./kit backup         save a database dump into backups/ (encrypted with age if KIT_BACKUP_AGE_RECIPIENT is set)
+./kit receipts-setup [--url URL] [--claude [SETTINGS.json]] [--env-file PATH]
+                     receipt what AIs do on a machine (commands, file edits) into agent_log: writes the
+                     hook's private settings file; --claude also adds the hook to Claude Code's settings
+./kit receipts [N]   the newest N agent_log receipts (default 20)
 ./kit money FILE...  read the business's bank / sales / supplier CSVs, write a "where the money went"
                      report into money-reports/<time>/ (prefix a file with bank: sales: purchases: to force its kind)
 ./kit money add-tables   add the Money Transactions + Money Findings tables to client/schema.json
@@ -96,16 +100,17 @@ EOT
     # Optional W A = write_log / access_log seq numbers anchored earlier: the line then also carries
     # the hash the database holds at those seqs NOW, so the Mac can spot a rewritten history.
     # Exit 0 = intact and locked, 1 = verify found a problem (the line is still printed), 2 = could not run.
-    cw="${1:-0}"; ca="${2:-0}"
-    [ $# -le 2 ] || die "usage: ./kit anchor [WRITE_LOG_SEQ ACCESS_LOG_SEQ]"
-    case "$cw$ca" in *[!0-9]*) die "anchor: seq numbers must be whole numbers" ;; esac
-    [ ${#cw} -le 18 ] && [ ${#ca} -le 18 ] || die "anchor: seq number too large"
+    cw="${1:-0}"; ca="${2:-0}"; cg="${3:-0}"
+    [ $# -le 3 ] || die "usage: ./kit anchor [WRITE_LOG_SEQ ACCESS_LOG_SEQ [AGENT_LOG_SEQ]]"
+    case "$cw$ca$cg" in *[!0-9]*) die "anchor: seq numbers must be whole numbers" ;; esac
+    [ ${#cw} -le 18 ] && [ ${#ca} -le 18 ] && [ ${#cg} -le 18 ] || die "anchor: seq number too large"
     load_env
-    row="$(admin_psql -q -t -A -F '|' -v cw="$cw" -v ca="$ca" <<'SQL'
+    row="$(admin_psql -q -t -A -F '|' -v cw="$cw" -v ca="$ca" -v cg="$cg" <<'SQL'
 BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
 WITH v AS (SELECT * FROM kit_verify()),
      w AS (SELECT * FROM v WHERE chain = 'write_log'),
-     a AS (SELECT * FROM v WHERE chain = 'access_log')
+     a AS (SELECT * FROM v WHERE chain = 'access_log'),
+     g AS (SELECT * FROM v WHERE chain = 'agent_log')
 SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
        (SELECT bool_and(intact AND lock_on) FROM v),
        (SELECT coalesce(max(seq), 0) FROM write_log),  coalesce((SELECT head_hash FROM w), ''),
@@ -113,19 +118,24 @@ SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
        (SELECT coalesce(max(seq), 0) FROM access_log), coalesce((SELECT head_hash FROM a), ''),
        (SELECT intact FROM a), (SELECT lock_on FROM a),
        coalesce((SELECT hash FROM write_log  WHERE seq = :'cw'::bigint), ''),
-       coalesce((SELECT hash FROM access_log WHERE seq = :'ca'::bigint), '');
+       coalesce((SELECT hash FROM access_log WHERE seq = :'ca'::bigint), ''),
+       (SELECT coalesce(max(seq), 0) FROM agent_log), coalesce((SELECT head_hash FROM g), ''),
+       (SELECT intact FROM g), (SELECT lock_on FROM g),
+       coalesce((SELECT hash FROM agent_log WHERE seq = :'cg'::bigint), '');
 COMMIT;
 SQL
 )" || { echo "anchor: could not run the check (is it running? ./kit up)" >&2; exit 2; }
-    IFS='|' read -r at good wseq whead wint wlock aseq ahead aint alock cwh cah <<EOT
+    IFS='|' read -r at good wseq whead wint wlock aseq ahead aint alock cwh cah gseq ghead gint glock cgh <<EOT
 $row
 EOT
+    gseq="${gseq:-0}"
     [ -n "${at:-}" ] || { echo "anchor: empty answer from the database" >&2; exit 2; }
     b() { [ "$1" = t ] && echo true || echo false; }
     s() { [ -n "$1" ] && printf '"%s"' "$1" || printf 'null'; }
-    printf '{"v":1,"project":"%s","at":"%s","intact":%s,"write_log_seq":%s,"write_log_head":%s,"write_log_intact":%s,"write_log_lock":%s,"access_log_seq":%s,"access_log_head":%s,"access_log_intact":%s,"access_log_lock":%s,"check_write_log_seq":%s,"check_write_log_hash":%s,"check_access_log_seq":%s,"check_access_log_hash":%s}\n' \
+    printf '{"v":1,"project":"%s","at":"%s","intact":%s,"write_log_seq":%s,"write_log_head":%s,"write_log_intact":%s,"write_log_lock":%s,"access_log_seq":%s,"access_log_head":%s,"access_log_intact":%s,"access_log_lock":%s,"check_write_log_seq":%s,"check_write_log_hash":%s,"check_access_log_seq":%s,"check_access_log_hash":%s,"agent_log_seq":%s,"agent_log_head":%s,"agent_log_intact":%s,"agent_log_lock":%s,"check_agent_log_seq":%s,"check_agent_log_hash":%s}\n' \
       "$COMPOSE_PROJECT_NAME" "$at" "$(b "$good")" "$wseq" "$(s "$whead")" "$(b "$wint")" "$(b "$wlock")" \
-      "$aseq" "$(s "$ahead")" "$(b "$aint")" "$(b "$alock")" "$((10#$cw))" "$(s "$cwh")" "$((10#$ca))" "$(s "$cah")"
+      "$aseq" "$(s "$ahead")" "$(b "$aint")" "$(b "$alock")" "$((10#$cw))" "$(s "$cwh")" "$((10#$ca))" "$(s "$cah")" \
+      "$gseq" "$(s "$ghead")" "$(b "$gint")" "$(b "$glock")" "$((10#$cg))" "$(s "$cgh")"
     [ "$good" = t ] || exit 1
     ;;
   pending)
@@ -218,15 +228,92 @@ PY
     scope_args=""; [ -n "${SCOPE:-}" ] && scope_args="-e KIT_SCOPE=$SCOPE"
     # shellcheck disable=SC2086
     exec $COMPOSE --env-file "$KIT_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" run --rm -T --no-deps \
-      -e MCP_HOST_LABEL="$(hostname -s 2>/dev/null || hostname)" -e MCP_USER_LABEL="$(id -un)" $scope_args \
+      -e MCP_STDIO=1 -e MCP_HOST_LABEL="$(hostname -s 2>/dev/null || hostname)" -e MCP_USER_LABEL="$(id -un)" $scope_args \
       mcp node dist/src/stdio.js
+    ;;
+  receipts-setup)
+    # Run on the machine whose AI you want receipted. Writes the hook's settings file (private, 0600) with
+    # the receipt URL and RECEIPT_TOKEN; the token is never printed. Another machine: pass --url (an https
+    # or Tailscale address of this kit) and --env-file, then move that file over a private channel.
+    load_env
+    if [ -z "${RECEIPT_TOKEN:-}" ] || [ "$RECEIPT_TOKEN" = CHANGE-ME ]; then
+      # a client made before AI receipts existed: give it a receipt token (kept in .env, never printed)
+      RECEIPT_TOKEN="$(rand 32)"
+      { grep -v '^RECEIPT_TOKEN=' "$KIT_ENV_FILE"; echo "RECEIPT_TOKEN=$RECEIPT_TOKEN"; } > "$KIT_ENV_FILE.tmp"
+      chmod 600 "$KIT_ENV_FILE.tmp"; mv "$KIT_ENV_FILE.tmp" "$KIT_ENV_FILE"
+      export RECEIPT_TOKEN; write_secrets
+      say "added a new RECEIPT_TOKEN to $KIT_ENV_FILE"
+      if [ -n "$(dc ps -q mcp 2>/dev/null)" ]; then
+        dc up -d --force-recreate --no-deps mcp >/dev/null 2>&1 && wait_mcp && say "restarted the MCP server so it accepts the new token" \
+          || die "could not restart the MCP server: run ./kit up"
+      fi
+    fi
+    url=""; claude=""; envf="$HOME/.config/kit-receipts/env"
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --url) url="${2:?--url needs a value}"; shift 2 ;;
+        --env-file) envf="${2:?--env-file needs a path}"; shift 2 ;;
+        --claude) if [ -n "${2:-}" ] && [ "${2#--}" = "$2" ]; then claude="$2"; shift 2; else claude="$HOME/.claude/settings.json"; shift; fi ;;
+        *) die "unknown option $1" ;;
+      esac
+    done
+    [ -n "$url" ] || url="http://127.0.0.1:${MCP_PORT:-8790}/receipts"
+    ( umask 077; mkdir -p "$(dirname "$envf")"
+      printf '# client kit AI receipts (made by ./kit receipts-setup). Private: never share.\nKIT_RECEIPT_URL=%s\nKIT_RECEIPT_TOKEN=%s\n' "$url" "$RECEIPT_TOKEN" > "$envf.tmp" && mv "$envf.tmp" "$envf" )
+    chmod 600 "$envf"
+    say "wrote $envf (private, 0600): receipts go to $url"
+    hook="$ROOT/hooks/agent-receipt.py"
+    if [ -n "$claude" ]; then
+      python3 -I - "$claude" "$hook" <<'PY'
+import json, os, sys
+path, hook = sys.argv[1], sys.argv[2]
+cfg = json.load(open(path)) if os.path.exists(path) and os.path.getsize(path) else {}
+cmd = f'python3 -I "{hook}" hook "Claude Code"'
+hooks = cfg.setdefault("hooks", {})
+added = 0
+for ev in ("PostToolUse", "PostToolUseFailure"):
+    lst = hooks.setdefault(ev, [])
+    if any(h.get("command") == cmd for m in lst for h in m.get("hooks", [])):
+        continue
+    lst.append({"matcher": "*", "hooks": [{"type": "command", "command": cmd, "timeout": 10}]})
+    added += 1
+os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(cfg, f, indent=2); f.write("\n")
+os.replace(tmp, path)
+print(f"Claude Code: {'added the hook to' if added else 'hook already in'} {path}")
+PY
+    else
+      say "Claude Code: add to ~/.claude/settings.json (or run again with --claude):"
+      say "  \"hooks\": {\"PostToolUse\": [{\"matcher\": \"*\", \"hooks\": [{\"type\": \"command\", \"command\": \"python3 -I $hook hook 'Claude Code'\"}]}]}"
+    fi
+    say "Shell commands too (zsh, in ~/.zshrc):"
+    say "  precmd() { local e=\$?; [ -n \"\$_kit_cmd\" ] && python3 -I $hook shell \$e \"\$_kit_cmd\"; _kit_cmd=; }; preexec() { _kit_cmd=\"\$1\"; }"
+    say "Check: python3 $hook status"
+    ;;
+  receipts)
+    load_env
+    admin_psql -P pager=off -c "SELECT seq, to_char(coalesce(at, created_at), 'YYYY-MM-DD HH24:MI:SS') AS at, actor, host, kind, ok, left(coalesce(target, command), 90) AS what, left(hash, 12) AS hash FROM agent_log ORDER BY seq DESC LIMIT ${1:-20}"
     ;;
   logs)    load_env; dc --profile ui logs -f --tail 100 "$@" ;;
   restart) load_env; dc up -d --force-recreate mcp; wait_mcp; say "MCP restarted on port $MCP_HOST_PORT" ;;
   backup)
-    load_env; mkdir -p "$KIT_HOME/backups"; f="$KIT_HOME/backups/${COMPOSE_PROJECT_NAME}-$(date +%Y%m%d-%H%M%S).sql"
-    ( umask 077; dc exec -T postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" > "$f" )
-    say "saved $f ($(wc -c < "$f" | tr -d ' ') bytes). It contains the client's data: keep it private."
+    # Encrypted with age when KIT_BACKUP_AGE_RECIPIENT is set (an age public key, age1...): only the matching
+    # private key can open it, so the file is safe to copy off this machine. Without it: a plain dump + a warning.
+    load_env; ( umask 077; mkdir -p "$KIT_HOME/backups" ); f="$KIT_HOME/backups/${COMPOSE_PROJECT_NAME}-$(date +%Y%m%d-%H%M%S).sql"
+    if [ -n "${KIT_BACKUP_AGE_RECIPIENT:-}" ]; then
+      command -v age >/dev/null 2>&1 || die "KIT_BACKUP_AGE_RECIPIENT is set but age is not installed (brew install age / apt install age)"
+      f="$f.age"
+      ( umask 077; set -o pipefail; dc exec -T postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" | age -r "$KIT_BACKUP_AGE_RECIPIENT" > "$f" ) \
+        || { rm -f "$f"; die "backup failed"; }
+      say "saved $f ($(wc -c < "$f" | tr -d ' ') bytes), encrypted. Open with: age -d -i <your key file> \"$f\" > dump.sql"
+      say "Keep a copy somewhere other than this machine."
+    else
+      ( umask 077; dc exec -T postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" > "$f" )
+      say "saved $f ($(wc -c < "$f" | tr -d ' ') bytes). NOT encrypted: it contains the client's data."
+      say "To encrypt backups: set KIT_BACKUP_AGE_RECIPIENT=age1... in .env (make a key with: age-keygen -o key.txt)."
+    fi
     ;;
   test) exec "$ROOT/scripts/test.sh" "$@" ;;
   down) load_env; dc --profile ui down; say "stopped (data kept). Start again: ./kit up" ;;

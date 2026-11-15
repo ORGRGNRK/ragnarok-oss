@@ -60,9 +60,28 @@ rc=$(run); [ "$rc" = 3 ] && [ "$(lines)" = 2 ] && ok "server unreachable -> exit
 answer ck-hq true 9 "$(H 9)" 15 "$(H 15)" 7 "$(q "$(H 7)")" 12 "$(q "$(H 12)")"
 rc=$(run); [ "$rc" = 0 ] && [ "$(lines)" = 3 ] && ok "back to normal -> saved again (3 lines)" || bad "recover: exit $rc: $(cat "$tmp/err")"
 
+# agent_log (AI machine receipts): newer kits add a third log; older anchors without it keep working
+agent() {  # agent GSEQ GHEAD CGSEQ CGHASH: add agent_log fields to the current answer
+  jq -c --argjson g "$1" --arg gh "$2" --argjson cg "$3" --argjson cgh "$4" \
+    '. + {agent_log_seq:$g, agent_log_head:$gh, agent_log_intact:true, agent_log_lock:true, check_agent_log_seq:$cg, check_agent_log_hash:$cgh}' \
+    "$tmp/answer" > "$tmp/answer.new" && mv "$tmp/answer.new" "$tmp/answer"
+}
+mk() { answer ck-hq true 9 "$(H 9)" 15 "$(H 15)" 9 "$(q "$(H 9)")" 15 "$(q "$(H 15)")"; }
+mk; agent 4 "$(H 4)" 0 null
+rc=$(run); [ "$rc" = 0 ] && [ "$(lines)" = 4 ] && [ "$(cat "$tmp/last-cmd")" = "anchor 9 15" ] && ok "kit gains agent_log: saved; asked with two numbers (old anchor had no agent_log)" || bad "agent first: exit $rc sent $(cat "$tmp/last-cmd"): $(cat "$tmp/err")"
+mk; agent 6 "$(H 6)" 4 "$(q "$(H 4)")"
+rc=$(run); [ "$rc" = 0 ] && [ "$(lines)" = 5 ] && [ "$(cat "$tmp/last-cmd")" = "anchor 9 15 4" ] && ok "next run asks for the agent_log hash too (anchor 9 15 4) and saves" || bad "agent second: exit $rc sent $(cat "$tmp/last-cmd"): $(cat "$tmp/err")"
+mk; agent 2 "$(H 2)" 0 null
+rc=$(run); [ "$rc" = 2 ] && grep -q "agent_log seq went DOWN" "$tmp/err" && ok "agent_log seq went down -> ALERT" || bad "agent seq down: exit $rc: $(cat "$tmp/err")"
+mk; agent 8 "$(H 8)" 6 "$(q "$(H 99)")"
+rc=$(run); [ "$rc" = 2 ] && grep -q "agent_log hash at anchored #6 CHANGED" "$tmp/err" && ok "agent_log hash at the anchored seq changed -> ALERT" || bad "agent hash: exit $rc: $(cat "$tmp/err")"
+mk
+rc=$(run); [ "$rc" = 2 ] && grep -q "agent_log is GONE" "$tmp/err" && ok "agent_log missing from the answer after it was anchored -> ALERT" || bad "agent gone: exit $rc: $(cat "$tmp/err")"
+[ "$(lines)" = 5 ] && ok "none of the bad agent_log answers were saved as good" || bad "lines $(lines)"
+
 if [ "$(uname)" = Darwin ]; then
   if ( : > "$ANCHOR_DIR/hq.jsonl" ) 2>/dev/null; then bad "the anchor file could be overwritten"; else ok "the anchor file is append-only (overwrite refused by macOS)"; fi
-  [ "$(lines)" = 3 ] && ok "anchor file still has all 3 lines" || bad "anchor file damaged"
+  [ "$(lines)" = 5 ] && ok "anchor file still has all 5 lines" || bad "anchor file damaged"
 fi
 [ $fails -eq 0 ] && { echo "  anchor checks passed"; exit 0; }
 exit 1

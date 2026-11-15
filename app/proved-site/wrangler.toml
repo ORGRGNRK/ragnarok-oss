@@ -1,0 +1,29 @@
+# Public Cloudflare Worker for the Proved payment and onboarding site.
+# No login on the public pages. See README.md for the owner's go-live steps.
+# No secrets live in this file. ADMIN_TOKEN and the payment links are Worker secrets.
+
+name = "proved-site"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Live at fix.rgnrk.co (owner, 2026-11-10). No *.workers.dev URL.
+workers_dev = false
+preview_urls = false
+routes = [{ pattern = "fix.rgnrk.co", custom_domain = true }]
+
+# KV holds intake submissions and the per-IP rate limit.
+# Replace the id with the one printed when you create the SITE_KV namespace (README).
+[[kv_namespaces]]
+binding = "SITE_KV"
+id = "1258bf47f3fc416baf6ed526e7150723"
+
+# copy.md is bundled into the Worker as a text module.
+[[rules]]
+type = "Text"
+globs = ["**/*.md"]
+fallthrough = true
+
+
+[vars]
+REPO_URL = "https://github.com/ORGRGNRK/alexus-app"

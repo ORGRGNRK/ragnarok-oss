@@ -1,0 +1,19 @@
+# Alexus rehearsal results 2026-10-28 (table|rows|maxId|md5 prefix, Write Log md5 excludes link+Target cols)
+Write Log|605|605|4ac3fe55
+Archive|18|18|f7ef82d6
+Config|6|6|a55377b9
+RAGNAROK State|4|4|0d9e57cb
+Memories|81|95|6b9d8b5a
+Alexus Identity|117|117|23699250
+Reminders|7|7|5ab4a731
+Transcript|78|78|feb20517
+Knowledge Pipeline|9|9|f1e7636a
+Business|92|92|106e8e6f
+Exit Profiles|0|0|d41d8cd9
+Phone Grades|0|0|d41d8cd9
+Leads|0|0|d41d8cd9
+Personal - Record of Truth|32|32|88046a9d
+Projects|9|9|8480c9b0
+Project Steps|26|26|4e91243c
+Personal - Resale Inventory|0|0|d41d8cd9
+Social Posts|9|9|df558138

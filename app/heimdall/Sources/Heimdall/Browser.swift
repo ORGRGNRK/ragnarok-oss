@@ -42,12 +42,17 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     @Published var canForward = false
     @Published var poppedOut = false
     @Published var note = ""
+    @Published var keyNote = ""      // security key: "Touch your key…", wrong PIN, …
+    private let fido = FIDOBridge()
 
     private(set) lazy var web: WKWebView = {
         let c = WKWebViewConfiguration()
         c.websiteDataStore = .default()        // keeps site logins between launches
         // A bare WKWebView doesn't say "Safari", so Google and others serve their old basic pages. Say it, like Safari does.
         c.applicationNameForUserAgent = "Version/18.0 Safari/605.1.15"
+        // Security keys (YubiKey) talk to the key directly over USB, the way Chrome does (FIDO.swift).
+        fido.status = { [weak self] s in self?.keyNote = s }
+        FIDOBridge.install(on: c.userContentController, bridge: fido)
         let w = WKWebView(frame: .zero, configuration: c)
         w.navigationDelegate = self; w.uiDelegate = self
         w.allowsBackForwardNavigationGestures = true
@@ -280,6 +285,14 @@ struct BrowserPage: View {
                 }
             }.padding(.horizontal, 10).padding(.vertical, 6)
             if m.loading { ProgressView().progressViewStyle(.linear).frame(height: 2) }
+            if !m.keyNote.isEmpty {
+                HStack {
+                    Image(systemName: "key.horizontal.fill")
+                    Text(m.keyNote)
+                    Spacer()
+                    if m.keyNote.hasPrefix("Touch") { Button("Cancel") { FIDO.cancel() }.controlSize(.small) }
+                }.font(.caption).foregroundStyle(.orange).padding(.horizontal, 10).padding(.bottom, 4)
+            }
             if !m.note.isEmpty || !vault.note.isEmpty {
                 Text(m.note.isEmpty ? vault.note : m.note).font(.caption).foregroundStyle(m.note.isEmpty ? Color.secondary : Color.red)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10).padding(.bottom, 4)

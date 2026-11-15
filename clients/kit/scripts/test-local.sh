@@ -57,11 +57,11 @@ fi
 echo ""; echo "== ./kit anchor (fake database answer)"
 h="$(printf '%064d' 7)"
 : > "$FAKE_LOG"
-out="$(FAKE_PSQL_OUT="2026-10-30T19:00:00Z|t|5|$h|t|t|10|$h|t|t|$h|" "$ROOT/kit" anchor 5 0 2>/dev/null)"; rc=$?
-if [ $rc -eq 0 ] && echo "$out" | jq -e '.v==1 and .project=="local-test" and .intact==true and .write_log_seq==5 and .write_log_head=="'"$h"'" and .access_log_seq==10 and .check_write_log_seq==5 and .check_write_log_hash=="'"$h"'" and .check_access_log_hash==null' >/dev/null 2>&1
+out="$(FAKE_PSQL_OUT="2026-10-30T19:00:00Z|t|5|$h|t|t|10|$h|t|t|$h||3|$h|t|t|" "$ROOT/kit" anchor 5 0 2>/dev/null)"; rc=$?
+if [ $rc -eq 0 ] && echo "$out" | jq -e '.v==1 and .project=="local-test" and .intact==true and .write_log_seq==5 and .write_log_head=="'"$h"'" and .access_log_seq==10 and .check_write_log_seq==5 and .check_write_log_hash=="'"$h"'" and .check_access_log_hash==null and .agent_log_seq==3 and .agent_log_head=="'"$h"'" and .agent_log_intact==true' >/dev/null 2>&1
 then ok "prints one valid JSON line with seqs, head hashes and the check hash"; else bad "anchor output (exit $rc): $out"; fi
 [ "$(printf '%s\n' "$out" | grep -c .)" = 1 ] && ok "exactly one line" || bad "more than one line: $out"
-out="$(FAKE_PSQL_OUT="2026-10-30T19:00:00Z|f|5||f|t|10|$h|t|t||" "$ROOT/kit" anchor 2>/dev/null)"; rc=$?
+out="$(FAKE_PSQL_OUT="2026-10-30T19:00:00Z|f|5||f|t|10|$h|t|t|||0||t|t|" "$ROOT/kit" anchor 2>/dev/null)"; rc=$?
 [ $rc -eq 1 ] && echo "$out" | jq -e '.intact==false and .write_log_head==null' >/dev/null 2>&1 && ok "broken chain -> line still printed, intact false, exit 1" || bad "broken: exit $rc: $out"
 : > "$FAKE_LOG"
 "$ROOT/kit" anchor 5 'x;ls' >/dev/null 2>&1; rc=$?
@@ -69,12 +69,12 @@ out="$(FAKE_PSQL_OUT="2026-10-30T19:00:00Z|f|5||f|t|10|$h|t|t||" "$ROOT/kit" anc
 
 echo ""; echo "== scripts/anchor-ssh-gate.sh (the anchor key can only run anchor)"
 gate="$ROOT/scripts/anchor-ssh-gate.sh"
-for cmd in "rm -rf /tmp/x" "anchor; id" "anchor ; id" "anchor 1 \$(id)" "anchor 1 2 3" "bash" "anchor 1 *"; do
+for cmd in "rm -rf /tmp/x" "anchor; id" "anchor ; id" "anchor 1 \$(id)" "anchor 1 2 3 4" "bash" "anchor 1 *"; do
   : > "$FAKE_LOG"
   SSH_ORIGINAL_COMMAND="$cmd" "$gate" >/dev/null 2>&1; rc=$?
   [ $rc -ne 0 ] && [ ! -s "$FAKE_LOG" ] && ok "gate refuses: $cmd" || bad "gate allowed: $cmd (exit $rc)"
 done
-out="$(SSH_ORIGINAL_COMMAND="anchor 5 0" FAKE_PSQL_OUT="2026-10-30T19:00:00Z|t|5|$h|t|t|10|$h|t|t|$h|" "$gate" 2>/dev/null)"; rc=$?
+out="$(SSH_ORIGINAL_COMMAND="anchor 5 0" FAKE_PSQL_OUT="2026-10-30T19:00:00Z|t|5|$h|t|t|10|$h|t|t|$h||3|$h|t|t|" "$gate" 2>/dev/null)"; rc=$?
 [ $rc -eq 0 ] && echo "$out" | jq -e '.check_write_log_seq==5' >/dev/null 2>&1 && ok "gate runs: anchor 5 0" || bad "gate anchor: exit $rc: $out"
 
 if [ -f "$ROOT/scripts/test-anchor.sh" ]; then

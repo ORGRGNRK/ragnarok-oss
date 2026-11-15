@@ -36,7 +36,7 @@ make_env() {
         *=CHANGE-ME)
           key="${line%%=*}"
           case "$key" in
-            MCP_TOKEN|MCP_READ_TOKEN) printf '%s=%s\n' "$key" "$(rand 32)" ;;
+            MCP_TOKEN|MCP_READ_TOKEN|RECEIPT_TOKEN) printf '%s=%s\n' "$key" "$(rand 32)" ;;
             *) printf '%s=%s\n' "$key" "$(rand 24)" ;;
           esac ;;
         *) printf '%s\n' "$line" ;;
@@ -54,6 +54,21 @@ load_env() {
   # shellcheck disable=SC1090
   . "$KIT_ENV_FILE"
   set +a
+  write_secrets
+}
+
+# write_secrets: .env stays the one place secrets are kept; the containers get them as files (Docker secrets)
+# so they never show up in `docker inspect`. Folder 0700 = only this user on the host; files 0644 so the
+# container's own user (postgres, node) can read the mounted file.
+write_secrets() {
+  KIT_SECRETS_DIR="$KIT_HOME/.secrets"; export KIT_SECRETS_DIR
+  ( umask 077; mkdir -p "$KIT_SECRETS_DIR" ); chmod 700 "$KIT_SECRETS_DIR"
+  local pair name var
+  for pair in pg_admin_password:POSTGRES_PASSWORD mcp_db_password:MCP_DB_PASSWORD mcp_ro_db_password:MCP_RO_DB_PASSWORD \
+              ui_db_password:UI_DB_PASSWORD mcp_token:MCP_TOKEN mcp_read_token:MCP_READ_TOKEN receipt_token:RECEIPT_TOKEN nc_jwt_secret:NC_AUTH_JWT_SECRET; do
+    name="${pair%%:*}"; var="${pair#*:}"
+    ( umask 022; eval "printf '%s' \"\${$var:-}\"" > "$KIT_SECRETS_DIR/$name.tmp" ) && mv "$KIT_SECRETS_DIR/$name.tmp" "$KIT_SECRETS_DIR/$name"
+  done
 }
 
 dc() {

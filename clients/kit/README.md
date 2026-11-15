@@ -30,6 +30,9 @@ their tables in one file, start it, and connect Claude.
 - **Remote access needs a token.** No token or a wrong token gets `401`. Tokens are never written
   to logs. Everything listens on 127.0.0.1 only; you reach it from elsewhere through a tunnel.
 - **Every tool call is logged** in `access_log` (also hash-chained), including refused ones.
+- **What AIs do on the machine itself is receipted too** (optional, `./kit receipts-setup`): every shell
+  command, file edit and tool call an AI agent makes goes into `agent_log`, the same kind of hash chain.
+  See "AI machine receipts" below.
 
 The AI's tools: `list_tables`, `describe_table`, `list_records`, `get_record`, `search_records`,
 `verify_receipts` (always), plus `create_records`, `update_records`, `archive_record` (write access only).
@@ -40,25 +43,28 @@ You do not need Node installed; everything runs in containers.
 
 ---
 
-## Set up a new client (about 10 steps)
+## Set up a new client (one command)
 
-1. Open Terminal and go to the kit: `cd ~/Developer/ragnarok-client-kit`
-2. Make the client's copy: `./new-client.sh "Acme Plumbing" --port-offset 10`
-   This creates `../acme-plumbing` with brand-new passwords and tokens in its own `.env`
-   (nothing is printed, nothing is shared between clients) and its own ports.
+1. Go to the kit: `cd ~/Developer/ragnarok/clients/kit`
+2. Run: `./new-client.sh "Acme Plumbing" --port-offset 10`
+   One shot: it creates `../acme-plumbing` with brand-new passwords and tokens in its own `.env`
+   (nothing is printed, nothing is shared between clients), its own ports, and **starts the whole
+   stack** (Postgres, MCP, NocoDB, hardened). The tables are created **empty**: no example rows are loaded.
    Use a different `--port-offset` (10, 20, 30, ...) for each client on the same machine.
-3. Go into it: `cd ../acme-plumbing`
-4. Describe the client's tables in `client/schema.json` (start from the example that is already
-   there: a fake shop with Products and Orders). See `client/README.md` for field types.
-5. Put any starting rows in `client/seed.json` (or make it `{}`), then run `./kit check`.
-6. Prove it all works: `./kit test` (runs ~60 checks on a throwaway copy, then deletes it;
-   ends with `ALL TESTS PASSED`).
-7. Start it for real: `./kit up`, then `./kit seed` if you want the starting rows.
-8. Connect Claude (next section). Ask it "list the tables" to check.
-9. Optional: set up NocoDB so people can see the data (section below).
-10. Keep copies of the receipt "head" hashes off the server: set up the hourly Mac anchor
-    (section "Off-server anchors" below). They let you prove later that old receipts were not
-    rewritten. Make backups with `./kit backup`.
+   `--no-up` only makes the folder without starting anything.
+3. Go into it: `cd ../acme-plumbing`. Describe the client's tables in `client/schema.json` (it starts
+   from the example: Products and Orders). See `client/README.md` for field types. Then `./kit check`
+   and `./kit up` again to apply them.
+4. Prove it all works: `./kit test` (about 80 checks on a throwaway copy, then deletes it; ends with
+   `ALL TESTS PASSED`).
+5. Connect Claude (next section). Ask it "list the tables" to check.
+6. Optional: connect NocoDB to the tables so people can see the data (section below).
+7. Backups: put an age public key in `.env` (`KIT_BACKUP_AGE_RECIPIENT=age1...`, make one with
+   `age-keygen -o key.txt` and keep `key.txt` off the server), then `./kit backup` writes encrypted dumps.
+   Copy them somewhere other than this machine.
+8. Keep copies of the receipt "head" hashes off the server: the hourly Mac anchor (section "Off-server anchors").
+
+If you ever want starting rows: put them in `client/seed.json` and run `./kit seed` (it only fills tables that are empty).
 
 Everyday commands (run inside the client's folder): `./kit status`, `./kit pending`,
 `./kit approve CODE`, `./kit verify`, `./kit anchor`, `./kit logs`, `./kit down`, `./kit up`. Run `./kit` for the list.
@@ -148,7 +154,7 @@ Never change `BIND_ADDR` to `0.0.0.0` or open router ports; use a tunnel.
    (8090 + offset). The first account you create is the NocoDB owner.
 2. Create a base and add a data source / "connect external database": **PostgreSQL**, host `postgres`,
    port `5432`, database `clientdata`, user `kit_ui`, password = `UI_DB_PASSWORD` from `.env`, schema `public`.
-3. Hide the kit's own tables if you like (`write_log`, `access_log`, `archive`, `approvals`, `kit_tables`).
+3. Hide the kit's own tables if you like (`write_log`, `access_log`, `agent_log`, `archive`, `approvals`, `kit_tables`).
 
 People's edits in NocoDB are receipted too (actor `kit_ui`). Deleting rows from NocoDB fails on
 purpose (no delete permission); ask the AI to archive instead, or archive by hand (below).
@@ -168,11 +174,46 @@ Codes expire after `APPROVAL_TTL_HOURS` (24 by default) and work once.
 
 ---
 
+## AI machine receipts (`agent_log`)
+
+The MCP logs only see what an AI does *through the kit's tools*. An AI agent on a computer (Claude
+Code, Codex, a script) also runs shell commands and edits files. `agent_log` receipts those too:
+
+```
+./kit receipts-setup --claude      # on the machine whose AI you want receipted
+./kit receipts                     # the newest 20 AI receipts
+```
+
+- `receipts-setup` writes a private settings file (`~/.config/kit-receipts/env`, 0600) with the kit's
+  receipt address and `RECEIPT_TOKEN`, and with `--claude` adds the hook to Claude Code's
+  `~/.claude/settings.json` (after every tool call, success or failure). It also prints a one-line zsh
+  hook for commands a person or other agent types. A client made before this gets a `RECEIPT_TOKEN`
+  added to its `.env` automatically. The token is never printed.
+- `RECEIPT_TOKEN` can only **add** receipts at `POST /receipts`: no AI tools, no data (`/mcp` -> 403).
+  The read-only token is refused there too.
+- `hooks/agent-receipt.py` (Python standard library only) redacts secrets on the machine first (API
+  keys, passwords, bearer tokens, keys in URLs; the server redacts again), writes the event to a private
+  spool file, and sends it in the background. Server down: receipts wait and go later; nothing is lost
+  and the AI is never slowed or blocked. File edits are receipted by path; **file contents are never sent**.
+- Each receipt: when, which machine, which AI, what kind (Read / Change / Observed), the command or
+  path, success or exit code. Duplicates (same event id sent twice) are stored once.
+- Same rules as the other logs: hash-chained, `./kit verify` checks it, the database refuses
+  UPDATE/DELETE/TRUNCATE even for the admin, the AI's login can't insert directly, and `./kit anchor`
+  copies its head hash off the server.
+- Another machine: `./kit receipts-setup --url https://<kit address>/receipts --env-file ./kit-receipts.env`,
+  then move that file to the other machine (`~/.config/kit-receipts/env`, chmod 600) over a private
+  channel. Plain http is only accepted to the same machine or a Tailscale address.
+
+Limit: it receipts what the hooks see. An AI that turns off its own hooks, or runs with no hook, isn't
+receipted; the receipts show the gap (no entries) rather than prevent it.
+
+---
+
 ## Off-server anchors (hourly, from the Mac)
 
 `./kit anchor` runs the same check as `./kit verify` and prints ONE JSON line: the time (UTC), whether
-both logs are intact and locked, and each log's last seq number and head hash. Given the seq numbers
-of an earlier anchor (`./kit anchor 120 4031`) it also prints the hash the database holds at those
+every log is intact and locked, and each log's last seq number and head hash. Given the seq numbers
+of an earlier anchor (`./kit anchor 120 4031 57`: write_log, access_log, agent_log) it also prints the hash the database holds at those
 seqs *now*. Exit 0 = clean, 1 = verify found a problem (the line is still printed), 2 = could not run.
 
 `scripts/mac-anchor.sh` runs on the Mac every hour (launchd). It SSHes to the server, runs
@@ -236,6 +277,27 @@ is never dropped. Removing or renaming a field in the file does not delete its c
 data stays in the database); a rename therefore shows up as a new empty field. Change field types
 by hand only with care.
 
+## Security hardening (what the kit does, checked by `./kit test`)
+
+Compared against the OWASP Docker and MCP cheat sheets and the CIS Docker Benchmark:
+
+- **Secrets as files.** `.env` is the one place secrets are kept. The kit writes each one into the
+  client's `.secrets/` folder (folder readable only by you, git-ignored) and the containers read them
+  from `/run/secrets/...`. They never appear in `docker inspect`.
+- **Locked-down containers.** Read-only root filesystem, all Linux capabilities dropped (Postgres gets
+  back only what its start-up needs), `no-new-privileges`, memory and process limits (`*_MEM_LIMIT` in `.env`).
+- **Exact images.** Postgres, NocoDB and Node are pinned by digest; npm install scripts are switched off.
+- **Split networks.** Postgres<->MCP and Postgres<->NocoDB are separate networks: NocoDB can't reach the MCP server.
+- **Sign-in protection.** 10 bad tokens from one address in 5 minutes -> that address is refused for
+  15 minutes (`AUTH_FAIL_LIMIT`, `AUTH_BLOCK_S`).
+- **Honest caller addresses.** `CF-Connecting-IP` / `X-Forwarded-For` are only believed with
+  `TRUST_PROXY_HEADERS=1`. Set it when a Cloudflare tunnel or proxy is in front; without it, anyone could
+  type a fake address into a receipt. Note: without a proxy, every caller reaching the published port
+  through Docker looks like the same address, so one bad caller can trigger the block for everyone on that path.
+- **Encrypted backups** with age (step 7 above).
+- **Not done:** OAuth 2.1. Remote access uses two long-lived bearer tokens (rotate by changing `.env`
+  and `./kit restart`). Keep the MCP port behind Tailscale or Cloudflare Access, never open to the internet.
+
 ## Honest limits
 
 - Someone with the admin password or root on the server can still switch the lock off and change
@@ -258,6 +320,7 @@ client/            schema.json + seed.json: the only things you edit per client
 examples/inventory the fake example (Example Supply Co.)
 db/init/           database setup: logins, receipts, hash chain, locks, archive/approval functions
 mcp/               the MCP server (TypeScript) and its end-to-end test (mcp/test/e2e.ts)
+hooks/             agent-receipt.py: receipts for what AIs do on a machine (see "AI machine receipts")
 kit                the command you use
 new-client.sh      makes a fresh copy for a new client
 scripts/           helpers used by kit and the test

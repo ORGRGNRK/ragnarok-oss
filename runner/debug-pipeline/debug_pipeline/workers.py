@@ -6,8 +6,12 @@ grants the model a shell or a host write tool.
 """
 import json
 import os
+import shutil
+import subprocess
+import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 
 def sample_worker(prompt, view):
@@ -151,13 +155,36 @@ def is_local_model(worker):
     return url.endswith("/api/chat") or url.endswith(":11434/api/chat")
 
 
+def _jwt_expired(key, margin=120):
+    """True when a JWT's exp is in the past (or within margin seconds). Unknown shape -> False."""
+    import base64
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(key.split(".")[1] + "=="))
+        return float(payload["exp"]) < time.time() + margin
+    except (ValueError, KeyError, IndexError, TypeError):
+        return False
+
+
 def grok_token():
-    """Bearer token for the Grok subscription. Never log the return value."""
+    """Bearer token for the Grok subscription. Never log the return value.
+    The subscription token lasts hours; when it has expired, `grok models` renews it with the stored
+    refresh token (seen 2026-11-14: an expired token gave HTTP 403 and every fallback round failed)."""
     if os.environ.get("DEBUG_PIPELINE_GROK_FALLBACK") == "off":
         return ""
     env = os.environ.get("DEBUG_PIPELINE_API_KEY", "").strip()
     if env:
         return env
+    key = _grok_file_token()
+    if key and _jwt_expired(key) and shutil.which("grok"):
+        try:
+            subprocess.run(["grok", "models"], capture_output=True, timeout=60, stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        key = _grok_file_token()
+    return key
+
+
+def _grok_file_token():
     path = Path.home() / ".grok" / "auth.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))

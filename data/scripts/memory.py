@@ -11,7 +11,7 @@ Three layers (see db/memory.sql):
   memory.py history KEY               every version of a fact: when it was true, who wrote it
   memory.py search "words" [-k N]     facts (by meaning) + recall (past chats/files), labelled by layer
   memory.py remember KEY "title" "body" [--kind K] [--desc D]   new or changed fact -> lands Unchecked
-  memory.py set-status KEY Verified|Timeless|Stale|Unchecked     (a person or the checker)
+  memory.py set-status KEY Verified|Timeless|Stale|Unchecked     (a person; the checker retires failed facts)
   memory.py retire KEY                fact stopped being true: gets an end date, text kept
   memory.py import-ygg                Yggdrasil Memories (ygg-scratch copy) -> facts, keeping status + dates
   memory.py import-claude             Claude Code memory files -> facts (Unchecked, like every import)
@@ -19,7 +19,7 @@ Three layers (see db/memory.sql):
   memory.py stats
   memory.py import-words              the owner's own messages from Claude Code transcripts -> memory.words (+ vectors)
   memory.py words "about" [-k N]      his messages closest in meaning: how he actually says things
-  memory.py check [--write]           run each fact's Checks on alexus: all pass -> Verified, any fail -> Stale
+  memory.py check [--write]           run each fact's Checks on alexus: all pass -> Verified, any fail -> retired
 
 Talks to Postgres with `docker exec` (admin login inside the container, nothing secret on a command line).
 Embeddings: Ollama nomic-embed-text at MEMORY_EMBED_URL (default Alexus alexus:11434), the same
@@ -144,8 +144,8 @@ def _probe_script(items):
 
 
 def check(write=False):
-    """The owner's checker rule (memory-check, 2026-10-24): every check passes -> Verified; any check fails -> Stale
-    (kept, out of core); a check that cannot be run -> status left alone. Timeless facts are not checked.
+    """The owner's checker rule (memory-check, 2026-10-24; changed 2026-11-14): every check passes -> Verified;
+    any check fails -> retired; a check that cannot be run -> status left alone. Timeless facts are not checked.
     Only checks aimed at alexus run (MacBook checks: not yet). --write applies; without it, a report."""
     facts = rows("SELECT fact_key, status, checks FROM memory.current WHERE status <> 'Timeless' AND checks IS NOT NULL ORDER BY id")
     items, owner = [], []
@@ -184,7 +184,11 @@ def check(write=False):
         if new and new != f["status"]:
             changes.append((f["fact_key"], new))
     if write and changes:
-        sql("BEGIN;\n" + "\n".join(f"SELECT memory.set_status({lit(k)}, {lit(s)}, {lit(CHECK_ACTOR)});" for k, s in changes) + "\nCOMMIT;")
+        # A fact whose check fails is retired (gone from search and core, text kept with an end date),
+        # not left lying around as Stale. the owner, 2026-11-14: "why dont you delete it when it goes stale".
+        sql("BEGIN;\n" + "\n".join(
+            f"SELECT memory.retire({lit(k)}, {lit(CHECK_ACTOR)});" if s == "Stale" else
+            f"SELECT memory.set_status({lit(k)}, {lit(s)}, {lit(CHECK_ACTOR)});" for k, s in changes) + "\nCOMMIT;")
     out.append(f"{len(changes)} status change(s) " + ("WRITTEN" if write else "proposed (run with --write to apply)") + ": " +
                ", ".join(f"{k}->{s}" for k, s in changes))
     return "\n".join(out)

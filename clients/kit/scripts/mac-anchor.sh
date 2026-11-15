@@ -3,7 +3,8 @@
 # receipt chain's head hashes so a rewritten history on the server can be caught later.
 #
 # Each run:
-#   1. SSHes to the server and runs `./kit anchor <last write_log seq> <last access_log seq>`.
+#   1. SSHes to the server and runs `./kit anchor <last write_log seq> <last access_log seq> [<last agent_log seq>]`
+#      (the third number only once an earlier anchor had agent_log, so kits from before agent_log still work).
 #   2. Compares the answer with the last GOOD anchor kept here:
 #        - the server's own verify must say intact + locked
 #        - neither log's seq may go DOWN
@@ -62,18 +63,19 @@ commit() {   # commit whatever changed; a failed commit never loses the appended
 
 # ---- the last good anchor
 prev="$(grep -v '^[[:space:]]*$' "$FILE" | tail -1)"
-pw=0; pa=0; pwh=""; pah=""; pproj=""
+pw=0; pa=0; pg=""; pwh=""; pah=""; pgh=""; pproj=""
 if [ -n "$prev" ]; then
   echo "$prev" | jq -e . >/dev/null 2>&1 || fail3 "the last line of $FILE is not valid JSON; fix by hand"
   pw="$(echo "$prev" | jq -r '.write_log_seq')";  pwh="$(echo "$prev" | jq -r '.write_log_head // ""')"
   pa="$(echo "$prev" | jq -r '.access_log_seq')"; pah="$(echo "$prev" | jq -r '.access_log_head // ""')"
   pproj="$(echo "$prev" | jq -r '.project')"
+  pg="$(echo "$prev" | jq -r '.agent_log_seq // ""')"; pgh="$(echo "$prev" | jq -r '.agent_log_head // ""')"
 fi
 
 # ---- ask the server
 sshopts=(-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3)
 [ -n "$KEY" ] && sshopts+=(-i "$KEY" -o IdentitiesOnly=yes)
-line="$("$SSH_BIN" "${sshopts[@]}" "$TARGET" "$REMOTE $pw $pa" 2>"$DIR/.$NAME.ssh-err")"; rc=$?
+line="$("$SSH_BIN" "${sshopts[@]}" "$TARGET" "$REMOTE $pw $pa${pg:+ $pg}" 2>"$DIR/.$NAME.ssh-err")"; rc=$?
 line="$(printf '%s\n' "$line" | grep '^{' | tail -1)"
 if [ -z "$line" ] || ! echo "$line" | jq -e '.v == 1 and (.project | type == "string")' >/dev/null 2>&1; then
   err="$(tail -3 "$DIR/.$NAME.ssh-err" 2>/dev/null | tr '\n' ' ')"; rm -f "$DIR/.$NAME.ssh-err"
@@ -84,7 +86,7 @@ rm -f "$DIR/.$NAME.ssh-err"
 # ---- compare
 problems=()
 j() { echo "$line" | jq -r "$1"; }
-[ "$(j '.intact')" = true ] || problems+=("server verify is NOT clean: write_log intact=$(j .write_log_intact) lock=$(j .write_log_lock), access_log intact=$(j .access_log_intact) lock=$(j .access_log_lock)")
+[ "$(j '.intact')" = true ] || problems+=("server verify is NOT clean: write_log intact=$(j .write_log_intact) lock=$(j .write_log_lock), access_log intact=$(j .access_log_intact) lock=$(j .access_log_lock), agent_log intact=$(j '.agent_log_intact // "n/a"') lock=$(j '.agent_log_lock // "n/a"')")
 if [ -n "$prev" ]; then
   [ "$(j .project)" = "$pproj" ] || problems+=("project changed: anchored '$pproj', server now says '$(j .project)' (wrong server or a rebuilt stack?)")
   cw="$(j .write_log_seq)"; ca="$(j .access_log_seq)"
@@ -94,6 +96,18 @@ if [ -n "$prev" ]; then
     [ "$(j .check_write_log_seq)" = "$pw" ] && [ "$(j '.check_write_log_hash // ""')" = "$pwh" ] \
       || problems+=("write_log hash at anchored #$pw CHANGED: anchored $pwh, server now has $(j '.check_write_log_hash // "nothing"') (history was rewritten)")
   fi
+  if [ -n "$pg" ]; then
+    cg="$(j '.agent_log_seq // ""')"
+    if [ -z "$cg" ]; then
+      problems+=("agent_log is GONE from the server's answer: anchored #$pg (the kit was downgraded or replaced)")
+    else
+      [ "$cg" -ge "$pg" ] 2>/dev/null || problems+=("agent_log seq went DOWN: anchored #$pg, server now has #$cg (AI receipts were removed or the database was replaced)")
+      if [ "$pg" -gt 0 ]; then
+        [ "$(j .check_agent_log_seq)" = "$pg" ] && [ "$(j '.check_agent_log_hash // ""')" = "$pgh" ] \
+          || problems+=("agent_log hash at anchored #$pg CHANGED: anchored $pgh, server now has $(j '.check_agent_log_hash // "nothing"') (history was rewritten)")
+      fi
+    fi
+  fi
   if [ "$pa" -gt 0 ]; then
     [ "$(j .check_access_log_seq)" = "$pa" ] && [ "$(j '.check_access_log_hash // ""')" = "$pah" ] \
       || problems+=("access_log hash at anchored #$pa CHANGED: anchored $pah, server now has $(j '.check_access_log_hash // "nothing"') (history was rewritten)")
@@ -102,8 +116,8 @@ fi
 
 if [ ${#problems[@]} -eq 0 ]; then
   printf '%s\n' "$line" >> "$FILE" || fail3 "could not append to $FILE"
-  commit "anchor $NAME $(j .at) write_log#$(j .write_log_seq) access_log#$(j .access_log_seq)"
-  echo "[anchor $(now)] $NAME ok: write_log #$(j .write_log_seq) access_log #$(j .access_log_seq)"
+  commit "anchor $NAME $(j .at) write_log#$(j .write_log_seq) access_log#$(j .access_log_seq)$(j '.agent_log_seq // empty' | sed 's/^/ agent_log#/')"
+  echo "[anchor $(now)] $NAME ok: write_log #$(j .write_log_seq) access_log #$(j .access_log_seq)$(j '.agent_log_seq // empty' | sed 's/^/ agent_log #/')"
   exit 0
 fi
 

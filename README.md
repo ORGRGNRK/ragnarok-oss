@@ -71,10 +71,11 @@ Two licenses, split by folder:
 
 | Path | License |
 |---|---|
-| Everything except `runner/conveyor/` | GNU AGPL-3.0-only (`LICENSE`) |
+| Everything except `runner/conveyor/` and `clients/kit/` | GNU AGPL-3.0-only (`LICENSE`) |
 | `runner/conveyor/` | PolyForm Noncommercial 1.0.0 (`runner/conveyor/LICENSE`): free for personal and noncommercial use; commercial use needs a paid license |
+| `clients/kit/` | PolyForm Noncommercial 1.0.0 (`clients/kit/LICENSE`), from the first release after 2026-11-15: free for personal and noncommercial use; setting it up for a business or a paying client needs a paid license. The 2026-11-14 public release stays AGPL. |
 
-PolyForm Noncommercial is not an OSI-approved open-source license, so `runner/conveyor/` is source-available,
-not open source. The rest of the repo uses it as a separate program: the Belt app (`app/belt-ui/`,
-`app/heimdall/Sources/Belt/`) starts its scripts and reads its task files. If you take code from
-`runner/conveyor/`, its license comes with it. Questions: origin@rgnrk.co.
+PolyForm Noncommercial is not an OSI-approved open-source license, so `runner/conveyor/` and `clients/kit/` are
+source-available, not open source. The rest of the repo uses Conveyor as a separate program: the Belt app
+(`app/belt-ui/`, `app/heimdall/Sources/Belt/`) starts its scripts and reads its task files. If you take code from
+either folder, its license comes with it. Questions: origin@rgnrk.co.

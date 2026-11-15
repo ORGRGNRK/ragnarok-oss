@@ -1,6 +1,8 @@
 .env
 *.env
 *.env.bak*
+# client kit secret files (made from .env by the kit)
+.secrets/
 node_modules/
 .venv/
 .build/

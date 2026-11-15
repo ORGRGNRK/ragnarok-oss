@@ -1,0 +1,34 @@
+# Cloudflare Worker for the Proved launch-plan checklist at https://plan.rgnrk.co
+# See README.md for the deploy steps. No secrets live in this file.
+# SETUP_TOKEN and DAEMON_TOKEN are Worker secrets (wrangler secret put).
+
+name = "proved-plan"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Only reachable on the custom domain (no *.workers.dev URL).
+workers_dev = false
+preview_urls = false
+
+routes = [
+  { pattern = "plan.rgnrk.co", custom_domain = true }
+]
+
+# KV holds the passkey credential, sessions (with TTL), one-time challenges
+# and everything checked or logged on the page.
+# Replace the id with the one printed when you create the PLAN_KV namespace (README step 2).
+[[kv_namespaces]]
+binding = "PLAN_KV"
+id = "9ff30ef93369453e936ee41c9470057b"
+
+[vars]
+RP_ID = "plan.rgnrk.co"
+ORIGIN = "https://plan.rgnrk.co"
+RP_NAME = "Proved plan"
+
+# plan-content.md is bundled into the Worker as a text module.
+[[rules]]
+type = "Text"
+globs = ["**/*.md"]
+fallthrough = true

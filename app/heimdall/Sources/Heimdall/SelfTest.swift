@@ -435,6 +435,24 @@ enum SelfTest {
         print("\(keyOK ? "ok  " : "FAIL") scrub-key-lines: \(keyOut.replacingOccurrences(of: "\n", with: " ⏎ "))")
         if !keyOK { ok = false }
         Scrub.values = []; Scrub.loaded = false
+        // Security keys in the Browser tab (FIDO.swift): rpId rule, origin, clientDataJSON, CBOR, SPKI, base64url. No key needed.
+        let fRp = FIDO.rpAllowed(rpId: "rgnrk.co", host: "auth.example.com", scheme: "https") && FIDO.rpAllowed(rpId: "auth.example.com", host: "auth.example.com", scheme: "https")
+            && !FIDO.rpAllowed(rpId: "google.com", host: "auth.example.com", scheme: "https") && !FIDO.rpAllowed(rpId: "rgnrk.co", host: "evilrgnrk.co", scheme: "https")
+            && !FIDO.rpAllowed(rpId: "co", host: "rgnrk.co", scheme: "https") && !FIDO.rpAllowed(rpId: "rgnrk.co", host: "auth.example.com", scheme: "http")
+            && FIDO.rpAllowed(rpId: "localhost", host: "localhost", scheme: "http")
+        let fOrigin = FIDO.origin(scheme: "https", host: "a.b", port: 443) == "https://a.b" && FIDO.origin(scheme: "https", host: "a.b", port: 8443) == "https://a.b:8443"
+        let fCh = Data([0xfb, 0xff, 0x00, 0x01])
+        let fCdj = String(decoding: FIDO.clientDataJSON(type: "webauthn.get", challenge: fCh, origin: "https://a.b"), as: UTF8.self)
+        let fJson = (try? JSONSerialization.jsonObject(with: Data(fCdj.utf8))) as? [String: Any]
+        let fCdjOK = fJson?["type"] as? String == "webauthn.get" && fJson?["challenge"] as? String == "-_8AAQ" && fJson?["origin"] as? String == "https://a.b"
+        let fB64 = FIDO.b64url(fCh) == "-_8AAQ" && FIDO.unb64url("-_8AAQ") == fCh
+        let fAtt = FIDO.attestationNone(authData: Data(repeating: 7, count: 300))
+        let fAttOK = fAtt.prefix(1) == Data([0xA3]) && fAtt.count == 1 + 4 + 5 + 8 + 1 + 9 + 3 + 300 && fAtt.suffix(300) == Data(repeating: 7, count: 300)
+        let fSpki = FIDO.spki(Data(repeating: 1, count: 64), alg: FIDO.es256)?.count == 91 && FIDO.spki(Data(repeating: 1, count: 32), alg: FIDO.eddsa)?.count == 44
+            && FIDO.spki(Data(repeating: 1, count: 10), alg: FIDO.es256) == nil
+        let fidoOK = fRp && fOrigin && fCdjOK && fB64 && fAttOK && fSpki && FIDO.script.contains("ragnarokFido")
+        print("\(fidoOK ? "ok  " : "FAIL") fido-bridge: rp \(fRp) origin \(fOrigin) clientData \(fCdjOK) b64 \(fB64) cbor \(fAttOK) spki \(fSpki)")
+        if !fidoOK { ok = false }
         // Money tab: three bank CSV shapes, amounts, dates, categories, repeating charges, duplicate-safe import (temp file)
         let chase = "Details,Posting Date,Description,Amount,Type,Balance\nDEBIT,10/03/2026,\"STARBUCKS STORE 123, SEATTLE\",-5.75,DEBIT_CARD,100\nCREDIT,10/01/2026,PAYROLL ACME,1500.00,ACH,1600\nDEBIT,10/02/2026,NETFLIX.COM,-15.49,DEBIT_CARD,1584.51\n"
         let card = "Transaction Date,Description,Debit,Credit\n2026-09-02,NETFLIX.COM,15.49,\n2026-09-05,PAYMENT THANK YOU,,200.00\n"

@@ -1,21 +1,40 @@
 # One client's stack: Postgres (the data + receipts), NocoDB (screen for humans), MCP (the AI's tools).
 # Every setting comes from .env. Everything listens on 127.0.0.1 unless you change BIND_ADDR.
+#
+# Hardening (OWASP Docker cheat sheet / CIS Docker Benchmark):
+#   - passwords and tokens reach the containers as files in /run/secrets, never as environment
+#     variables, so `docker inspect` doesn't show them
+#   - every container drops all Linux capabilities (only Postgres gets back the few its start-up needs),
+#     can't gain new privileges, has a read-only root filesystem, and has memory and process limits
+#   - images are pinned by digest
+#   - two separate private networks: Postgres<->MCP and Postgres<->NocoDB, so NocoDB can't reach the MCP server
+x-hardened: &hardened
+  restart: unless-stopped
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  read_only: true
+
 services:
   postgres:
-    image: postgres:16.15-alpine
-    restart: unless-stopped
+    <<: *hardened
+    image: postgres:16.15-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
+    # the official entrypoint fixes ownership of the data folder, then switches to the postgres user
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    tmpfs: ["/var/run/postgresql:mode=0775,uid=70,gid=70", "/tmp"]
+    mem_limit: ${PG_MEM_LIMIT:-1g}
+    pids_limit: 300
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
-      # read once by db/init/00_roles.sh on the first start
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_admin_password
+      # read once by db/init/00_roles.sh on the first start (names only; passwords are files)
       MCP_DB_USER: ${MCP_DB_USER:?}
-      MCP_DB_PASSWORD: ${MCP_DB_PASSWORD:?}
       MCP_RO_DB_USER: ${MCP_RO_DB_USER:?}
-      MCP_RO_DB_PASSWORD: ${MCP_RO_DB_PASSWORD:?}
       UI_DB_USER: ${UI_DB_USER:?}
-      UI_DB_PASSWORD: ${UI_DB_PASSWORD:?}
       NOCODB_META_DB: ${NOCODB_META_DB:-nocodb_meta}
+    secrets: [pg_admin_password, mcp_db_password, mcp_ro_db_password, ui_db_password]
+    networks: [data_mcp, data_ui]
+    # Kept for the kit's own tunnels and local tools; only on 127.0.0.1 by default.
     ports:
       - "${BIND_ADDR:-127.0.0.1}:${POSTGRES_PORT:-5442}:5432"
     volumes:
@@ -28,9 +47,12 @@ services:
       retries: 30
 
   mcp:
+    <<: *hardened
     build: ./mcp
     image: ${COMPOSE_PROJECT_NAME:-client-kit}-mcp:local
-    restart: unless-stopped
+    tmpfs: ["/tmp"]
+    mem_limit: ${MCP_MEM_LIMIT:-512m}
+    pids_limit: 200
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,44 +62,79 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       # only the low-privilege logins; the MCP server never gets the admin password
       MCP_DB_USER: ${MCP_DB_USER}
-      MCP_DB_PASSWORD: ${MCP_DB_PASSWORD}
+      MCP_DB_PASSWORD_FILE: /run/secrets/mcp_db_password
       MCP_RO_DB_USER: ${MCP_RO_DB_USER}
-      MCP_RO_DB_PASSWORD: ${MCP_RO_DB_PASSWORD}
+      MCP_RO_DB_PASSWORD_FILE: /run/secrets/mcp_ro_db_password
       UI_DB_USER: ${UI_DB_USER}
-      MCP_TOKEN: ${MCP_TOKEN:-}
-      MCP_READ_TOKEN: ${MCP_READ_TOKEN:-}
+      MCP_TOKEN_FILE: /run/secrets/mcp_token
+      MCP_READ_TOKEN_FILE: /run/secrets/mcp_read_token
+      RECEIPT_TOKEN_FILE: /run/secrets/receipt_token
       KIT_SCOPE: ${KIT_SCOPE:-write}
       ALLOWED_WRITE_ACTORS: ${ALLOWED_WRITE_ACTORS:-}
       APPROVAL_TTL_HOURS: ${APPROVAL_TTL_HOURS:-24}
+      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-0}
+      AUTH_FAIL_LIMIT: ${AUTH_FAIL_LIMIT:-10}
+      AUTH_BLOCK_S: ${AUTH_BLOCK_S:-900}
       MCP_HTTP_PORT: "8787"
+    secrets: [mcp_db_password, mcp_ro_db_password, mcp_token, mcp_read_token, receipt_token]
+    networks: [data_mcp, edge_mcp]
     ports:
       - "${BIND_ADDR:-127.0.0.1}:${MCP_PORT:-8790}:8787"
     volumes:
       - ${KIT_CLIENT_DIR:-./client}:/app/client:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8787/health >/dev/null || exit 1"]
+      # a `./kit mcp-stdio` session container (MCP_STDIO=1) talks over stdin/stdout and never opens 8787;
+      # without this it showed "unhealthy" for its whole life (seen 2026-11-15: 509 failed checks)
+      test: ["CMD-SHELL", "[ \"$${MCP_STDIO:-0}\" = 1 ] || wget -q -O- http://127.0.0.1:8787/health >/dev/null || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 20
 
   nocodb:
-    image: nocodb/nocodb:2026.10.0
-    restart: unless-stopped
+    <<: *hardened
+    image: nocodb/nocodb:2026.10.0@sha256:e8fee91b205b7c51df6e35a9d890d8b68b216e987ed3feb387c5478dff6df951
     profiles: ["ui"]
+    tmpfs: ["/tmp"]
+    mem_limit: ${NOCODB_MEM_LIMIT:-2g}
+    pids_limit: 300
     depends_on:
       postgres:
         condition: service_healthy
+    # NocoDB has no *_FILE settings, so its connection string and signing secret are built from the
+    # secret files at start-up, inside the container only (they never appear in `docker inspect`).
+    # It logs in with the low-privilege UI login (never the admin); its own settings live in a separate database.
+    entrypoint: ["/usr/bin/dumb-init", "--", "/bin/sh", "-c"]
+    command:
+      - 'export NC_DB="pg://postgres:5432?u=$$UI_DB_USER&p=$$(cat /run/secrets/ui_db_password)&d=$$NOCODB_META_DB" NC_AUTH_JWT_SECRET="$$(cat /run/secrets/nc_jwt_secret)"; exec /usr/src/appEntry/start.sh'
     environment:
-      # NocoDB logs in with the low-privilege UI login (never the admin). Its own settings live in
-      # a separate database; the client's tables are added in its UI as a data source (see README).
-      NC_DB: pg://postgres:5432?u=${UI_DB_USER}&p=${UI_DB_PASSWORD}&d=${NOCODB_META_DB:-nocodb_meta}
-      NC_AUTH_JWT_SECRET: ${NC_AUTH_JWT_SECRET:?set NC_AUTH_JWT_SECRET in .env}
+      UI_DB_USER: ${UI_DB_USER}
+      NOCODB_META_DB: ${NOCODB_META_DB:-nocodb_meta}
       NC_DISABLE_TELE: "true"
       NC_ALLOW_LOCAL_EXTERNAL_DBS: "true"
+    secrets: [ui_db_password, nc_jwt_secret]
+    networks: [data_ui, edge_ui]
     ports:
       - "${BIND_ADDR:-127.0.0.1}:${NOCODB_PORT:-8090}:8080"
     volumes:
       - ncdata:/usr/app/data
+
+# Secret files: the kit writes them from .env into the client's .secrets/ folder (folder 0700, so other
+# users on this machine can't open them; git-ignored) and each is mounted at /run/secrets/<name>.
+secrets:
+  pg_admin_password:  { file: "${KIT_SECRETS_DIR:?run through ./kit}/pg_admin_password" }
+  mcp_db_password:    { file: "${KIT_SECRETS_DIR:?}/mcp_db_password" }
+  mcp_ro_db_password: { file: "${KIT_SECRETS_DIR:?}/mcp_ro_db_password" }
+  ui_db_password:     { file: "${KIT_SECRETS_DIR:?}/ui_db_password" }
+  mcp_token:          { file: "${KIT_SECRETS_DIR:?}/mcp_token" }
+  mcp_read_token:     { file: "${KIT_SECRETS_DIR:?}/mcp_read_token" }
+  receipt_token:      { file: "${KIT_SECRETS_DIR:?}/receipt_token" }
+  nc_jwt_secret:      { file: "${KIT_SECRETS_DIR:?}/nc_jwt_secret" }
+
+networks:
+  data_mcp: {}
+  data_ui: {}
+  edge_mcp: {}
+  edge_ui: {}
 
 volumes:
   pgdata:

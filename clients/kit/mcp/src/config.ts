@@ -22,8 +22,19 @@ function readDotEnv(): Record<string, string> {
 }
 
 let envCache: Record<string, string | undefined> | undefined;
+/** Settings. A secret can arrive as a file instead of a variable: FOO_FILE=/run/secrets/foo sets FOO from
+ *  that file (Docker secrets), so passwords and tokens don't show up in `docker inspect`. */
 export function env(): Record<string, string | undefined> {
-  if (!envCache) envCache = { ...readDotEnv(), ...process.env };
+  if (!envCache) {
+    const e: Record<string, string | undefined> = { ...readDotEnv(), ...process.env };
+    for (const k of Object.keys(e)) {
+      if (!k.endsWith("_FILE") || !e[k]) continue;
+      const base = k.slice(0, -5);
+      try { e[base] = readFileSync(e[k] as string, "utf8").replace(/\r?\n$/, ""); }
+      catch { throw new Error(`${k} points at ${e[k]}, which can't be read`); }
+    }
+    envCache = e;
+  }
   return envCache;
 }
 

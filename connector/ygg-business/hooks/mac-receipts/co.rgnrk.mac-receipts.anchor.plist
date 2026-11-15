@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Every hour (anchor-hourly.sh): check + anchor the live AI receipt chain AND the ck-ragnarok-hq client kit chain; the kit result is written into mac.receipts.
+     Anchors: ~/RAGNAROK-anchors/mac-receipts.jsonl  Log: ~/.ragnarok/mac-receipts-anchor.log
+     Install: sed "s|@HOME@|$HOME|g" co.rgnrk.mac-receipts.anchor.plist > ~/Library/LaunchAgents/co.rgnrk.mac-receipts.anchor.plist
+              launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/co.rgnrk.mac-receipts.anchor.plist
+     Remove:  launchctl bootout gui/$(id -u)/co.rgnrk.mac-receipts.anchor -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>co.rgnrk.mac-receipts.anchor</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string><string>@HOME@/Developer/ragnarok/connector/ygg-business/hooks/mac-receipts/anchor-hourly.sh</string>
+  </array>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string><key>HOME</key><string>@HOME@</string></dict>
+  <key>StartInterval</key><integer>3600</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>@HOME@/.ragnarok/mac-receipts-anchor.log</string>
+  <key>StandardErrorPath</key><string>@HOME@/.ragnarok/mac-receipts-anchor.log</string>
+</dict></plist>

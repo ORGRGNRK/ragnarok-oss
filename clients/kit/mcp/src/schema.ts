@@ -1,5 +1,6 @@
 // client/schema.json: the ONE file that describes a client's tables. Everything else (the
 // database tables, the AI's tools, validation, the test) is driven from it.
+import { agentLogSql } from "./agentlog.js";
 import { readFileSync } from "node:fs";
 
 export type FieldType =
@@ -28,7 +29,7 @@ export class Refusal extends Error {}
 
 const SQL_NAME = /^[a-z][a-z0-9_]{0,62}$/;
 const RESERVED = new Set(["id", "created_at", "updated_at"]);
-const KIT_TABLES = new Set(["write_log", "access_log", "archive", "approvals", "kit_tables"]);
+const KIT_TABLES = new Set(["write_log", "access_log", "agent_log", "archive", "approvals", "kit_tables"]);
 export const slug = (s: string) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").replace(/^(\d)/, "f_$1");
 
 export function parseSchema(raw: unknown): Schema {
@@ -205,6 +206,7 @@ export interface Roles { rw: string; ro: string; ui: string }
 export function schemaSql(s: Schema, roles: Roles): string {
   const L: string[] = ["-- generated from client/schema.json by `./kit up` (safe to re-run)", "BEGIN;"];
   const R = { rw: qi(roles.rw), ro: qi(roles.ro), ui: qi(roles.ui) };
+  L.push(agentLogSql(R));
   for (const t of s.tables) {
     const T = qi(t.sql_name);
     L.push(``, `-- ${t.name}`);

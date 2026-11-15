@@ -64,18 +64,87 @@ c="$(code -H "authorization: Bearer $MCP_TOKEN")";      [ "$c" = 200 ] && ok "cu
 
 logs="$(dc logs mcp postgres 2>&1)"
 leak=0
-for v in "$MCP_TOKEN" "$MCP_READ_TOKEN" "$POSTGRES_PASSWORD" "$MCP_DB_PASSWORD" "$MCP_RO_DB_PASSWORD" "$UI_DB_PASSWORD"; do
+for v in "$MCP_TOKEN" "$MCP_READ_TOKEN" "$RECEIPT_TOKEN" "$POSTGRES_PASSWORD" "$MCP_DB_PASSWORD" "$MCP_RO_DB_PASSWORD" "$UI_DB_PASSWORD"; do
   case "$logs" in *"$v"*) leak=1 ;; esac
 done
 [ $leak = 0 ] && ok "no token or password appears anywhere in the container logs" || bad "a secret appeared in the logs"
 case "$logs" in *"refused POST /mcp"*) ok "refused requests are logged (without the token)";; *) bad "refused requests were not logged";; esac
 
+say ""; say "== 12r. AI machine receipts (agent_log): /receipts, the hook, the spool"
+rurl="http://127.0.0.1:$MCP_HOST_PORT/receipts"
+rpost() { curl -s -o "$ROOT/.test/r.out" -w '%{http_code}' -X POST "$rurl" -H 'content-type: application/json' "$@"; }
+uid="test-$(rand 8)"
+ev='{"event_uid":"'"$uid"'","host":"testhost","actor":"Test AI","producer":"test","event":"command","kind":"Observed","command":"ls -la","ok":true,"exit_code":0}'
+c="$(rpost -d "$ev")";                                         [ "$c" = 401 ] && ok "/receipts with no token -> 401" || bad "/receipts with no token -> $c"
+c="$(rpost -H "authorization: Bearer $MCP_READ_TOKEN" -d "$ev")"; [ "$c" = 403 ] && ok "/receipts with the read-only token -> 403" || bad "/receipts read token -> $c"
+c="$(rpost -H "authorization: Bearer $RECEIPT_TOKEN" -d "$ev")"
+if [ "$c" = 200 ] && grep -q '"new":true' "$ROOT/.test/r.out"; then ok "/receipts with the receipt token -> 200, stored with a seq"; else bad "/receipts receipt token -> $c $(cat "$ROOT/.test/r.out")"; fi
+c="$(rpost -H "authorization: Bearer $RECEIPT_TOKEN" -d "$ev")"
+if [ "$c" = 200 ] && grep -q '"new":false' "$ROOT/.test/r.out"; then ok "sending the same event again doesn't store it twice"; else bad "duplicate event: $c $(cat "$ROOT/.test/r.out")"; fi
+c="$(code -H "authorization: Bearer $RECEIPT_TOKEN")";         [ "$c" = 403 ] && ok "the receipt token can't use the AI tools (/mcp -> 403)" || bad "receipt token on /mcp -> $c"
+# the hook, end to end, in a throwaway HOME (fake secret must be redacted before it is stored)
+th="$ROOT/.test/hookhome"; mkdir -p "$th"
+HOME="$th" KIT_ENV_FILE="$KIT_ENV_FILE" "$ROOT/kit" receipts-setup --url "$rurl" >/dev/null 2>&1 \
+  && [ "$(stat -c %a "$th/.config/kit-receipts/env" 2>/dev/null || stat -f %Lp "$th/.config/kit-receipts/env")" = 600 ] \
+  && ok "./kit receipts-setup writes the hook settings file, private (600)" || bad "./kit receipts-setup failed"
+HOME="$th" KIT_ENV_FILE="$KIT_ENV_FILE" "$ROOT/kit" receipts-setup --url "$rurl" --claude "$th/.claude/settings.json" >/dev/null 2>&1
+HOME="$th" KIT_ENV_FILE="$KIT_ENV_FILE" "$ROOT/kit" receipts-setup --url "$rurl" --claude "$th/.claude/settings.json" >/dev/null 2>&1
+n="$(grep -c 'agent-receipt.py' "$th/.claude/settings.json" 2>/dev/null)"
+[ "$n" = 2 ] && ok "--claude adds the hook to Claude Code's settings once (run twice: still 2 entries, Post + PostFailure)" || bad "--claude: $n hook entries"
+fake="sk-ant-api03-$(rand 16)"; hk="$(rand 6)"
+hookrun() { HOME="$th" KIT_RECEIPT_STATE="$th/state" python3 -I "$ROOT/hooks/agent-receipt.py" "$@"; }
+printf '%s' '{"hook_event_name":"PostToolUse","session_id":"s-'"$hk"'","cwd":"/tmp","tool_name":"Bash","tool_input":{"command":"echo marker-'"$hk"' ANTHROPIC_API_KEY='"$fake"'"},"tool_response":{"exit_code":0}}' | hookrun hook "Test Claude"
+hookrun flush >/dev/null 2>&1
+row="$(admin_psql -t -A -c "SELECT actor||'|'||kind||'|'||command FROM agent_log WHERE command LIKE '%marker-$hk%'")"
+case "$row" in "Test Claude|Observed|"*"[REDACTED]"*) case "$row" in *"$fake"*) bad "the fake key reached the database";; *) ok "hook -> spool -> agent_log; the fake API key was redacted before it was stored";; esac;;
+  *) bad "hook receipt not found or wrong: '$row' ($(cat "$th/state/errors.log" 2>/dev/null | tail -2))";; esac
+printf '%s' '{"hook_event_name":"PostToolUse","tool_name":"Write","tool_input":{"file_path":"/tmp/w-'"$hk"'","content":"SECRET BODY '"$hk"'"}}' | hookrun hook "Test Claude"
+hookrun flush >/dev/null 2>&1
+row="$(admin_psql -t -A -c "SELECT kind||'|'||target||'|'||command FROM agent_log WHERE target = '/tmp/w-$hk'")"
+case "$row" in "Change|/tmp/w-$hk|"*"contents not logged"*) ok "a file edit is a Change receipt with the path only (contents never sent)";; *) bad "Write receipt: '$row'";; esac
+# server down: events wait in the spool, then go
+printf 'KIT_RECEIPT_URL=http://127.0.0.1:9/receipts\nKIT_RECEIPT_TOKEN=%s\n' "$RECEIPT_TOKEN" > "$th/down.env"; chmod 600 "$th/down.env"
+HOME="$th" KIT_RECEIPT_STATE="$th/state" KIT_RECEIPT_ENV_FILE="$th/down.env" python3 -I "$ROOT/hooks/agent-receipt.py" shell 0 "spooled-$hk" >/dev/null 2>&1
+HOME="$th" KIT_RECEIPT_STATE="$th/state" KIT_RECEIPT_ENV_FILE="$th/down.env" python3 -I "$ROOT/hooks/agent-receipt.py" flush >/dev/null 2>&1
+w="$(grep -c "spooled-$hk" "$th/state/spool.jsonl" 2>/dev/null)"
+hookrun flush >/dev/null 2>&1
+n="$(admin_psql -t -A -c "SELECT count(*) FROM agent_log WHERE command = 'spooled-$hk'")"
+[ "$w" = 1 ] && [ "$n" = 1 ] && ok "server down: the receipt waited in the spool, then was sent once it was back" || bad "spool: waiting=$w stored=$n"
+# nobody edits AI receipts
+out="$(PGPASSWORD="$MCP_DB_PASSWORD" dc exec -T -e PGPASSWORD postgres psql -h 127.0.0.1 -U "$MCP_DB_USER" -d "$POSTGRES_DB" -c "INSERT INTO agent_log(event_uid, command) VALUES ('x','x')" 2>&1)"
+case "$out" in *"permission denied"*) ok "the AI's database login can't INSERT into agent_log directly";; *) bad "AI login INSERT agent_log: $out";; esac
+out="$(admin_psql -c "UPDATE agent_log SET command = 'rewritten' WHERE seq = 1" 2>&1)"
+case "$out" in *ERROR*) ok "even the admin can't UPDATE agent_log";; *) bad "admin UPDATE agent_log: $out";; esac
+out="$(admin_psql -c "DELETE FROM agent_log WHERE seq = 1" 2>&1)"
+case "$out" in *ERROR*) ok "even the admin can't DELETE from agent_log";; *) bad "admin DELETE agent_log: $out";; esac
+v="$(admin_psql -t -A -c "SELECT intact FROM kit_verify() WHERE chain = 'agent_log'")"
+[ "$v" = t ] && ok "kit_verify: agent_log chain INTACT" || bad "kit_verify agent_log: '$v'"
+"$ROOT/kit" receipts 5 2>/dev/null | grep -q "Test Claude" && ok "./kit receipts lists the newest AI receipts" || bad "./kit receipts"
+
+say ""; say "== 12a. Hardening (OWASP Docker / CIS): secrets as files, locked-down containers, split networks"
+insp="$(docker inspect $(dc ps -q mcp postgres) 2>/dev/null)"
+leak=0
+for v in "$MCP_TOKEN" "$MCP_READ_TOKEN" "$RECEIPT_TOKEN" "$POSTGRES_PASSWORD" "$MCP_DB_PASSWORD" "$MCP_RO_DB_PASSWORD" "$UI_DB_PASSWORD"; do
+  case "$insp" in *"$v"*) leak=1 ;; esac
+done
+[ $leak = 0 ] && ok "docker inspect shows no token or password (they arrive as files in /run/secrets)" || bad "a secret is visible in docker inspect"
+for svc in mcp postgres; do
+  h="$(docker inspect "$(dc ps -q $svc)" --format '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}} {{.HostConfig.SecurityOpt}} {{.HostConfig.Memory}} {{.HostConfig.PidsLimit}}')"
+  case "$h" in "true [ALL] [no-new-privileges:true] "[1-9]*" "[1-9]*) ok "$svc: read-only root, all capabilities dropped, no-new-privileges, memory + process limits";;
+    *) bad "$svc hardening missing: $h";; esac
+done
+nets="$(docker inspect "$(dc ps -q mcp)" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}')"
+case "$nets" in *data_ui*) bad "mcp is on NocoDB's network: $nets";; *data_mcp*) ok "mcp is only on its own networks (not NocoDB's)";; *) bad "mcp networks: $nets";; esac
+c=0; for i in $(seq 1 12); do c="$(code -H "authorization: Bearer $(rand 32)")"; done
+[ "$c" = 429 ] && ok "after repeated bad tokens the address is blocked (429)" || bad "no block after 12 bad tokens (last code $c)"
+c="$(code -H "authorization: Bearer $MCP_TOKEN")"; [ "$c" = 429 ] && ok "while blocked, even the right token is refused" || bad "blocked address got $c with the right token"
+
 "$ROOT/kit" verify >/dev/null 2>&1; v=$?
 [ $v = 1 ] && ok "./kit verify also reports the tampered log (exit 1)" || bad "./kit verify exit $v (expected 1 after tampering)"
 
 say ""; say "== 12b. ./kit anchor against the real (tampered) test database"
-a="$("$ROOT/kit" anchor 1 1 2>/dev/null)"; v=$?
-if [ $v = 1 ] && printf '%s' "$a" | grep -q '"intact":false' && printf '%s' "$a" | grep -Eq '"check_write_log_hash":"[0-9a-f]{64}"' && printf '%s' "$a" | grep -Eq '"check_access_log_hash":"[0-9a-f]{64}"'; then
+a="$("$ROOT/kit" anchor 1 1 1 2>/dev/null)"; v=$?
+if [ $v = 1 ] && printf '%s' "$a" | grep -q '"intact":false' && printf '%s' "$a" | grep -Eq '"check_write_log_hash":"[0-9a-f]{64}"' && printf '%s' "$a" | grep -Eq '"check_access_log_hash":"[0-9a-f]{64}"' && printf '%s' "$a" | grep -q '"agent_log_intact":true' && printf '%s' "$a" | grep -Eq '"check_agent_log_hash":"[0-9a-f]{64}"'; then
   ok "./kit anchor prints one JSON line, reports the tampered log (exit 1) and the hash at seq 1"
 else bad "./kit anchor: exit $v: $a"; fi
 
@@ -95,7 +164,8 @@ python3 -I "$ROOT/money/demo/make-demo.py" "$ROOT/.test/demo" >/dev/null
 "$ROOT/kit" money add-tables >/dev/null 2>&1 && ok "./kit money add-tables made the two tables" || bad "./kit money add-tables failed"
 "$ROOT/kit" money "$ROOT/.test/demo"/*.csv >/dev/null 2>&1 && [ -f "$(ls -1d "$ROOT/.test/money-reports"/*/ | tail -1)report.html" ] \
   && ok "./kit money wrote a report" || bad "./kit money did not write a report"
-perm="$(stat -f %Lp "$(ls -1d "$ROOT/.test/money-reports"/*/ | tail -1)" 2>/dev/null || stat -c %a "$(ls -1d "$ROOT/.test/money-reports"/*/ | tail -1)")"
+rd="$(ls -1d "$ROOT/.test/money-reports"/*/ | tail -1)"
+perm="$(stat -c %a "$rd" 2>/dev/null || stat -f %Lp "$rd")"   # GNU first: on Linux "stat -f" means filesystem info
 [ "$perm" = 700 ] && ok "report folder is private (700)" || bad "report folder mode $perm, expected 700"
 "$ROOT/kit" money load >/dev/null 2>&1 || bad "./kit money load failed"
 n1="$(admin_psql -t -A -c "SELECT count(*) FROM money_transactions")"; f1="$(admin_psql -t -A -c "SELECT count(*) FROM money_findings")"

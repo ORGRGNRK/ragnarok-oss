@@ -23,8 +23,11 @@ schema, so the restored `public."Write Log"` / `Archive` and every business tabl
   (preexec/precmd, Actor `human-terminal`; `export RAGNAROK_RECEIPTS_TERMINAL=0` in `~/.zshenv` before
   the source line to stop). Claude Code's own shells (`CLAUDECODE=1`) are skipped: its hook covers them.
 - `receipt.mjs claude-hook`: `~/.claude/settings.json` PostToolUse + PostToolUseFailure on
-  `Bash|Write|Edit|MultiEdit|NotebookEdit`. Grok CLI reads the same file, so its shell / edit tools are
-  receipted too (Actor `Grok CLI`).
+  `Bash|Write|Edit|MultiEdit|NotebookEdit|WebFetch|WebSearch|Artifact|Agent|mcp__.*`. Grok CLI reads the same
+  file, so its shell / edit tools are receipted too (Actor `Grok CLI`). Since 2026-11-15 MCP calls (browser,
+  Gmail, ragnarok-hq, intake...), web fetches/searches, published artifacts and subagent launches get a receipt
+  too, tool name only: `Tool <name> (arguments and results not logged)`, kind `Change`. Proved: receipt #20600
+  for `mcp__ragnarok-hq__list_tables`. Still not receipted: Read/Grep/Glob and Claude's own task/question tools.
 - **Gemini CLI** (added 2026-11-02): `~/.gemini/settings.json` `hooks.AfterTool` on
   `run_shell_command|write_file|replace` runs `receipt.mjs claude-hook` (Actor `Gemini CLI`, from the event name
   `AfterTool`). Its shells also carry `GEMINI_CLI`, so a shell command can get a second, `zsh-exit` receipt.
@@ -32,7 +35,8 @@ schema, so the restored `public."Write Log"` / `Archive` and every business tabl
   hook `ragnarok-receipts`, `PostToolUse` matcher `*` (Actor `Antigravity`, from its camelCase `toolCall` payload;
   `run_command`, `write_to_file`, `replace_file_content`, `multi_replace_file_content`, `create_file`, `delete_file`).
   The command ends with `echo '{}'` because Antigravity expects a JSON object back.
-- **Codex** (added 2026-11-02): `~/.codex/hooks.json` `PostToolUse` on `Bash|apply_patch` (Codex `apply_patch`
+- **Codex** (added 2026-11-02): `~/.codex/hooks.json` `PostToolUse` on `.*` (checked 2026-11-15: every tool, MCP
+  included; was `Bash|apply_patch`) (Codex `apply_patch`
   covers its Edit/Write aliases); patch receipts contain paths and operation counts, never patch contents. Its
   `UserPromptSubmit` also runs the compatible evidence rules, memory arm, and premise check hooks shared with the
   Claude/Grok setup. The Claude transcript-based drift and answer auditors are not copied because their transcript
@@ -71,6 +75,16 @@ SQL: `docker exec -it ygg-scratch-pg psql -U ygg_app -d ygg_receipts -c "select 
   two `receipt.mjs claude-hook` entries from `~/.claude/settings.json` (or restore
   `~/.claude/settings.json.bak-20261028-receipts`).
 
+## Classifier fixes (2026-11-15)
+
+Found by reading this session's own receipts. Every `... 2>&1` was a change: the split at `&` made `1` an unknown
+program (336 of the 3,000 newest Claude "Change" shell receipts were really reads; old rows stay, the table is
+append-only). Also fixed: `NAME="value" cmd` hid `cmd`; heredoc bodies were read as commands (`cat > f <<EOF`
+took a path from the text as its target); `curl -o /dev/null` counted as a write and the URL kept a trailing `;`;
+a URL target is recorded as itself, not `macbook:https://...`. `ssh host 'cmd'` is now judged by `cmd`; read-only
+`ragnarok-memory search|get|core|history|stats|words`, `log-change tail|verify`, `claude mcp list|get`, `gh ... view|list|status`.
+Tests: `classify.test.mjs` (21 pass with hook-event). Proved live: receipt #20621 `Read`, same shape as #20588.
+
 ## Not covered
 
 GUI apps (Meta app, Cursor/VS Code editors' own file saves, Finder; Antigravity's app is covered only if it loads
@@ -92,3 +106,17 @@ an AI types into Terminal.app (logged, but as `human-terminal`), and shells that
   It's off in ~/.claude/settings.json, and its queue (739 unique entries, 2026-10-30 → 11-02) was imported with
   `receipt.mjs import-change-queue` (source `change-hook-queue`, original times kept). The file is
   ~/.ragnarok/change-queue.imported-20261102.jsonl.
+
+## Hourly check + off-server anchor (2026-11-14)
+
+`anchor.sh` runs every hour on the Mac (launchd `co.rgnrk.mac-receipts.anchor`, plist in this folder). It runs
+`mac.verify()` over the whole chain, checks the append-only trigger is still on, and keeps the newest
+`(seq, entry_hash)` in `~/RAGNAROK-anchors/mac-receipts.jsonl` (append-only file, local git). Each run asks
+Alexus for the hash it now holds at the last anchored seq; a different hash means history was rewritten, even
+by someone with the Postgres admin login. Alerts: macOS notification, `mac-receipts.alerts.log`, exit 2.
+Exit 3 = Alexus unreachable (not a tamper sign). Log: `~/.ragnarok/mac-receipts-anchor.log`.
+
+Since 2026-11-14 the launchd job runs `anchor-hourly.sh`, which also anchors the client kit stack
+`ck-ragnarok-hq` (via `clients/kit/scripts/mac-anchor.sh`, file `~/RAGNAROK-anchors/ragnarok-hq.jsonl`) and writes
+that result into `mac.receipts` as a receipt (actor `RAGNAROK anchor`, ref `alexus:ck-ragnarok-hq`), so the kit's
+chain heads are hashed into the main chain. The old separate job `co.rgnrk.ragnarok-hq.anchor` was retired.

@@ -147,11 +147,15 @@ class FolderTicketStore:
         return path
 
 
+_TEST_SUFFIXES = ("_test.py", "_test.go", ".test.js", ".test.ts", ".test.mjs", ".test.cjs",
+                  ".spec.js", ".spec.ts", ".spec.mjs", ".spec.cjs")
+
+
 def is_test_path(name):
     path = Path(name)
-    if path.name.startswith("test_") or path.name.endswith("_test.py"):
+    if path.name.startswith("test_") or path.name.endswith(_TEST_SUFFIXES):
         return True
-    return "tests" in path.parts
+    return "tests" in path.parts or "__tests__" in path.parts
 
 
 def is_validator_path(name):

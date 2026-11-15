@@ -7,8 +7,9 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import pg from "pg";
 import { loadSchema, type Field } from "../src/schema.js";
+import { env } from "../src/config.js";
 
-const E = process.env;
+const E = env();   // resolves *_FILE secrets (Docker secrets) like the server does
 const URL_ = E.TEST_MCP_URL || "http://mcp:8787/mcp";
 const ACTOR = "e2e-test";
 let passed = 0; const failed: string[] = [];

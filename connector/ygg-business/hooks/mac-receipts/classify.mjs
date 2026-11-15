@@ -80,7 +80,36 @@ const READ_SUB = {
   pm2: new Set(["list", "ls", "status", "logs", "show", "describe", "jlist", "prettylist", "monit"]),
   lms: new Set(["ls", "ps", "status", "version"]), tmux: new Set(["ls", "list-sessions", "list-windows", "capture-pane", "show-options"]),
   ollama: new Set(["list", "ls", "ps", "show", "--version"]),
+  "ragnarok-memory": new Set(["search", "get", "core", "history", "stats", "words"]),
+  "log-change": new Set(["tail", "verify"]),
 };
+// Two-word read-only subcommands: claude mcp list, gh pr view ...
+const READ_SUB2 = {
+  claude: { mcp: new Set(["list", "get"]) },
+  gh: { pr: new Set(["view", "list", "diff", "checks", "status"]), issue: new Set(["view", "list", "status"]),
+    repo: new Set(["view", "list"]), auth: new Set(["status"]), run: new Set(["view", "list"]) },
+};
+const SSH_ARG = new Set(["-o", "-p", "-i", "-l", "-J", "-F", "-b", "-c", "-D", "-E", "-e", "-I", "-L", "-m", "-O", "-Q",
+  "-R", "-S", "-W", "-w", "-B"]);
+
+/**
+ * `ssh [opts] host 'remote cmd'` -> `( remote cmd )`, so the remote command is judged by the same rules
+ * (a remote `docker ps` is a read, a remote `docker exec ...` still a change). Anything else about ssh
+ * (no remote command, two hosts, heredoc) is left as is and stays a change.
+ */
+function unwrapSsh(text) {
+  return text.replace(/\bssh((?:\s+[^\s'"]+)+?)\s+(['"])((?:\\.|(?!\2)[^\\])*)\2/g, (all, mid, q, inner) => {
+    const toks = mid.trim().split(/\s+/);
+    let hosts = 0;
+    for (let i = 0; i < toks.length; i++) {
+      if (SSH_ARG.has(toks[i])) i++;
+      else if (!toks[i].startsWith("-")) hosts++;
+    }
+    if (hosts !== 1) return all;
+    const body = q === '"' ? inner.replace(/\\(["\\$`])/g, "$1") : inner;
+    return `( ${body} )`;
+  });
+}
 const CURL_SENDS = new Set(["-d", "--data", "--data-raw", "--data-binary", "--data-urlencode", "--json", "-F", "--form",
   "-T", "--upload-file", "-o", "--output", "-O", "--remote-name"]);
 
@@ -111,6 +140,8 @@ function words(seg) {
   let w = seg.trim().split(/\s+/).filter(Boolean);
   for (;;) {
     if (!w.length) return w;
+    // NAME="value" arrives as `NAME=` + `Q` (the blanked quote): drop both, or the real program is skipped as Q
+    if (/^[A-Za-z_][A-Za-z0-9_]*=$/.test(w[0]) && w[1] === "Q") { w = w.slice(2); continue; }
     if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(w[0]) || w[0].startsWith("$") && !w[0].startsWith("$(")) { w = w.slice(1); continue; }
     if (WRAPPERS.has(w[0])) {
       const v = w[0];
@@ -139,8 +170,11 @@ function cleanPath(t, cwd) {
  * target is a clean absolute path / URL when one is known, else "".
  */
 export function classify(cmd, cwd) {
-  const text = String(cmd || "");
-  const bare = stripQuotes(text);
+  // a heredoc body is data, not commands: `cat > f <<'EOF' ... rm /tmp/x ... EOF` writes f, it does not delete /tmp/x
+  const text = unwrapSsh(String(cmd || "").replace(/<<-?\s*(['"]?)([A-Za-z_]\w*)\1([^\n]*)\n[\s\S]*?\n[ \t]*\2[ \t]*(?=\n|$)/g, "$3"));
+  // fd duplication (2>&1, >&2, <&0) is not a command separator; left in, the split at "&" turned "1" into
+  // an unknown program and every `... 2>&1` read into a change
+  const bare = stripQuotes(text).replace(/\d*[<>]&(\d+|-)/g, " ");
   const hits = [];
   let allRead = true;
   const segs = bare.split(/\|\||&&|[;&|\n(){}`]|\$\(/);
@@ -158,9 +192,11 @@ export function classify(cmd, cwd) {
     // --- change detection
     if (verb === "curl" || verb === "wget") {
       const meth = /(?:-X|--request)\s*(POST|PUT|PATCH|DELETE)\b/.exec(seg);
-      const sends = args.some((a) => CURL_SENDS.has(a) || /^--data|^-d./.test(a));
+      // -o /dev/null throws the body away: that is a read, not a write
+      const sends = args.some((a, i) => (CURL_SENDS.has(a) || /^--data|^-d./.test(a))
+        && !((a === "-o" || a === "--output") && /^\/dev\/(null|stdout|stderr)$/.test(args[i + 1] || "")));
       if (meth || sends || verb === "wget") {
-        const url = /https?:\/\/[^\s'"]+/.exec(text);
+        const url = /https?:\/\/[^\s'"<>;|&)]+/.exec(text);
         hits.push([`curl ${meth ? meth[1] : "POST"}`, url ? [url[0]] : []]);
         allRead = false;
       }
@@ -198,6 +234,8 @@ export function classify(cmd, cwd) {
     if (READ_SUB[verb] && args.length && READ_SUB[verb].has(args.find((a) => !a.startsWith("-") || READ_SUB[verb].has(a)) ?? "")) {
       continue;
     }
+    const plain = args.filter((a) => !a.startsWith("-"));
+    if (READ_SUB2[verb] && READ_SUB2[verb][plain[0]] && READ_SUB2[verb][plain[0]].has(plain[1])) continue;
     if (verb === "Q" || verb === "__") continue; // a quoted word in command position (rare) or an escape
     allRead = false; // unknown program: counts as a change (Alexus rule)
   }

@@ -156,12 +156,25 @@ def publish(cfg,summary,catalog=None):
     except urllib.error.HTTPError as e:return 'Unverified: publisher HTTP '+str(e.code)
     except Exception:return 'Unverified: publisher unavailable'
 
+def refresh_enrollment(cfg):
+    """New git folders under ~/Developer join the list on their own; folders that are gone leave it (owner, 2026-11-14:
+    "do i have to keep updating the script everytime a new folder gets added" -> "allow"). Repos already listed keep
+    their pinned remote, so a changed remote URL is still held, never silently followed."""
+    have={e['path'] for e in cfg['repositories']}
+    found=set(discover(Path.home()/'Developer'))
+    kept=[e for e in cfg['repositories'] if Path(e['path']).is_dir()]
+    added=[enroll(Path(x)) for x in sorted(found-have)]
+    if added or len(kept)!=len(cfg['repositories']):
+        cfg['repositories']=kept+added
+        private_json(STATE/'config.json',cfg)
+
 def once():
     STATE.mkdir(parents=True,exist_ok=True,mode=0o700)
     with (STATE/'run.lock').open('a') as lock:
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:print('another sync is running');return
         cfg=json.loads((STATE/'config.json').read_text())
+        refresh_enrollment(cfg)
         results=[sync_repo(e) for e in cfg['repositories']]
         summary={'schema':'ragnarok-sync:v1','role':cfg['role'],'observed_at':stamp(),'repositories':results,
                  'counts':{'current':sum(x['status']=='current' for x in results),'held':sum(x['status']=='held' for x in results),'total':len(results)}}

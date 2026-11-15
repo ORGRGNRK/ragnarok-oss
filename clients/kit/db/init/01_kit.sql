@@ -121,38 +121,8 @@ BEGIN
   END LOOP;
 END $$;
 
--- Recompute both chains and check the lock. One row per log.
-CREATE FUNCTION kit_verify()
-RETURNS TABLE(chain text, rows_checked bigint, intact boolean, first_bad_seq bigint, problem text,
-              head_hash text, lock_on boolean, lock_problem text)
-LANGUAGE plpgsql STABLE SET timezone = 'UTC' SET search_path = public AS $$
-DECLARE t text; r record; exp_prev text; exp_seq bigint; n bigint; bad bigint; prob text; locks int;
-BEGIN
-  FOREACH t IN ARRAY ARRAY['write_log', 'access_log'] LOOP
-    exp_prev := repeat('0', 64); exp_seq := 1; n := 0; bad := NULL; prob := NULL;
-    FOR r IN EXECUTE format('SELECT x.seq, x.prev_hash, x.hash, to_jsonb(x) - ''hash'' - ''prev_hash'' AS content FROM %I x ORDER BY x.seq', t) LOOP
-      n := n + 1;
-      IF r.seq IS DISTINCT FROM exp_seq THEN
-        bad := r.seq; prob := format('sequence gap: expected #%s, found #%s (a row was removed)', exp_seq, r.seq); EXIT;
-      END IF;
-      IF r.prev_hash IS DISTINCT FROM exp_prev THEN
-        bad := r.seq; prob := 'prev_hash does not match the row before it'; EXIT;
-      END IF;
-      IF r.hash IS DISTINCT FROM receipt_chain_hash(r.prev_hash, r.content) THEN
-        bad := r.seq; prob := 'row content does not match its hash (the row was edited)'; EXIT;
-      END IF;
-      exp_prev := r.hash; exp_seq := r.seq + 1;
-    END LOOP;
-    SELECT count(*) INTO locks FROM pg_trigger
-     WHERE tgrelid = t::regclass AND tgenabled <> 'D'
-       AND tgname IN ('trg_' || t || '_chain', 'trg_' || t || '_no_change', 'trg_' || t || '_no_truncate');
-    chain := t; rows_checked := n; intact := bad IS NULL; first_bad_seq := bad; problem := prob;
-    head_hash := CASE WHEN bad IS NULL AND n > 0 THEN exp_prev END;
-    lock_on := locks = 3;
-    lock_problem := CASE WHEN locks = 3 THEN NULL ELSE format('%s of 3 append-only triggers are missing or switched off', 3 - locks) END;
-    RETURN NEXT;
-  END LOOP;
-END $$;
+-- kit_verify() (recomputes every chain + checks the locks) is created by `./kit up` (mcp/src/agentlog.ts),
+-- so existing clients get new chains too.
 
 -- ------------------------------------------------- automatic receipts for data changes
 -- Attached to every client table (by ./kit up), plus archive and approvals.
@@ -254,4 +224,3 @@ END $$;
 REVOKE ALL ON FUNCTION kit_request_archive(text, bigint, text, text, int) FROM PUBLIC;
 REVOKE ALL ON FUNCTION kit_approve(text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION kit_archive(text, bigint, text, text, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION kit_verify() FROM PUBLIC;
